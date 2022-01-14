@@ -11,4 +11,4 @@
 *.sln
 
 #Build Output Folder
-build
+bin
