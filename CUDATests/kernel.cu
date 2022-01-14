@@ -6,6 +6,7 @@
 #include <algorithm>
 
 #include "Matrix.h"
+#include "CUDASharedMemory.cuh"
 
 //Choose which GPU to run on, change this on a multi-GPU system. (Default is 0, for single-GPU systems)
 cudaError_t SetDeviceCuda(int deviceId = 0);
@@ -106,48 +107,49 @@ __global__ void MatMulKernel(Matrix<float> A, Matrix<float> B, Matrix<float> C)
 
 cudaError_t VecAddCuda(int* c, const int* a, const int* b, unsigned int size);
 cudaError_t MatAddCuda(float* matC, const float* matA, const float* matB, unsigned int matDimX);
-cudaError_t MatAddCudaSharedMemory(float* matC, const float* matA, const float* matB, unsigned int matDim);
 int main()
 {
     cudaError_t cudaStatus{};
     cudaStatus = SetDeviceCuda();
 
-    const int arraySize = 5;
-    const int a[arraySize] = { 1, 2, 3, 4, 5 };
-    const int b[arraySize] = { 10, 20, 30, 40, 50 };
-    int c[arraySize] = { 0 };
-    
-    cudaStatus = VecAddCuda(c, a, b, arraySize);
-    if (cudaStatus != cudaSuccess)
-    {
-        fprintf(stderr, "VecAddCuda failed!");
-        return 1;
-    }
-    
-    cudaStatus = DeviceResetCuda();
-    
-    printf("{1,2,3,4,5} + {10,20,30,40,50} = {%d,%d,%d,%d,%d}\n",
-        c[0], c[1], c[2], c[3], c[4]);
+    //const int arraySize = 5;
+    //const int a[arraySize] = { 1, 2, 3, 4, 5 };
+    //const int b[arraySize] = { 10, 20, 30, 40, 50 };
+    //int c[arraySize] = { 0 };
+    //
+    //cudaStatus = VecAddCuda(c, a, b, arraySize);
+    //if (cudaStatus != cudaSuccess)
+    //{
+    //    fprintf(stderr, "VecAddCuda failed!");
+    //    return 1;
+    //}
+    //
+    //cudaStatus = DeviceResetCuda();
+    //
+    //printf("{1,2,3,4,5} + {10,20,30,40,50} = {%d,%d,%d,%d,%d}\n",
+    //    c[0], c[1], c[2], c[3], c[4]);
+    //
+    ////MatAdd
+    //const int N = 2;
+    //float matA[N * N]{ 1.f, 2.f, 3.f, 4.f };
+    //float matB[N * N]{ 4.f, 3.f, 2.f, 1.f };
+    //float matC[N * N]{ -1.f, -1.f, -1.f, -1.f };
+    //
+    //cudaStatus = MatAddCudaSharedMemory(matC, matA, matB, N);
+    //if (cudaStatus != cudaSuccess)
+    //{
+    //    fprintf(stderr, "MatAddCudaSharedMemory failed!");
+    //    return 1;
+    //}
+    //
+    //cudaStatus = DeviceResetCuda();
+    //
+    //printf("{1.f,2.f,3.f,4.f} + {4.f,3.f,2.f,1.f} = {%f,%f,%f,%f}\n", 
+    //    matC[0], matC[1], matC[2], matC[3]);
 
-    //MatAdd
-    const int N = 2;
-    float matA[N * N]{ 1.f, 2.f, 3.f, 4.f };
-    float matB[N * N]{ 4.f, 3.f, 2.f, 1.f };
-    float matC[N * N]{ -1.f, -1.f, -1.f, -1.f };
+    int statusCode = CUDASharedMemory::SharedMemoryCuda();
 
-    cudaStatus = MatAddCudaSharedMemory(matC, matA, matB, N);
-    if (cudaStatus != cudaSuccess)
-    {
-        fprintf(stderr, "MatAddCudaSharedMemory failed!");
-        return 1;
-    }
-
-    cudaStatus = DeviceResetCuda();
-
-    printf("{1.f,2.f,3.f,4.f} + {4.f,3.f,2.f,1.f} = {%f,%f,%f,%f}\n", 
-        matC[0], matC[1], matC[2], matC[3]);
-
-    return 0;
+    return statusCode;
 }
 
 cudaError_t SetDeviceCuda(int deviceId)
@@ -327,69 +329,6 @@ Error:
     cudaFree(dev_b);
 
     return cudaStatus;
-}
-
-// Get a matrix element
-__device__
-float GetElement(const Matrix<float>& mat, int row, int col)
-{
-    return mat.Data[row * mat.Stride + col];
-}
-
-// Set a matrix element
-__device__
-void SetElement(Matrix<float>& mat, int row, int col, float value)
-{
-    mat.Data[row * mat.Stride + col] = value;
-}
-
-// Get the BLOCK_SIZExBLOCK_SIZE sub-matrix Asub of A that is
-// located col sub-matrices to the right and row sub-matrices down
-// from the upper-left corner of A
-//__device__ Matrix<float> GetSubMatrix(Matrix<float> A, int row, int col)
-//{
-//    Matrix<float> Asub;
-//    Asub.width = 16;
-//    Asub.height = 16;
-//    Asub.Stride = A.Stride;
-//    Asub.Data = &A.Data[A.Stride * 16 * row + 16 * col];
-//    return Asub;
-//}
-
-cudaError_t MatAddCudaSharedMemory(float* matC, const float* matA, const float* matB, unsigned int matDim)
-{
-//    // Load A and B to device memory
-//    Matrix<float> d_A{ matDim };
-//    size_t size = matDim * matDim * sizeof(float);
-//    cudaMalloc((void**)&d_A.Data, size);
-//    cudaMemcpy(d_A.Data, matA.Data, size, cudaMemcpyHostToDevice);
-//    Matrix<float> d_B{ matDim };
-//    d_B.width = d_B.stride = B.width; d_B.height = B.height;
-//    size = B.width * B.height * sizeof(float);
-//    cudaMalloc(&d_B.elements, size);
-//    cudaMemcpy(d_B.elements, B.elements, size,
-//        cudaMemcpyHostToDevice);
-//
-//    // Allocate C in device memory
-//    Matrix<float> d_C;
-//    d_C.width = d_C.stride = C.width; d_C.height = C.height;
-//    size = C.width * C.height * sizeof(float);
-//    cudaMalloc(&d_C.elements, size);
-//
-//    // Invoke kernel
-//    dim3 dimBlock(16, 16);
-//    dim3 dimGrid(B.width / dimBlock.x, A.height / dimBlock.y);
-//    MatMulKernel << <dimGrid, dimBlock >> > (d_A, d_B, d_C);
-//
-//    // Read C from device memory
-//    cudaMemcpy(C.elements, d_C.Data, size,
-//        cudaMemcpyDeviceToHost);
-//
-//    // Free device memory
-//    cudaFree(d_A.Data);
-//    cudaFree(d_B.Data);
-//    cudaFree(d_C.Data);
-    return cudaError_t{};
 }
 
 __constant__ float constData[256];

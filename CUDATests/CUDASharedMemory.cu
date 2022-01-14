@@ -1,11 +1,7 @@
 #include "cuda_runtime.h"
 #include "device_launch_parameters.h"
 
-#include "CUDASharedMemory.cuh"
+//#include "CUDASharedMemory.cuh"
+#include <iostream>
 
-using namespace CUDASharedMemory;
-
-__global__ void Test()
-{
-
-}
+//using namespace CUDASharedMemory;
