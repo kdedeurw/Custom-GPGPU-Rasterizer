@@ -1,6 +1,14 @@
+#CUDA Related Files
 *.i
 *.ii
 *.gpu
 *.ptx
 *.cubin
 *.fatbin
+
+#Visual Studio
+.vs
+*.sln
+
+#Build Output Folder
+build
