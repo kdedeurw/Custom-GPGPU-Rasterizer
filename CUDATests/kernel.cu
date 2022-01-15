@@ -1,12 +1,12 @@
-﻿
-#include "cuda_runtime.h"
-#include "device_launch_parameters.h"
+﻿#include "PCH.h"
 
-#include <stdio.h>
 #include <algorithm>
 
 #include "Matrix.h"
-#include "CUDASharedMemory.cuh"
+#include "CUDASharedMemory.cu"
+#include "CUDAPinnedMemory.cu"
+#include "CUDAStreams.cu"
+#include "CUDASharedMemoryExtended.cuh"
 
 //Choose which GPU to run on, change this on a multi-GPU system. (Default is 0, for single-GPU systems)
 cudaError_t SetDeviceCuda(int deviceId = 0);
@@ -112,44 +112,50 @@ int main()
     cudaError_t cudaStatus{};
     cudaStatus = SetDeviceCuda();
 
-    //const int arraySize = 5;
-    //const int a[arraySize] = { 1, 2, 3, 4, 5 };
-    //const int b[arraySize] = { 10, 20, 30, 40, 50 };
-    //int c[arraySize] = { 0 };
-    //
-    //cudaStatus = VecAddCuda(c, a, b, arraySize);
-    //if (cudaStatus != cudaSuccess)
-    //{
-    //    fprintf(stderr, "VecAddCuda failed!");
-    //    return 1;
-    //}
-    //
-    //cudaStatus = DeviceResetCuda();
-    //
-    //printf("{1,2,3,4,5} + {10,20,30,40,50} = {%d,%d,%d,%d,%d}\n",
-    //    c[0], c[1], c[2], c[3], c[4]);
-    //
-    ////MatAdd
-    //const int N = 2;
-    //float matA[N * N]{ 1.f, 2.f, 3.f, 4.f };
-    //float matB[N * N]{ 4.f, 3.f, 2.f, 1.f };
-    //float matC[N * N]{ -1.f, -1.f, -1.f, -1.f };
-    //
-    //cudaStatus = MatAddCudaSharedMemory(matC, matA, matB, N);
-    //if (cudaStatus != cudaSuccess)
-    //{
-    //    fprintf(stderr, "MatAddCudaSharedMemory failed!");
-    //    return 1;
-    //}
-    //
-    //cudaStatus = DeviceResetCuda();
-    //
-    //printf("{1.f,2.f,3.f,4.f} + {4.f,3.f,2.f,1.f} = {%f,%f,%f,%f}\n", 
-    //    matC[0], matC[1], matC[2], matC[3]);
+    const int arraySize = 5;
+    const int a[arraySize] = { 1, 2, 3, 4, 5 };
+    const int b[arraySize] = { 10, 20, 30, 40, 50 };
+    int c[arraySize] = { 0 };
+    
+    cudaStatus = VecAddCuda(c, a, b, arraySize);
+    if (cudaStatus != cudaSuccess)
+    {
+        fprintf(stderr, "VecAddCuda failed!");
+        return 1;
+    }
+    
+    cudaStatus = DeviceResetCuda();
+    
+    printf("{1,2,3,4,5} + {10,20,30,40,50} = {%d,%d,%d,%d,%d}\n",
+        c[0], c[1], c[2], c[3], c[4]);
+    
+    //MatAdd
+    const int N = 2;
+    float matA[N * N]{ 1.f, 2.f, 3.f, 4.f };
+    float matB[N * N]{ 4.f, 3.f, 2.f, 1.f };
+    float matC[N * N]{ -1.f, -1.f, -1.f, -1.f };
+    
+    cudaStatus = MatAddCuda(matC, matA, matB, N);
+    if (cudaStatus != cudaSuccess)
+    {
+        fprintf(stderr, "MatAddCudaSharedMemory failed!");
+        return 1;
+    }
+    
+    cudaStatus = DeviceResetCuda();
+    
+    printf("{1.f,2.f,3.f,4.f} + {4.f,3.f,2.f,1.f} = {%f,%f,%f,%f}\n", 
+        matC[0], matC[1], matC[2], matC[3]);
 
-    int statusCode = CUDASharedMemory::SharedMemoryCuda();
+    //cudaStatus = CUDASharedMemory::SharedMemoryCuda();
 
-    return statusCode;
+    //cudaStatus = CUDAPinnedMemory::PinnedMemoryCuda();
+
+    cudaStatus = CUDAStreams::StreamCuda();
+
+    //cudaStatus = CUDASharedMemoryExtended::SharedMemoryExtendedCuda();
+
+    return 0;
 }
 
 cudaError_t SetDeviceCuda(int deviceId)
