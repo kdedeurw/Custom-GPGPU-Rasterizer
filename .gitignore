@@ -9,6 +9,9 @@
 #Visual Studio
 .vs
 *.sln
+*.vcxproj
+*.filters
+*.user
 
 #Build Output Folder
 bin
