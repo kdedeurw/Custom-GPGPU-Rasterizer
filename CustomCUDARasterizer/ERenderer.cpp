@@ -18,7 +18,6 @@
 
 Elite::Renderer::Renderer(SDL_Window * pWindow)
 {
-	//Initialize
 	m_pWindow = pWindow;
 	m_pFrontBuffer = SDL_GetWindowSurface(pWindow);
 	int width, height = 0;
@@ -27,7 +26,6 @@ Elite::Renderer::Renderer(SDL_Window * pWindow)
 	m_Height = static_cast<uint32_t>(height);
 	m_pBackBuffer = SDL_CreateRGBSurface(0, m_Width, m_Height, 32, 0, 0, 0, 0);
 	m_pBackBufferPixels = (uint32_t*)m_pBackBuffer->pixels;
-	//
 	CreateDepthBuffer();
 }
 
@@ -266,6 +264,20 @@ void Elite::Renderer::RenderPixelsInTriangle(const OVertex triangle[3], const Me
 								normal = tangentSpaceAxis * normal; // normal defined in tangent space
 								//Normalize(normal);
 
+								FVector3 interpolatedViewDirection{
+								weights[0] * (triangle[0].vd.y / triangle[0].v.w) + weights[1] * (triangle[1].vd.y / triangle[1].v.w) + weights[2] * (triangle[2].vd.y / triangle[2].v.w),
+								weights[0] * (triangle[0].vd.x / triangle[0].v.w) + weights[1] * (triangle[1].vd.x / triangle[1].v.w) + weights[2] * (triangle[2].vd.x / triangle[2].v.w),
+								weights[0] * (triangle[0].vd.z / triangle[0].v.w) + weights[1] * (triangle[1].vd.z / triangle[1].v.w) + weights[2] * (triangle[2].vd.z / triangle[2].v.w) };
+								Normalize(interpolatedViewDirection);
+
+								//OVertex oVertex{};
+								//oVertex.v = FPoint4{ pixel, zInterpolated, wInterpolated };
+								//oVertex.uv = interpolatedUV;
+								//oVertex.n = interpolatedNormal;
+								//oVertex.tan = interpolatedTangent;
+								//oVertex.vd = interpolatedViewDirection;
+								//ShadePixel(oVertex, textures);
+
 								// light calculations
 								for (Light* pLight : sm.GetSceneGraph()->GetLights())
 								{
@@ -279,12 +291,6 @@ void Elite::Renderer::RenderPixelsInTriangle(const OVertex triangle[3], const Me
 									// swapped direction of lights
 									if (textures.pSpec && textures.pGloss) // specular and glossy map present?
 									{
-										FVector3 interpolatedViewDirection{
-											weights[0] * (triangle[0].vd.y / triangle[0].v.w) + weights[1] * (triangle[1].vd.y / triangle[1].v.w) + weights[2] * (triangle[2].vd.y / triangle[2].v.w),
-											weights[0] * (triangle[0].vd.x / triangle[0].v.w) + weights[1] * (triangle[1].vd.x / triangle[1].v.w) + weights[2] * (triangle[2].vd.x / triangle[2].v.w),
-											weights[0] * (triangle[0].vd.z / triangle[0].v.w) + weights[1] * (triangle[1].vd.z / triangle[1].v.w) + weights[2] * (triangle[2].vd.z / triangle[2].v.w) };
-										Normalize(interpolatedViewDirection);
-
 										// phong
 										const FVector3 reflectV{ Reflect(lightDir, normal) };
 										//Normalize(reflectV);
@@ -349,8 +355,71 @@ void Elite::Renderer::RenderPixelsInTriangle(const OVertex triangle[3], const Me
 	}
 }
 
-void Elite::Renderer::PixelShading(const FVector2& interpolatedUV)
+void Elite::Renderer::ShadePixel(const OVertex& oVertex, const Mesh::Textures& textures)
 {
+	SceneManager& sm = *SceneManager::GetInstance();
+	
+	RGBColor finalColour{};
+	
+	if (!sm.IsDepthColour()) // show depth colour?
+	{
+		const SampleState sampleState = sm.GetSampleState();
+		const RGBColor diffuseColour = textures.pDiff->Sample(oVertex.uv, sampleState); // sample RGB colour
+	
+		const RGBColor normalRGB = textures.pNorm->Sample(oVertex.uv, sampleState); // sample RGB Normal
+		FVector3 normal{ normalRGB.r, normalRGB.g, normalRGB.b }; // sampled Normal form normalMap
+	
+		FVector3 binormal{ Cross(oVertex.tan, oVertex.n) };
+		//Normalize(binormal);
+		FMatrix3 tangentSpaceAxis{ oVertex.tan, binormal, oVertex.n };
+	
+		//normal /= 255.f; // normal to [0, 1]
+		normal.x = 2.f * normal.x - 1.f; // from [0, 1] to [-1, 1]
+		normal.y = 2.f * normal.y - 1.f;
+		normal.z = 2.f * normal.z - 1.f;
+		// !Already defined in [0, 1]!
+	
+		normal = tangentSpaceAxis * normal; // normal defined in tangent space
+		//Normalize(normal);
+	
+		// light calculations
+		for (Light* pLight : sm.GetSceneGraph()->GetLights())
+		{
+			const FVector3& lightDir{ pLight->GetDirection(FPoint3{}) };
+			const float observedArea{ Dot(-normal, lightDir) };
+	
+			if (observedArea < 0.f)
+				continue;
+	
+			const RGBColor biradiance{ pLight->GetBiradiance(FPoint3{}) };
+			// swapped direction of lights
+	
+			// phong
+			const FVector3 reflectV{ Reflect(lightDir, normal) };
+			//Normalize(reflectV);
+			const float angle{ Dot(reflectV, oVertex.vd) };
+			const RGBColor specularSample{ textures.pSpec->Sample(oVertex.uv, sampleState) };
+			const RGBColor phongSpecularReflection{ specularSample * powf(angle, textures.pGloss->Sample(oVertex.uv, sampleState).r * 25.f) };
+	
+			//const RGBColor lambertColour{ diffuseColour * (RGBColor{1.f,1.f,1.f} - specularSample) };
+			//const RGBColor lambertColour{ (diffuseColour / float(E_PI)) * (RGBColor{1.f,1.f,1.f} - specularSample) };
+			const RGBColor lambertColour{ (diffuseColour * specularSample) / float(E_PI) }; //severely incorrect result, using diffusecolour for now
+			// Lambert diffuse == incoming colour multiplied by diffuse coefficient (1 in this case) divided by Pi
+			finalColour += biradiance * (diffuseColour + phongSpecularReflection) * observedArea;
+		}
+		finalColour.Clamp();
+	}
+	else
+	{
+		finalColour = RGBColor{ Remap(oVertex.v.z, 0.985f, 1.f), 0.f, 0.f }; // depth colour
+		finalColour.Clamp();
+	}
+	
+	// final draw
+	m_pBackBufferPixels[(int)oVertex.v.x + (int)(oVertex.v.y * m_Width)] = SDL_MapRGB(m_pBackBuffer->format,
+		static_cast<uint8_t>(finalColour.r * 255.f),
+		static_cast<uint8_t>(finalColour.g * 255.f),
+		static_cast<uint8_t>(finalColour.b * 255.f));
 }
 
 bool Elite::Renderer::IsPixelInTriangle(const FPoint2& pixel, float weights[3])

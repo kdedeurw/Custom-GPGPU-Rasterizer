@@ -58,7 +58,7 @@ namespace Elite
 		void SetBoundingBox(uint32_t boundingValues[4]);
 		OVertex GetNDCVertex(const IVertex& vertex, const FMatrix4& worldMatrix = FMatrix4::Identity());
 		std::vector<OVertex> GetNDCMeshVertices(const std::vector<IVertex>& vertices, const FMatrix4& worldMatrix = FMatrix4::Identity());
-		void PixelShading(const FVector2& interpolatedUV);
+		void ShadePixel(const OVertex& oVertex, const Mesh::Textures& textures);
 	};
 }
 

@@ -31,9 +31,6 @@
     <ClCompile Include="Camera.cpp">
       <Filter>Helpers</Filter>
     </ClCompile>
-    <ClCompile Include="ERenderer.cpp">
-      <Filter>Helpers</Filter>
-    </ClCompile>
     <ClCompile Include="ETimer.cpp">
       <Filter>Helpers</Filter>
     </ClCompile>
@@ -66,6 +63,9 @@
     </ClCompile>
     <ClCompile Include="Texture.cpp">
       <Filter>Renderer\Shading</Filter>
+    </ClCompile>
+    <ClCompile Include="ERenderer.cpp">
+      <Filter>Renderer</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
@@ -101,9 +101,6 @@
       <Filter>Math</Filter>
     </ClInclude>
     <ClInclude Include="Camera.h">
-      <Filter>Helpers</Filter>
-    </ClInclude>
-    <ClInclude Include="ERenderer.h">
       <Filter>Helpers</Filter>
     </ClInclude>
     <ClInclude Include="ETimer.h">
@@ -159,6 +156,9 @@
     </ClInclude>
     <ClInclude Include="Vertices.h">
       <Filter>Renderer\Shading</Filter>
+    </ClInclude>
+    <ClInclude Include="ERenderer.h">
+      <Filter>Renderer</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>

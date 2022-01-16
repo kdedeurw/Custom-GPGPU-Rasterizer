@@ -1,5 +1,1 @@
-﻿     Creating library D:\SchoolRelated\CUDA\bin\x64\Release\CUDA.lib and object D:\SchoolRelated\CUDA\bin\x64\Release\CUDA.exp
-  Generating code
-  Incremental LTCG not supported for -Od component, build without incremental LTCG.
-  Finished generating code
-  CUDA.vcxproj -> D:\SchoolRelated\CUDA\bin\x64\Release\CUDA.exe
+﻿  CUDA.vcxproj -> D:\SchoolRelated\CUDA\bin\x64\Release\CUDA.exe

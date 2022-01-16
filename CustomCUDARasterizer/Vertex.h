@@ -26,6 +26,14 @@ struct IVertex
 
 struct OVertex
 {
+	OVertex()
+		: v{}
+		, c{}
+		, uv{}
+		, n{}
+		, tan{}
+		, vd{}
+	{}
 	OVertex(const FPoint3& position, const FVector2& uvcoordinates, const FVector3& normal = FVector3{ 1.f,1.f,1.f }, const RGBColor& colour = RGBColor{ 1.f,1.f,1.f })
 		: OVertex{ FPoint4{position}, uvcoordinates, normal, FVector3{}, colour, FVector3{} }
 	{}
