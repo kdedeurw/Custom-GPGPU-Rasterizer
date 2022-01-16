@@ -7,11 +7,9 @@
 *.fatbin
 
 #Visual Studio
-.vs
+*.vs
 *.sln
-*.vcxproj
-*.filters
-*.user
+*.user #user defined 
 
 #Build Output Folder
 bin
