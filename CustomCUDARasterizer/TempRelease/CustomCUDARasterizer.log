@@ -1,0 +1,17 @@
+﻿     Creating library D:\SchoolRelated\CUDA\bin\Release\CustomCUDARasterizer.lib and object D:\SchoolRelated\CUDA\bin\Release\CustomCUDARasterizer.exp
+  Generating code
+  0 of 942 functions ( 0.0%) were compiled, the rest were copied from previous compilation.
+    0 functions were new in current compilation
+    0 functions had inline decision re-evaluated but remain unchanged
+  Finished generating code
+  CustomCUDARasterizer.vcxproj -> D:\SchoolRelated\CUDA\bin\Release\CustomCUDARasterizer.exe
+  D:\SchoolRelated\CUDA\3rdParty\lib\sdl2-2.0.9\x64\SDL2.dll
+  1 File(s) copied
+  D:\SchoolRelated\CUDA\3rdParty\lib\sdl2_image-2.0.5\x64\SDL2_image.dll
+  1 File(s) copied
+  D:\SchoolRelated\CUDA\3rdParty\lib\vld\x64\vld_x64.dll
+  1 File(s) copied
+  D:\SchoolRelated\CUDA\3rdParty\lib\vld\x64\dbghelp.dll
+  1 File(s) copied
+  D:\SchoolRelated\CUDA\3rdParty\lib\vld\x64\Microsoft.DTfW.DHL.manifest
+  1 File(s) copied

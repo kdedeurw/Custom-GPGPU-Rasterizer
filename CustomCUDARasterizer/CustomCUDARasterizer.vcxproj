@@ -1,0 +1,176 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project DefaultTargets="Build" ToolsVersion="15.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup Label="ProjectConfigurations">
+    <ProjectConfiguration Include="Debug|x64">
+      <Configuration>Debug</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Release|x64">
+      <Configuration>Release</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+  </ItemGroup>
+  <PropertyGroup Label="Globals">
+    <ProjectGuid>{7F0A4B1B-45C3-4C33-8377-A17BDA0B80D1}</ProjectGuid>
+    <RootNamespace>CustomCUDARasterizer</RootNamespace>
+    <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'" Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <UseDebugLibraries>true</UseDebugLibraries>
+    <CharacterSet>MultiByte</CharacterSet>
+    <PlatformToolset>v142</PlatformToolset>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'" Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <UseDebugLibraries>false</UseDebugLibraries>
+    <WholeProgramOptimization>true</WholeProgramOptimization>
+    <CharacterSet>MultiByte</CharacterSet>
+    <PlatformToolset>v142</PlatformToolset>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+  <ImportGroup Label="ExtensionSettings">
+    <Import Project="$(VCTargetsPath)\BuildCustomizations\CUDA 11.5.props" />
+  </ImportGroup>
+  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+    <Import Project="CustomCUDARasterizer.props" />
+  </ImportGroup>
+  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+    <Import Project="CustomCUDARasterizer.props" />
+  </ImportGroup>
+  <PropertyGroup Label="UserMacros" />
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+    <LinkIncremental>true</LinkIncremental>
+    <OutDir>$(SolutionDir)bin\$(Configuration)\</OutDir>
+    <IntDir>Temp$(Configuration)\</IntDir>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <OutDir>$(SolutionDir)bin\$(Configuration)\</OutDir>
+    <IntDir>Temp$(Configuration)\</IntDir>
+  </PropertyGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+    <ClCompile>
+      <WarningLevel>Level3</WarningLevel>
+      <Optimization>Disabled</Optimization>
+      <PreprocessorDefinitions>WIN32;WIN64;_DEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PrecompiledHeader>Use</PrecompiledHeader>
+      <PrecompiledHeaderFile>PCH.h</PrecompiledHeaderFile>
+      <AdditionalIncludeDirectories>$(SolutionDir)3rdParty\include\sdl2-2.0.9\;$(SolutionDir)3rdParty\include\sdl2_image-2.0.5\;$(SolutionDir)3rdParty\include\vld\;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+    </ClCompile>
+    <Link>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+      <SubSystem>Console</SubSystem>
+      <AdditionalDependencies>SDL2.lib;SDL2main.lib;SDL2_image.lib;vld.lib;cudart_static.lib;kernel32.lib;user32.lib;gdi32.lib;winspool.lib;comdlg32.lib;advapi32.lib;shell32.lib;ole32.lib;oleaut32.lib;uuid.lib;odbc32.lib;odbccp32.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalLibraryDirectories>$(SolutionDir)3rdParty\lib\sdl2-2.0.9\x64\;$(SolutionDir)3rdParty\lib\sdl2_image-2.0.5\x64\;$(SolutionDir)3rdParty\lib\vld\x64\;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+    </Link>
+    <CudaCompile>
+      <TargetMachinePlatform>64</TargetMachinePlatform>
+      <CodeGeneration>compute_61,sm_61</CodeGeneration>
+      <PtxAsOptionV>true</PtxAsOptionV>
+    </CudaCompile>
+    <PostBuildEvent>
+      <Command>xcopy "$(SolutionDir)3rdParty\lib\sdl2-2.0.9\x64\SDL2.dll" "$(OutDir)" /y /D
+xcopy "$(SolutionDir)3rdParty\lib\sdl2_image-2.0.5\x64\SDL2_image.dll" "$(OutDir)" /y /D
+xcopy "$(SolutionDir)3rdParty\lib\vld\x64\vld_x64.dll" "$(OutDir)" /y /D
+xcopy "$(SolutionDir)3rdParty\lib\vld\x64\dbghelp.dll" "$(OutDir)" /y /D
+xcopy "$(SolutionDir)3rdParty\lib\vld\x64\Microsoft.DTfW.DHL.manifest" "$(OutDir)" /y /D</Command>
+    </PostBuildEvent>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <ClCompile>
+      <WarningLevel>Level3</WarningLevel>
+      <Optimization>MaxSpeed</Optimization>
+      <FunctionLevelLinking>true</FunctionLevelLinking>
+      <IntrinsicFunctions>true</IntrinsicFunctions>
+      <PreprocessorDefinitions>WIN32;WIN64;NDEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PrecompiledHeader>Use</PrecompiledHeader>
+      <PrecompiledHeaderFile>PCH.h</PrecompiledHeaderFile>
+      <AdditionalIncludeDirectories>$(SolutionDir)3rdParty\include\sdl2-2.0.9\;$(SolutionDir)3rdParty\include\sdl2_image-2.0.5\;$(SolutionDir)3rdParty\include\vld\;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+    </ClCompile>
+    <Link>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+      <EnableCOMDATFolding>true</EnableCOMDATFolding>
+      <OptimizeReferences>true</OptimizeReferences>
+      <SubSystem>Console</SubSystem>
+      <AdditionalDependencies>SDL2.lib;SDL2main.lib;SDL2_image.lib;vld.lib;cudart_static.lib;kernel32.lib;user32.lib;gdi32.lib;winspool.lib;comdlg32.lib;advapi32.lib;shell32.lib;ole32.lib;oleaut32.lib;uuid.lib;odbc32.lib;odbccp32.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalLibraryDirectories>$(SolutionDir)3rdParty\lib\sdl2-2.0.9\x64\;$(SolutionDir)3rdParty\lib\sdl2_image-2.0.5\x64\;$(SolutionDir)3rdParty\lib\vld\x64\;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+    </Link>
+    <CudaCompile>
+      <TargetMachinePlatform>64</TargetMachinePlatform>
+      <CodeGeneration>compute_61,sm_61</CodeGeneration>
+      <PtxAsOptionV>false</PtxAsOptionV>
+    </CudaCompile>
+    <PostBuildEvent>
+      <Command>xcopy "$(SolutionDir)3rdParty\lib\sdl2-2.0.9\x64\SDL2.dll" "$(OutDir)" /y /D
+xcopy "$(SolutionDir)3rdParty\lib\sdl2_image-2.0.5\x64\SDL2_image.dll" "$(OutDir)" /y /D
+xcopy "$(SolutionDir)3rdParty\lib\vld\x64\vld_x64.dll" "$(OutDir)" /y /D
+xcopy "$(SolutionDir)3rdParty\lib\vld\x64\dbghelp.dll" "$(OutDir)" /y /D
+xcopy "$(SolutionDir)3rdParty\lib\vld\x64\Microsoft.DTfW.DHL.manifest" "$(OutDir)" /y /D</Command>
+    </PostBuildEvent>
+  </ItemDefinitionGroup>
+  <ItemGroup>
+    <CudaCompile Include="kernel.cu" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="Camera.cpp" />
+    <ClCompile Include="DirectionalLight.cpp" />
+    <ClCompile Include="ERenderer.cpp" />
+    <ClCompile Include="ETimer.cpp" />
+    <ClCompile Include="EventManager.cpp" />
+    <ClCompile Include="Light.cpp" />
+    <ClCompile Include="Mesh.cpp" />
+    <ClCompile Include="ObjParser.cpp" />
+    <ClCompile Include="PCH.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Create</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|x64'">Create</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="PointLight.cpp" />
+    <ClCompile Include="SceneGraph.cpp" />
+    <ClCompile Include="SceneManager.cpp" />
+    <ClCompile Include="Texture.cpp" />
+    <ClCompile Include="Triangle.cpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="Camera.h" />
+    <ClInclude Include="DirectionalLight.h" />
+    <ClInclude Include="EMath.h" />
+    <ClInclude Include="EMathUtilities.h" />
+    <ClInclude Include="EMatrix.h" />
+    <ClInclude Include="EMatrix2.h" />
+    <ClInclude Include="EMatrix3.h" />
+    <ClInclude Include="EMatrix4.h" />
+    <ClInclude Include="EPoint.h" />
+    <ClInclude Include="EPoint2.h" />
+    <ClInclude Include="EPoint3.h" />
+    <ClInclude Include="EPoint4.h" />
+    <ClInclude Include="ERenderer.h" />
+    <ClInclude Include="ERGBColor.h" />
+    <ClInclude Include="ETimer.h" />
+    <ClInclude Include="EVector.h" />
+    <ClInclude Include="EVector2.h" />
+    <ClInclude Include="EVector3.h" />
+    <ClInclude Include="EVector4.h" />
+    <ClInclude Include="EventManager.h" />
+    <ClInclude Include="Light.h" />
+    <ClInclude Include="Mesh.h" />
+    <ClInclude Include="ObjParser.h" />
+    <ClInclude Include="PCH.h" />
+    <ClInclude Include="PointLight.h" />
+    <ClInclude Include="SceneGraph.h" />
+    <ClInclude Include="SceneManager.h" />
+    <ClInclude Include="Texture.h" />
+    <ClInclude Include="Triangle.h" />
+    <ClInclude Include="Vertex.h" />
+    <ClInclude Include="Vertices.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="CustomCUDARasterizer.props" />
+  </ItemGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+  <ImportGroup Label="ExtensionTargets">
+    <Import Project="$(VCTargetsPath)\BuildCustomizations\CUDA 11.5.targets" />
+  </ImportGroup>
+</Project>
