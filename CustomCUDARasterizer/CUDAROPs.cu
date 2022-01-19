@@ -10,7 +10,7 @@
 #include "SceneManager.h"
 #include "GPUTexture.cuh"
 
-GPU_CALLABLE OVertex CUDAROP::GetNDCVertex(const IVertex & vertex, const FPoint3 & camPos, const FMatrix4 & viewMatrix, const FMatrix4 & projectionMatrix, const FMatrix4 & worldMatrix)
+GPU_CALLABLE OVertex CUDAROP::GetNDCVertex(const IVertex& vertex, const FPoint3& camPos, const FMatrix4& viewMatrix, const FMatrix4& projectionMatrix, const FMatrix4& worldMatrix)
 {
 	// combined worldViewProjectionMatrix
 	const FMatrix4 worldViewProjectionMatrix = projectionMatrix * viewMatrix * worldMatrix;
@@ -51,7 +51,7 @@ GPU_CALLABLE OVertex* CUDAROP::GetNDCMeshVertices(const IVertex vertices[], cons
 	return pOvertices;
 }
 
-GPU_CALLABLE void CUDAROP::RenderPixelsInTriangle(OVertex* screenspaceTriangle[3],
+GPU_CALLABLE void CUDAROP::RenderPixelsInTriangle(OVertex* screenspaceTriangle[3], FPoint4 rasterCoords[3],
 	SDL_Surface* pBuffer, float* pDepthBuffer, 
 	const BoundingBox& bb, 
 	const unsigned int width, const unsigned int height)
@@ -72,39 +72,39 @@ GPU_CALLABLE void CUDAROP::RenderPixelsInTriangle(OVertex* screenspaceTriangle[3
 			const FPoint2 pixel{ float(c), float(r) };
 			float weights[3];
 
-			if (CUDAROP::IsPixelInTriangle(screenspaceTriangle, pixel, weights))
+			if (CUDAROP::IsPixelInTriangle(rasterCoords, pixel, weights))
 			{
 				float zInterpolated{};
-				if (CUDAROP::DepthTest(screenspaceTriangle, pDepthBuffer[size_t(c) + (size_t(r) * width)], weights, zInterpolated))
+				if (CUDAROP::DepthTest(rasterCoords, pDepthBuffer[size_t(c) + (size_t(r) * width)], weights, zInterpolated))
 				{
 					const float wInterpolated = (weights[0] * v0.v.w) + (weights[1] * v1.v.w) + (weights[2] * v2.v.w);
 
 					FVector2 interpolatedUV{
-						weights[0] * (v0.uv.x / v0.v.w) + weights[1] * (v1.uv.x / v1.v.w) + weights[2] * (v2.uv.x / v2.v.w),
-						weights[0] * (v0.uv.y / v0.v.w) + weights[1] * (v1.uv.y / v1.v.w) + weights[2] * (v2.uv.y / v2.v.w) };
+						weights[0] * (v0.uv.x / rasterCoords[0].w) + weights[1] * (v1.uv.x / rasterCoords[1].w) + weights[2] * (v2.uv.x / rasterCoords[2].w),
+						weights[0] * (v0.uv.y / rasterCoords[0].w) + weights[1] * (v1.uv.y / rasterCoords[1].w) + weights[2] * (v2.uv.y / rasterCoords[2].w) };
 					interpolatedUV *= wInterpolated;
 
 					FVector3 interpolatedNormal{
-						weights[0] * (v0.n.x / v0.v.w) + weights[1] * (v1.n.x / v1.v.w) + weights[2] * (v2.n.x / v2.v.w),
-						weights[0] * (v0.n.y / v0.v.w) + weights[1] * (v1.n.y / v1.v.w) + weights[2] * (v2.n.y / v2.v.w),
-						weights[0] * (v0.n.z / v0.v.w) + weights[1] * (v1.n.z / v1.v.w) + weights[2] * (v2.n.z / v2.v.w) };
+						 weights[0] * (v0.n.x / rasterCoords[0].w) + weights[1] * (v1.n.x / rasterCoords[1].w) + weights[2] * (v2.n.x / rasterCoords[2].w),
+						 weights[0] * (v0.n.y / rasterCoords[0].w) + weights[1] * (v1.n.y / rasterCoords[1].w) + weights[2] * (v2.n.y / rasterCoords[2].w),
+						 weights[0] * (v0.n.z / rasterCoords[0].w) + weights[1] * (v1.n.z / rasterCoords[1].w) + weights[2] * (v2.n.z / rasterCoords[2].w) };
 					interpolatedNormal *= wInterpolated;
 
 					const FVector3 interpolatedTangent{
-						weights[0] * (v0.tan.x / v0.v.w) + weights[1] * (v1.tan.x / v1.v.w) + weights[2] * (v2.tan.x / v2.v.w),
-						weights[0] * (v0.tan.y / v0.v.w) + weights[1] * (v1.tan.y / v1.v.w) + weights[2] * (v2.tan.y / v2.v.w),
-						weights[0] * (v0.tan.z / v0.v.w) + weights[1] * (v1.tan.z / v1.v.w) + weights[2] * (v2.tan.z / v2.v.w) };
+						weights[0] * (v0.tan.x / rasterCoords[0].w) + weights[1] * (v1.tan.x / rasterCoords[1].w) + weights[2] * (v2.tan.x / rasterCoords[2].w),
+						weights[0] * (v0.tan.y / rasterCoords[0].w) + weights[1] * (v1.tan.y / rasterCoords[1].w) + weights[2] * (v2.tan.y / rasterCoords[2].w),
+						weights[0] * (v0.tan.z / rasterCoords[0].w) + weights[1] * (v1.tan.z / rasterCoords[1].w) + weights[2] * (v2.tan.z / rasterCoords[2].w) };
 
 					FVector3 interpolatedViewDirection{
-						weights[0] * (v0.vd.y / v1.v.w) + weights[1] * (v1.vd.y / v1.v.w) + weights[2] * (v2.vd.y / v2.v.w),
-						weights[0] * (v0.vd.x / v1.v.w) + weights[1] * (v1.vd.x / v1.v.w) + weights[2] * (v2.vd.x / v2.v.w),
-						weights[0] * (v0.vd.z / v1.v.w) + weights[1] * (v1.vd.z / v1.v.w) + weights[2] * (v2.vd.z / v2.v.w) };
+					weights[0] * (v0.vd.y / rasterCoords[0].w) + weights[1] * (v1.vd.y / rasterCoords[1].w) + weights[2] * (v2.vd.y / rasterCoords[2].w),
+					weights[0] * (v0.vd.x / rasterCoords[0].w) + weights[1] * (v1.vd.x / rasterCoords[1].w) + weights[2] * (v2.vd.x / rasterCoords[2].w),
+					weights[0] * (v0.vd.z / rasterCoords[0].w) + weights[1] * (v1.vd.z / rasterCoords[1].w) + weights[2] * (v2.vd.z / rasterCoords[2].w) };
 					Normalize(interpolatedViewDirection);
 
 					const RGBColor interpolatedColour{
-						weights[0] * (v0.c.r / v1.v.w) + weights[1] * (v1.c.r / v1.v.w) + weights[2] * (v2.c.r / v2.v.w),
-						weights[0] * (v0.c.g / v1.v.w) + weights[1] * (v1.c.g / v1.v.w) + weights[2] * (v2.c.g / v2.v.w),
-						weights[0] * (v0.c.b / v1.v.w) + weights[1] * (v1.c.b / v1.v.w) + weights[2] * (v2.c.b / v2.v.w) };
+						weights[0] * (v0.c.r / rasterCoords[0].w) + weights[1] * (v1.c.r / rasterCoords[1].w) + weights[2] * (v2.c.r / rasterCoords[2].w),
+						weights[0] * (v0.c.g / rasterCoords[0].w) + weights[1] * (v1.c.g / rasterCoords[1].w) + weights[2] * (v2.c.g / rasterCoords[2].w),
+						weights[0] * (v0.c.b / rasterCoords[0].w) + weights[1] * (v1.c.b / rasterCoords[1].w) + weights[2] * (v2.c.b / rasterCoords[2].w) };
 
 					OVertex oVertex;
 					oVertex.v = FPoint4{ pixel, zInterpolated, wInterpolated };
@@ -194,11 +194,11 @@ GPU_CALLABLE bool CUDAROP::EdgeFunction(const FVector2& v0, const FVector2& v1, 
 	return cross < 0.f;
 }
 
-GPU_CALLABLE bool CUDAROP::IsPixelInTriangle(OVertex* screenspaceTriangle[3], const FPoint2& pixel, float weights[3])
+GPU_CALLABLE bool CUDAROP::IsPixelInTriangle(FPoint4 rasterCoords[3], const FPoint2& pixel, float weights[3])
 {
-	const FPoint2& v0 = screenspaceTriangle[0]->v.xy;
-	const FPoint2& v1 = screenspaceTriangle[1]->v.xy;
-	const FPoint2& v2 = screenspaceTriangle[2]->v.xy;
+	const FPoint2& v0 = rasterCoords[0].xy;
+	const FPoint2& v1 = rasterCoords[1].xy;
+	const FPoint2& v2 = rasterCoords[2].xy;
 
 	const FVector2 edgeA{ v0 - v1 };
 	const FVector2 edgeB{ v1 - v2 };
@@ -244,9 +244,9 @@ GPU_CALLABLE bool CUDAROP::IsPixelInTriangle(OVertex* screenspaceTriangle[3], co
 	return isInTriangle;
 }
 
-GPU_CALLABLE bool CUDAROP::DepthTest(OVertex* triangle[3], float& depthBuffer, float weights[3], float& zInterpolated)
+GPU_CALLABLE bool CUDAROP::DepthTest(FPoint4 rasterCoords[3], float& depthBuffer, float weights[3], float& zInterpolated)
 {
-	zInterpolated = (weights[0] * triangle[0]->v.z) + (weights[1] * triangle[1]->v.z) + (weights[2] * triangle[2]->v.z);
+	zInterpolated = (weights[0] * rasterCoords[0].z) + (weights[1] * rasterCoords[1].z) + (weights[2] * rasterCoords[2].z);
 
 	if (zInterpolated < 0.f || zInterpolated > 1.f) return false;
 	if (zInterpolated > depthBuffer) return false;
@@ -274,16 +274,16 @@ GPU_CALLABLE bool CUDAROP::FrustumTest(const OVertex* NDC[3])
 	return isPassed;
 }
 
-GPU_CALLABLE void CUDAROP::SetVerticesToRasterScreenSpace(OVertex* NDCTriangle[3], const unsigned int width, const unsigned int height)
+GPU_CALLABLE void CUDAROP::NDCToScreenSpace(FPoint4 rasterCoords[3], const unsigned int width, const unsigned int height)
 {
 	for (int i{}; i < 3; ++i)
 	{
-		NDCTriangle[i]->v.x = ((NDCTriangle[i]->v.x + 1) / 2) * width;
-		NDCTriangle[i]->v.y = ((NDCTriangle[i]->v.y + 1) / 2) * height;
+		rasterCoords[i].x = ((rasterCoords[i].x + 1) / 2) * width;
+		rasterCoords[i].y = ((1 - rasterCoords[i].y) / 2) * height;
 	}
 }
 
-GPU_CALLABLE float GetMinElement(float val0, float val1, float val2)
+BOTH_CALLABLE float GetMinElement(float val0, float val1, float val2)
 {
 	float min = val0;
 	if (val1 < min)
@@ -293,7 +293,7 @@ GPU_CALLABLE float GetMinElement(float val0, float val1, float val2)
 	return min;
 }
 
-GPU_CALLABLE float GetMaxElement(float val0, float val1, float val2)
+BOTH_CALLABLE float GetMaxElement(float val0, float val1, float val2)
 {
 	float max = val0;
 	if (val1 > max)
@@ -303,13 +303,13 @@ GPU_CALLABLE float GetMaxElement(float val0, float val1, float val2)
 	return max;
 }
 
-GPU_CALLABLE BoundingBox CUDAROP::GetBoundingBox(OVertex* screenspaceTriangle[3], const unsigned int width, const unsigned int height)
+GPU_CALLABLE BoundingBox CUDAROP::GetBoundingBox(FPoint4 rasterCoords[3], const unsigned int width, const unsigned int height)
 {
 	BoundingBox bb;
-	bb.xMin = (short)GetMinElement(screenspaceTriangle[0]->v.x, screenspaceTriangle[1]->v.x, screenspaceTriangle[2]->v.x) - 1; // xMin
-	bb.yMin = (short)GetMinElement(screenspaceTriangle[0]->v.y, screenspaceTriangle[1]->v.y, screenspaceTriangle[2]->v.y) - 1; // yMin
-	bb.xMax = (short)GetMaxElement(screenspaceTriangle[0]->v.x, screenspaceTriangle[1]->v.x, screenspaceTriangle[2]->v.x) + 1; // xMax
-	bb.yMax = (short)GetMaxElement(screenspaceTriangle[0]->v.y, screenspaceTriangle[1]->v.y, screenspaceTriangle[2]->v.y) + 1; // yMax
+	bb.xMin = (short)GetMinElement(rasterCoords[0].x, rasterCoords[1].x, rasterCoords[2].x) - 1; // xMin
+	bb.yMin = (short)GetMinElement(rasterCoords[0].y, rasterCoords[1].y, rasterCoords[2].y) - 1; // yMin
+	bb.xMax = (short)GetMaxElement(rasterCoords[0].x, rasterCoords[1].x, rasterCoords[2].x) + 1; // xMax
+	bb.yMax = (short)GetMaxElement(rasterCoords[0].y, rasterCoords[1].y, rasterCoords[2].y) + 1; // yMax
 
 	if (bb.xMin < 0) bb.xMin = 0; //clamp minX to Left of screen
 	if (bb.yMin < 0) bb.yMin = 0; //clamp minY to Bottom of screen
@@ -319,9 +319,9 @@ GPU_CALLABLE BoundingBox CUDAROP::GetBoundingBox(OVertex* screenspaceTriangle[3]
 	return bb;
 }
 
-GPU_CALLABLE void CUDAROP::RasterizeTriangle(OVertex* triangle[3], SDL_Surface* pBuffer, float* pDepthBuffer, const unsigned int width, const unsigned int height)
+GPU_CALLABLE void CUDAROP::RasterizeTriangle(OVertex* triangle[3], FPoint4 rasterCoords[3], SDL_Surface* pBuffer, float* pDepthBuffer, const unsigned int width, const unsigned int height)
 {
-	CUDAROP::SetVerticesToRasterScreenSpace(triangle, width, height);
-	const BoundingBox bb = CUDAROP::GetBoundingBox(triangle, width, height);
-	CUDAROP::RenderPixelsInTriangle(triangle, pBuffer, pDepthBuffer, bb, width, height);
+	CUDAROP::NDCToScreenSpace(rasterCoords, width, height);
+	const BoundingBox bb = CUDAROP::GetBoundingBox(rasterCoords, width, height);
+	CUDAROP::RenderPixelsInTriangle(triangle, rasterCoords, pBuffer, pDepthBuffer, bb, width, height);
 }

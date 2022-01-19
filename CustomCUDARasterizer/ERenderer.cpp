@@ -72,12 +72,14 @@ void Elite::Renderer::Render()
 				OVertex& v2 = NDCVertices[indices[idx]];
 
 				// separate triangle representation (array of OVertex*)
-				OVertex* NDCtriangle[3]{ &v0, &v1, &v2 };
+				OVertex* triangle[3]{ &v0, &v1, &v2 };
+				FPoint4 rasterCoords[3]{ v0.v, v1.v, v2.v }; //painful, but unavoidable copy
+				//Otherwise any mesh that uses a vertex twice will literally get shredded due to same values being used for frustum tests etc.
 
-				if (!FrustumTest(NDCtriangle))
+				if (!FrustumTest(rasterCoords))
 					continue;
 
-				RenderTriangle(NDCtriangle);
+				RenderTriangle(triangle, rasterCoords);
 			}
 		}
 		else //if (pT == Mesh::PrimitiveTopology::TriangleStrip)
@@ -96,11 +98,13 @@ void Elite::Renderer::Render()
 
 				// separate triangle representation (array of OVertex*)
 				OVertex* triangle[3]{ &v0, &v1, &v2 };
+				FPoint4 rasterCoords[3]{ v0.v, v1.v, v2.v }; //painful, but unavoidable copy
+				//Otherwise any mesh that uses a vertex twice will literally get shredded due to same values being used for frustum tests etc.
 
-				//if (!FrustumTest(triangle))
-				//	continue;
+				if (!FrustumTest(rasterCoords))
+					continue;
 
-				RenderTriangle(triangle);;
+				RenderTriangle(triangle, rasterCoords);
 
 				isOdd = !isOdd; // !flip last 2 vertices each odd triangle!
 			}
@@ -113,10 +117,10 @@ void Elite::Renderer::Render()
 	SDL_UpdateWindowSurface(m_pWindow);
 }
 
-void Elite::Renderer::RenderTriangle(OVertex* NDCTriangle[3])
+void Elite::Renderer::RenderTriangle(OVertex* triangle[3], FPoint4 rasterCoords[3])
 {
-	SetVerticesToRasterScreenSpace(NDCTriangle); //NDC to Screenspace
-	RenderPixelsInTriangle(NDCTriangle); //Rasterize Screenspace triangle
+	NDCToScreenSpace(rasterCoords); //NDC to Screenspace
+	RenderPixelsInTriangle(triangle, rasterCoords); //Rasterize Screenspace triangle
 }
 
 bool Elite::Renderer::SaveBackbufferToImage() const
@@ -211,38 +215,36 @@ std::vector<OVertex> Elite::Renderer::GetNDCMeshVertices(const std::vector<IVert
 	// Basically the compilers optimizes the proces above so an automatic std::move() will be used instead of a copy construction (thank god)
 }
 
-void Elite::Renderer::RenderPixelsInTriangle(OVertex* screenspaceTriangle[3])
+void Elite::Renderer::RenderPixelsInTriangle(OVertex* triangle[3], FPoint4 rasterCoords[3])
 {
 	SceneManager& sm = *SceneManager::GetInstance();
-	const BoundingBox bb = GetBoundingBox(screenspaceTriangle);
+	const BoundingBox bb = GetBoundingBox(rasterCoords);
 
-	const OVertex& v0 = *screenspaceTriangle[0];
-	const OVertex& v1 = *screenspaceTriangle[1];
-	const OVertex& v2 = *screenspaceTriangle[2];
+	const OVertex& v0 = *triangle[0];
+	const OVertex& v1 = *triangle[1];
+	const OVertex& v2 = *triangle[2];
 
 	//Loop over all pixels in bounding box
-	for (uint32_t r = bb.yMin; r < bb.yMax; ++r) // adding and subtracting 1 to get rid of seaming artifacts
+	for (uint32_t r = bb.yMin; r < bb.yMax; ++r)
 	{
 		for (uint32_t c = bb.xMin; c < bb.xMax; ++c)
 		{
 			const FPoint2 pixel{ float(c), float(r) };
-			float weights[3]{}; // array of 3 addresses (pointers aa)
+			float weights[3]{}; // array of 3 addresses
 
-			if (IsPixelInTriangle(screenspaceTriangle, pixel, weights))
+			if (IsPixelInTriangle(rasterCoords, pixel, weights))
 			{
 				float zInterpolated{};
-				if (DepthTest(screenspaceTriangle, m_pDepthBuffer[size_t(c) + (size_t(r) * m_Width)], weights, zInterpolated))
+				if (DepthTest(rasterCoords, m_pDepthBuffer[size_t(c) + (size_t(r) * m_Width)], weights, zInterpolated))
 				{
-					// apparently this method is faster
-					FVector2 interpolatedUV{ weights[0] * (v0.uv.x / v0.v.w) + weights[1] * (v1.uv.x / v1.v.w) + weights[2] * (v2.uv.x / v2.v.w),
-											 weights[0] * (v0.uv.y / v0.v.w) + weights[1] * (v1.uv.y / v1.v.w) + weights[2] * (v2.uv.y / v2.v.w) };
-					//FVector2 interpolatedUV2{ (weights[0] * (triangle[0]->uv / triangle[0]->v.w)) + (weights[1] * (triangle[1]->uv / triangle[1]->v.w)) + (weights[2] * (triangle[2]->uv / triangle[2]->v.w)) };
-					
 					const float wInterpolated = (weights[0] * v0.v.w) + (weights[1] * v1.v.w) + (weights[2] * v2.v.w);
+
+					FVector2 interpolatedUV{ 
+						weights[0] * (v0.uv.x / rasterCoords[0].w) + weights[1] * (v1.uv.x / rasterCoords[1].w) + weights[2] * (v2.uv.x / rasterCoords[2].w),
+						weights[0] * (v0.uv.y / rasterCoords[0].w) + weights[1] * (v1.uv.y / rasterCoords[1].w) + weights[2] * (v2.uv.y / rasterCoords[2].w) };
 					interpolatedUV *= wInterpolated;
 
 					RGBColor finalColour{};
-
 					if (!sm.IsDepthColour()) // show depth colour?
 					{
 						if (m_pTextures->pDiff) // diffuse map present?
@@ -256,16 +258,16 @@ void Elite::Renderer::RenderPixelsInTriangle(OVertex* screenspaceTriangle[3])
 								FVector3 normal{ normalRGB.r, normalRGB.g, normalRGB.b }; // sampled Normal form normalMap
 
 								FVector3 interpolatedNormal{
-									 weights[0] * (v0.n.x / v0.v.w) + weights[1] * (v1.n.x / v1.v.w) + weights[2] * (v2.n.x / v2.v.w),
-									 weights[0] * (v0.n.y / v0.v.w) + weights[1] * (v1.n.y / v1.v.w) + weights[2] * (v2.n.y / v2.v.w),
-									 weights[0] * (v0.n.z / v0.v.w) + weights[1] * (v1.n.z / v1.v.w) + weights[2] * (v2.n.z / v2.v.w) };
+									 weights[0] * (v0.n.x / rasterCoords[0].w) + weights[1] * (v1.n.x / rasterCoords[1].w) + weights[2] * (v2.n.x / rasterCoords[2].w),
+									 weights[0] * (v0.n.y / rasterCoords[0].w) + weights[1] * (v1.n.y / rasterCoords[1].w) + weights[2] * (v2.n.y / rasterCoords[2].w),
+									 weights[0] * (v0.n.z / rasterCoords[0].w) + weights[1] * (v1.n.z / rasterCoords[1].w) + weights[2] * (v2.n.z / rasterCoords[2].w) };
 								// should be normalized anyway
 								interpolatedNormal *= wInterpolated;
 
 								const FVector3 interpolatedTangent{
-									weights[0] * (v0.tan.x / v0.v.w) + weights[1] * (v1.tan.x / v1.v.w) + weights[2] * (v2.tan.x / v2.v.w),
-									weights[0] * (v0.tan.y / v0.v.w) + weights[1] * (v1.tan.y / v1.v.w) + weights[2] * (v2.tan.y / v2.v.w),
-									weights[0] * (v0.tan.z / v0.v.w) + weights[1] * (v1.tan.z / v1.v.w) + weights[2] * (v2.tan.z / v2.v.w) };
+									weights[0] * (v0.tan.x / rasterCoords[0].w) + weights[1] * (v1.tan.x / rasterCoords[1].w) + weights[2] * (v2.tan.x / rasterCoords[2].w),
+									weights[0] * (v0.tan.y / rasterCoords[0].w) + weights[1] * (v1.tan.y / rasterCoords[1].w) + weights[2] * (v2.tan.y / rasterCoords[2].w),
+									weights[0] * (v0.tan.z / rasterCoords[0].w) + weights[1] * (v1.tan.z / rasterCoords[1].w) + weights[2] * (v2.tan.z / rasterCoords[2].w) };
 								// should be normalized from the parser
 
 								FVector3 binormal{ Cross(interpolatedTangent, interpolatedNormal) };
@@ -282,9 +284,9 @@ void Elite::Renderer::RenderPixelsInTriangle(OVertex* screenspaceTriangle[3])
 								//Normalize(normal);
 
 								FVector3 interpolatedViewDirection{
-								weights[0] * (v0.vd.y / v1.v.w) + weights[1] * (v1.vd.y / v1.v.w) + weights[2] * (v2.vd.y / v2.v.w),
-								weights[0] * (v0.vd.x / v1.v.w) + weights[1] * (v1.vd.x / v1.v.w) + weights[2] * (v2.vd.x / v2.v.w),
-								weights[0] * (v0.vd.z / v1.v.w) + weights[1] * (v1.vd.z / v1.v.w) + weights[2] * (v2.vd.z / v2.v.w) };
+								weights[0] * (v0.vd.y / rasterCoords[0].w) + weights[1] * (v1.vd.y / rasterCoords[1].w) + weights[2] * (v2.vd.y / rasterCoords[2].w),
+								weights[0] * (v0.vd.x / rasterCoords[0].w) + weights[1] * (v1.vd.x / rasterCoords[1].w) + weights[2] * (v2.vd.x / rasterCoords[2].w),
+								weights[0] * (v0.vd.z / rasterCoords[0].w) + weights[1] * (v1.vd.z / rasterCoords[1].w) + weights[2] * (v2.vd.z / rasterCoords[2].w) };
 								Normalize(interpolatedViewDirection);
 
 								//OVertex oVertex{};
@@ -377,11 +379,10 @@ void Elite::Renderer::ShadePixel(const OVertex& oVertex, const Mesh::Textures& t
 	SceneManager& sm = *SceneManager::GetInstance();
 	
 	RGBColor finalColour{};
-	
 	if (!sm.IsDepthColour()) // show depth colour?
 	{
 		const SampleState sampleState = sm.GetSampleState();
-		const RGBColor diffuseColour = textures.pDiff->Sample(oVertex.uv, sampleState); // sample RGB colour
+		RGBColor diffuseColour = textures.pDiff->Sample(oVertex.uv, sampleState); // sample RGB colour
 	
 		const RGBColor normalRGB = textures.pNorm->Sample(oVertex.uv, sampleState); // sample RGB Normal
 		FVector3 normal{ normalRGB.r, normalRGB.g, normalRGB.b }; // sampled Normal form normalMap
@@ -398,7 +399,7 @@ void Elite::Renderer::ShadePixel(const OVertex& oVertex, const Mesh::Textures& t
 	
 		normal = tangentSpaceAxis * normal; // normal defined in tangent space
 		//Normalize(normal);
-	
+
 		// light calculations
 		for (Light* pLight : sm.GetSceneGraph()->GetLights())
 		{
@@ -407,14 +408,16 @@ void Elite::Renderer::ShadePixel(const OVertex& oVertex, const Mesh::Textures& t
 	
 			if (observedArea < 0.f)
 				continue;
+
+			//diffuseColour *= observedArea;
 	
 			const RGBColor biradiance{ pLight->GetBiradiance(FPoint3{}) };
 			// swapped direction of lights
 	
 			// phong
 			const FVector3 reflectV{ Reflect(lightDir, normal) };
-			//Normalize(reflectV);
-			const float angle{ Dot(reflectV, oVertex.vd) };
+			float angle{ Dot(oVertex.vd, reflectV) };
+			angle = Clamp(angle, 0.f, 1.f);
 			const RGBColor specularSample{ textures.pSpec->Sample(oVertex.uv, sampleState) };
 			const RGBColor phongSpecularReflection{ specularSample * powf(angle, textures.pGloss->Sample(oVertex.uv, sampleState).r * 25.f) };
 	
@@ -422,6 +425,7 @@ void Elite::Renderer::ShadePixel(const OVertex& oVertex, const Mesh::Textures& t
 			//const RGBColor lambertColour{ (diffuseColour / float(E_PI)) * (RGBColor{1.f,1.f,1.f} - specularSample) };
 			const RGBColor lambertColour{ (diffuseColour * specularSample) / float(PI) }; //severely incorrect result, using diffusecolour for now
 			// Lambert diffuse == incoming colour multiplied by diffuse coefficient (1 in this case) divided by Pi
+			const RGBColor ambientColor = { 0.05f, 0.05f, 0.05f };
 			finalColour += biradiance * (diffuseColour + phongSpecularReflection) * observedArea;
 		}
 		finalColour.ClampColor();
@@ -439,11 +443,11 @@ void Elite::Renderer::ShadePixel(const OVertex& oVertex, const Mesh::Textures& t
 		static_cast<uint8_t>(finalColour.b * 255.f));
 }
 
-bool Elite::Renderer::IsPixelInTriangle(OVertex* screenspaceTriangle[3], const FPoint2& pixel, float weights[3])
+bool Elite::Renderer::IsPixelInTriangle(FPoint4 rasterCoords[3], const FPoint2& pixel, float weights[3])
 {
-	const FPoint2& v0 = screenspaceTriangle[0]->v.xy;
-	const FPoint2& v1 = screenspaceTriangle[1]->v.xy;
-	const FPoint2& v2 = screenspaceTriangle[2]->v.xy;
+	const FPoint2& v0 = rasterCoords[0].xy;
+	const FPoint2& v1 = rasterCoords[1].xy;
+	const FPoint2& v2 = rasterCoords[2].xy;
 
 	const FVector2 edgeA{ v0 - v1 };
 	const FVector2 edgeB{ v1 - v2 };
@@ -486,9 +490,9 @@ bool Elite::Renderer::IsPixelInTriangle(OVertex* screenspaceTriangle[3], const F
 	return true;
 }
 
-bool Elite::Renderer::DepthTest(OVertex* triangle[3], float& depthBuffer, float weights[3], float& zInterpolated)
+bool Elite::Renderer::DepthTest(FPoint4 rasterCoords[3], float& depthBuffer, float weights[3], float& zInterpolated)
 {
-	zInterpolated = (weights[0] * triangle[0]->v.z) + (weights[1] * triangle[1]->v.z) + (weights[2] * triangle[2]->v.z);
+	zInterpolated = (weights[0] * rasterCoords[0].z) + (weights[1] * rasterCoords[1].z) + (weights[2] * rasterCoords[2].z);
 	//float wInterpolated = (weights[0] * triangle[0]->v.w) + (weights[1] * triangle[1]->v.w) + (weights[2] * triangle[2]->v.w);
 
 	if (zInterpolated < 0 || zInterpolated > 1.f) return false;
@@ -499,39 +503,38 @@ bool Elite::Renderer::DepthTest(OVertex* triangle[3], float& depthBuffer, float 
 	return true;
 }
 
-bool Elite::Renderer::FrustumTestVertex(const OVertex& NDC)
+bool Elite::Renderer::FrustumTestVertex(const FPoint4& NDCs)
 {
-	if (NDC.v.x < -1.f || NDC.v.x > 1.f) return false; // perspective divide X in NDC
-	if (NDC.v.y < -1.f || NDC.v.y > 1.f) return false; // perspective divide Y in NDC
-	if (NDC.v.z < 0.f || NDC.v.z > 1.f) return false; // perspective divide Z in NDC
-
+	if (NDCs.x < -1.f || NDCs.x > 1.f) return false; // perspective divide X in NDC
+	if (NDCs.y < -1.f || NDCs.y > 1.f) return false; // perspective divide Y in NDC
+	if (NDCs.z < 0.f || NDCs.z > 1.f) return false; // perspective divide Z in NDC
 	return true;
 }
 
-bool Elite::Renderer::FrustumTest(OVertex* NDC[3])
+bool Elite::Renderer::FrustumTest(FPoint4 rasterCoords[3])
 {
-	if (!FrustumTestVertex(*NDC[0])) return false;
-	if (!FrustumTestVertex(*NDC[1])) return false;
-	return FrustumTestVertex(*NDC[2]); //we can return the last check
+	if (!FrustumTestVertex(rasterCoords[0])) return false;
+	if (!FrustumTestVertex(rasterCoords[1])) return false;
+	return FrustumTestVertex(rasterCoords[2]); //we can return the last check
 }
 
-void Elite::Renderer::SetVerticesToRasterScreenSpace(OVertex* triangle[3])
+void Elite::Renderer::NDCToScreenSpace(FPoint4 rasterCoords[3])
 {
 	for (int i{}; i < 3; ++i)
 	{
-		triangle[i]->v.x = ((triangle[i]->v.x + 1) / 2) * m_Width;
-		triangle[i]->v.y = ((triangle[i]->v.y + 1) / 2) * m_Height;
+		rasterCoords[i].x = ((rasterCoords[i].x + 1) / 2) * m_Width;
+		rasterCoords[i].y = ((1 - rasterCoords[i].y) / 2) * m_Height;
 	}
 }
 
-BoundingBox Elite::Renderer::GetBoundingBox(OVertex* screenspaceTriangle[3])
+BoundingBox Elite::Renderer::GetBoundingBox(FPoint4 rasterCoords[3])
 {
 	//TODO: make member variable and update
 	BoundingBox bb;
-	bb.xMin = unsigned short(std::min(std::initializer_list<float>{screenspaceTriangle[0]->v.x, screenspaceTriangle[1]->v.x, screenspaceTriangle[2]->v.x})) - 1; // xMin
-	bb.yMin = unsigned short(std::min(std::initializer_list<float>{screenspaceTriangle[0]->v.y, screenspaceTriangle[1]->v.y, screenspaceTriangle[2]->v.y})) - 1; // yMin
-	bb.xMax = unsigned short(std::max(std::initializer_list<float>{screenspaceTriangle[0]->v.x, screenspaceTriangle[1]->v.x, screenspaceTriangle[2]->v.x})) + 1; // xMax
-	bb.yMax = unsigned short(std::max(std::initializer_list<float>{screenspaceTriangle[0]->v.y, screenspaceTriangle[1]->v.y, screenspaceTriangle[2]->v.y})) + 1; // yMax
+	bb.xMin = short(std::min(std::initializer_list<float>{rasterCoords[0].x, rasterCoords[1].x, rasterCoords[2].x})) - 1; // xMin
+	bb.yMin = short(std::min(std::initializer_list<float>{rasterCoords[0].y, rasterCoords[1].y, rasterCoords[2].y})) - 1; // yMin
+	bb.xMax = short(std::max(std::initializer_list<float>{rasterCoords[0].x, rasterCoords[1].x, rasterCoords[2].x})) + 1; // xMax
+	bb.yMax = short(std::max(std::initializer_list<float>{rasterCoords[0].y, rasterCoords[1].y, rasterCoords[2].y})) + 1; // yMax
 
 	if (bb.xMin < 0) bb.xMin = 0; //clamp minX to Left of screen
 	if (bb.yMin < 0) bb.yMin = 0; //clamp minY to Bottom of screen

@@ -23,6 +23,22 @@ GPU_KERNEL void RenderKernel(SDL_Surface* pBackBuffer, uint32_t width, uint32_t 
 
 	//TODO: render triangle
 	//CUDAROP::RenderTriangle(triangle);
+
+	/*
+	Send 1 triangle per thread (coarse rasterizer)
+
+	thread calculates 3 vertices, barycentric coordinates
+
+	thread atomically does depthtest in rasterizer stage before pixelshader
+
+	IF depthtest succeeds, shade pixel
+	ELSE continue/break
+
+	TODO: use shared memory, then coalescened copy
+	e.g. single bin buffer in single shared memory
+
+	TODO: use binning, each bin their AABBs (and checks) (bin rasterizer)
+	*/
 }
 
 CPU_CALLABLE void Render(WindowHelper* pWindowHelper, Camera* pCamera)

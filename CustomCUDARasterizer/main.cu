@@ -42,101 +42,101 @@ void Init()
 {
 	std::vector<SceneGraph*> pSceneGraphs{};
 
-	//{
-	//	// SceneGraph 1
-	//	SceneGraph* pSceneGraph = new SceneGraph{};
-	//	{
-	//		// Mesh 1
-	//		std::vector<IVertex> vertices{
-	//			IVertex{ FPoint3{ 0.f, 2.f, 0.f }, FVector2{} },
-	//			IVertex{ FPoint3{ -1.f, 0.f, 0.f }, FVector2{}},
-	//			IVertex{ FPoint3{ 1.f, 0.f, 0.f }, FVector2{} } };
-	//		std::vector<int> indices{ 0, 1, 2 };
-	//		const std::string texPaths[4]{ "", "", "", "" };
-	//		Mesh* pMesh = new Mesh{ vertices, indices, texPaths, Mesh::PrimitiveTopology::TriangleList };
-	//		pSceneGraph->AddMesh(pMesh);
-	//	}
-	//	{
-	//		// Mesh 2
-	//		std::vector<IVertex> vertices{
-	//			IVertex{ FPoint3{ 0.f, 4.f, -2.f }, FVector2{}, FVector3{1.f,1.f,1.f}, RGBColor{1.f, 0.f, 0.f} },
-	//			IVertex{ FPoint3{ -3.f, -2.f, -2.f }, FVector2{}, FVector3{1.f,1.f,1.f}, RGBColor{0.f, 1.f, 0.f} },
-	//			IVertex{ FPoint3{ 3.f, -2.f, -2.f }, FVector2{}, FVector3{1.f,1.f,1.f}, RGBColor{0.f, 0.f, 1.f} } };
-	//		std::vector<int> indices{ 0, 1, 2 };
-	//		const std::string texPaths[4]{ "", "", "", "" };
-	//		Mesh* pMesh = new Mesh{ vertices, indices, texPaths, Mesh::PrimitiveTopology::TriangleList };
-	//		pSceneGraph->AddMesh(pMesh);
-	//	}
-	//	pSceneGraph->AddLight(new DirectionalLight{ RGBColor{1.f, 1.f, 1.f}, 2.f, FVector3{ 0.577f, -0.577f, -0.577f } });
-	//	pSceneGraphs.push_back(pSceneGraph);
-	//}
+	{
+		// SceneGraph 1
+		SceneGraph* pSceneGraph = new SceneGraph{};
+		{
+			// Mesh 1
+			std::vector<IVertex> vertices{
+				IVertex{ FPoint3{ 0.f, 2.f, 0.f }, FVector2{} },
+				IVertex{ FPoint3{ -1.f, 0.f, 0.f }, FVector2{}},
+				IVertex{ FPoint3{ 1.f, 0.f, 0.f }, FVector2{} } };
+			std::vector<int> indices{ 0, 1, 2 };
+			const std::string texPaths[4]{ "", "", "", "" };
+			Mesh* pMesh = new Mesh{ vertices, indices, texPaths, Mesh::PrimitiveTopology::TriangleList };
+			pSceneGraph->AddMesh(pMesh);
+		}
+		{
+			// Mesh 2
+			std::vector<IVertex> vertices{
+				IVertex{ FPoint3{ 0.f, 4.f, -2.f }, FVector2{}, FVector3{1.f,1.f,1.f}, RGBColor{1.f, 0.f, 0.f} },
+				IVertex{ FPoint3{ -3.f, -2.f, -2.f }, FVector2{}, FVector3{1.f,1.f,1.f}, RGBColor{0.f, 1.f, 0.f} },
+				IVertex{ FPoint3{ 3.f, -2.f, -2.f }, FVector2{}, FVector3{1.f,1.f,1.f}, RGBColor{0.f, 0.f, 1.f} } };
+			std::vector<int> indices{ 0, 1, 2 };
+			const std::string texPaths[4]{ "", "", "", "" };
+			Mesh* pMesh = new Mesh{ vertices, indices, texPaths, Mesh::PrimitiveTopology::TriangleList };
+			pSceneGraph->AddMesh(pMesh);
+		}
+		pSceneGraph->AddLight(new DirectionalLight{ RGBColor{1.f, 1.f, 1.f}, 2.f, FVector3{ 0.577f, -0.577f, -0.577f } });
+		pSceneGraphs.push_back(pSceneGraph);
+	}
 
-	//{
-	//	// SceneGraph 2
-	//	SceneGraph* pSceneGraph = new SceneGraph{};
-	//	std::vector<IVertex> vertices{
-	//		IVertex{FPoint3{-3, 3, -2}, FVector2{0, 0}}, IVertex{FPoint3{0, 3, -2}, FVector2{0.5f, 0}}, IVertex{FPoint3{3, 3, -2}, FVector2{1, 0}},
-	//		IVertex{FPoint3{-3, 0, -2}, FVector2{0, 0.5f}}, IVertex{FPoint3{0, 0, -2}, FVector2{0.5f, 0.5f}}, IVertex{FPoint3{3, 0, -2}, FVector2{1, 0.5f}},
-	//		IVertex{FPoint3{-3, -3, -2}, FVector2{0, 1}}, IVertex{FPoint3{0, -3, -2}, FVector2{0.5f, 1}}, IVertex{FPoint3{3, -3, -2}, FVector2{1, 1}} };
-	//	// shared vertices among both quads (duh they're the same quad)
-	//	const std::string texPaths[4]{ "Resources/uv_grid_2.png", "", "", "" };
-	//	{
-	//		// Mesh 1
-	//		std::vector<int> indices{ 0, 3, 1,
-	//									3, 4, 1,
-	//									1, 4, 2,
-	//									4, 5, 2,
-	//									3, 6, 4,
-	//									6, 7, 4,
-	//									4, 7, 5,
-	//									7, 8, 5, }; // obviously a list
-	//		Mesh* pMesh = new Mesh{ vertices, indices, texPaths, Mesh::PrimitiveTopology::TriangleList };
-	//		//pSceneGraph->AddMesh(pMesh);
-	//	}
-	//	{
-	//		// Mesh 2
-	//		std::vector<int> indices{ 0, 3, 1, 4, 2, 5, 5, 3, 3, 6, 4, 7, 5, 8 }; // strip
-	//		Mesh* pMesh = new Mesh{ vertices, indices, texPaths, Mesh::PrimitiveTopology::TriangleStrip };
-	//		pSceneGraph->AddMesh(pMesh);
-	//		pSceneGraph->AddLight(new DirectionalLight{ RGBColor{1.f, 1.f, 1.f}, 2.f, FVector3{ 0.577f, -0.577f, -0.577f } });
-	//	}
-	//	pSceneGraphs.push_back(pSceneGraph);
-	//}
+	{
+		// SceneGraph 2
+		SceneGraph* pSceneGraph = new SceneGraph{};
+		std::vector<IVertex> vertices{
+			IVertex{FPoint3{-3, 3, -2}, FVector2{0, 0}}, IVertex{FPoint3{0, 3, -2}, FVector2{0.5f, 0}}, IVertex{FPoint3{3, 3, -2}, FVector2{1, 0}},
+			IVertex{FPoint3{-3, 0, -2}, FVector2{0, 0.5f}}, IVertex{FPoint3{0, 0, -2}, FVector2{0.5f, 0.5f}}, IVertex{FPoint3{3, 0, -2}, FVector2{1, 0.5f}},
+			IVertex{FPoint3{-3, -3, -2}, FVector2{0, 1}}, IVertex{FPoint3{0, -3, -2}, FVector2{0.5f, 1}}, IVertex{FPoint3{3, -3, -2}, FVector2{1, 1}} };
+		// shared vertices among both quads (duh they're the same quad)
+		const std::string texPaths[4]{ "Resources/uv_grid_2.png", "", "", "" };
+		{
+			// Mesh 1
+			std::vector<int> indices{ 0, 3, 1,
+										3, 4, 1,
+										1, 4, 2,
+										4, 5, 2,
+										3, 6, 4,
+										6, 7, 4,
+										4, 7, 5,
+										7, 8, 5, }; // obviously a list
+			Mesh* pMesh = new Mesh{ vertices, indices, texPaths, Mesh::PrimitiveTopology::TriangleList };
+			//pSceneGraph->AddMesh(pMesh);
+		}
+		{
+			// Mesh 2
+			std::vector<int> indices{ 0, 3, 1, 4, 2, 5, 5, 3, 3, 6, 4, 7, 5, 8 }; // strip
+			Mesh* pMesh = new Mesh{ vertices, indices, texPaths, Mesh::PrimitiveTopology::TriangleStrip };
+			pSceneGraph->AddMesh(pMesh);
+			pSceneGraph->AddLight(new DirectionalLight{ RGBColor{1.f, 1.f, 1.f}, 2.f, FVector3{ 0.577f, -0.577f, -0.577f } });
+		}
+		pSceneGraphs.push_back(pSceneGraph);
+	}
 	
-	//{
-	//	// SceneGraph 3 // TukTuk
-	//	SceneGraph* pSceneGraph = new SceneGraph{};
-	//	{
-	//		// Mesh 1
-	//		ObjParser parser{ "Resources/tuktuk.obj" };
-	//		parser.SetInvertYAxis(true);
-	//		parser.ReadFromObjFile();
-	//		std::vector<IVertex> vertices{ *parser.GetVertexBuffer() };
-	//		std::vector<int> indices{ parser.GetIndexBuffer() };
-	//		const std::string texPaths[4]{ "Resources/tuktuk.png", "", "", "" };
-	//		Mesh* pMesh = new Mesh{ vertices, indices, texPaths, Mesh::PrimitiveTopology::TriangleList, 1.f };
-	//		pSceneGraph->AddMesh(pMesh);
-	//		pSceneGraph->AddLight(new DirectionalLight{ RGBColor{1.f, 1.f, 1.f}, 2.f, FVector3{ 0.577f, -0.577f, -0.577f } });
-	//	}
-	//	pSceneGraphs.push_back(pSceneGraph);
-	//}
+	{
+		// SceneGraph 3 // TukTuk
+		SceneGraph* pSceneGraph = new SceneGraph{};
+		{
+			// Mesh 1
+			ObjParser parser{ "Resources/tuktuk.obj" };
+			parser.SetInvertYAxis(true);
+			parser.ReadFromObjFile();
+			std::vector<IVertex> vertices{ *parser.GetVertexBuffer() };
+			std::vector<int> indices{ parser.GetIndexBuffer() };
+			const std::string texPaths[4]{ "Resources/tuktuk.png", "", "", "" };
+			Mesh* pMesh = new Mesh{ vertices, indices, texPaths, Mesh::PrimitiveTopology::TriangleList, 1.f };
+			pSceneGraph->AddMesh(pMesh);
+			pSceneGraph->AddLight(new DirectionalLight{ RGBColor{1.f, 1.f, 1.f}, 2.f, FVector3{ 0.577f, -0.577f, -0.577f } });
+		}
+		pSceneGraphs.push_back(pSceneGraph);
+	}
 	
-	//{
-	//	// SceneGraph 4 // Bunny
-	//	SceneGraph* pSceneGraph = new SceneGraph{};
-	//	{
-	//		// Mesh 1
-	//		ObjParser parser{ "Resources/lowpoly_bunny.obj" };
-	//		parser.ReadFromObjFile();
-	//		std::vector<IVertex> vertices{ *parser.GetVertexBuffer() };
-	//		std::vector<int> indices{ parser.GetIndexBuffer() };
-	//		const std::string texPaths[4]{ "", "", "", "" };
-	//		Mesh* pMesh = new Mesh{ vertices, indices, texPaths, Mesh::PrimitiveTopology::TriangleList };
-	//		pSceneGraph->AddMesh(pMesh);
-	//		pSceneGraph->AddLight(new DirectionalLight{ RGBColor{1.f, 1.f, 1.f}, 2.f, FVector3{ 0.577f, -0.577f, -0.577f } });
-	//	}
-	//	pSceneGraphs.push_back(pSceneGraph);
-	//}
+	{
+		// SceneGraph 4 // Bunny
+		SceneGraph* pSceneGraph = new SceneGraph{};
+		{
+			// Mesh 1
+			ObjParser parser{ "Resources/lowpoly_bunny.obj" };
+			parser.ReadFromObjFile();
+			std::vector<IVertex> vertices{ *parser.GetVertexBuffer() };
+			std::vector<int> indices{ parser.GetIndexBuffer() };
+			const std::string texPaths[4]{ "", "", "", "" };
+			Mesh* pMesh = new Mesh{ vertices, indices, texPaths, Mesh::PrimitiveTopology::TriangleList };
+			pSceneGraph->AddMesh(pMesh);
+			pSceneGraph->AddLight(new DirectionalLight{ RGBColor{1.f, 1.f, 1.f}, 2.f, FVector3{ 0.577f, -0.577f, -0.577f } });
+		}
+		pSceneGraphs.push_back(pSceneGraph);
+	}
 	
 	{
 		// SceneGraph 5 // Vehicle
