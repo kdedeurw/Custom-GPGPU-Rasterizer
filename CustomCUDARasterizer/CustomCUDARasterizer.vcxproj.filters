@@ -22,9 +22,21 @@
     <Filter Include="Math">
       <UniqueIdentifier>{0801cd8e-d754-4039-8d10-f33aaf7f1c6b}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Helpers\CUDA">
+      <UniqueIdentifier>{5071df48-f904-44c8-a67f-059a6c47ddee}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
-    <CudaCompile Include="kernel.cu" />
+    <CudaCompile Include="main.cu" />
+    <CudaCompile Include="CUDAROPs.cu">
+      <Filter>Helpers\CUDA</Filter>
+    </CudaCompile>
+    <CudaCompile Include="Renderer.cu">
+      <Filter>Renderer</Filter>
+    </CudaCompile>
+    <CudaCompile Include="GPUTexture.cu">
+      <Filter>Renderer\Shading</Filter>
+    </CudaCompile>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="PCH.cpp" />
@@ -70,55 +82,10 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="PCH.h" />
-    <ClInclude Include="EMath.h">
-      <Filter>Math</Filter>
-    </ClInclude>
-    <ClInclude Include="EMathUtilities.h">
-      <Filter>Math</Filter>
-    </ClInclude>
-    <ClInclude Include="EMatrix.h">
-      <Filter>Math</Filter>
-    </ClInclude>
-    <ClInclude Include="EMatrix2.h">
-      <Filter>Math</Filter>
-    </ClInclude>
-    <ClInclude Include="EMatrix3.h">
-      <Filter>Math</Filter>
-    </ClInclude>
-    <ClInclude Include="EMatrix4.h">
-      <Filter>Math</Filter>
-    </ClInclude>
-    <ClInclude Include="EPoint.h">
-      <Filter>Math</Filter>
-    </ClInclude>
-    <ClInclude Include="EPoint2.h">
-      <Filter>Math</Filter>
-    </ClInclude>
-    <ClInclude Include="EPoint3.h">
-      <Filter>Math</Filter>
-    </ClInclude>
-    <ClInclude Include="EPoint4.h">
-      <Filter>Math</Filter>
-    </ClInclude>
     <ClInclude Include="Camera.h">
       <Filter>Helpers</Filter>
     </ClInclude>
     <ClInclude Include="ETimer.h">
-      <Filter>Helpers</Filter>
-    </ClInclude>
-    <ClInclude Include="EVector.h">
-      <Filter>Math</Filter>
-    </ClInclude>
-    <ClInclude Include="EVector2.h">
-      <Filter>Math</Filter>
-    </ClInclude>
-    <ClInclude Include="EVector3.h">
-      <Filter>Math</Filter>
-    </ClInclude>
-    <ClInclude Include="EVector4.h">
-      <Filter>Math</Filter>
-    </ClInclude>
-    <ClInclude Include="ERGBColor.h">
       <Filter>Helpers</Filter>
     </ClInclude>
     <ClInclude Include="ObjParser.h">
@@ -154,11 +121,74 @@
     <ClInclude Include="Vertex.h">
       <Filter>Renderer\Shading</Filter>
     </ClInclude>
-    <ClInclude Include="Vertices.h">
-      <Filter>Renderer\Shading</Filter>
-    </ClInclude>
     <ClInclude Include="ERenderer.h">
       <Filter>Renderer</Filter>
+    </ClInclude>
+    <ClInclude Include="CUDAROPs.cuh">
+      <Filter>Helpers\CUDA</Filter>
+    </ClInclude>
+    <ClInclude Include="BoundingBox.h">
+      <Filter>Helpers</Filter>
+    </ClInclude>
+    <ClInclude Include="Renderer.cuh">
+      <Filter>Renderer</Filter>
+    </ClInclude>
+    <ClInclude Include="WindowHelper.h">
+      <Filter>Helpers</Filter>
+    </ClInclude>
+    <ClInclude Include="Math.h">
+      <Filter>Math</Filter>
+    </ClInclude>
+    <ClInclude Include="MathUtilities.h">
+      <Filter>Math</Filter>
+    </ClInclude>
+    <ClInclude Include="Matrix.h">
+      <Filter>Math</Filter>
+    </ClInclude>
+    <ClInclude Include="Matrix2.h">
+      <Filter>Math</Filter>
+    </ClInclude>
+    <ClInclude Include="Matrix3.h">
+      <Filter>Math</Filter>
+    </ClInclude>
+    <ClInclude Include="Point.h">
+      <Filter>Math</Filter>
+    </ClInclude>
+    <ClInclude Include="Point2.h">
+      <Filter>Math</Filter>
+    </ClInclude>
+    <ClInclude Include="Point3.h">
+      <Filter>Math</Filter>
+    </ClInclude>
+    <ClInclude Include="Point4.h">
+      <Filter>Math</Filter>
+    </ClInclude>
+    <ClInclude Include="Vector.h">
+      <Filter>Math</Filter>
+    </ClInclude>
+    <ClInclude Include="Vector2.h">
+      <Filter>Math</Filter>
+    </ClInclude>
+    <ClInclude Include="Vector3.h">
+      <Filter>Math</Filter>
+    </ClInclude>
+    <ClInclude Include="Vector4.h">
+      <Filter>Math</Filter>
+    </ClInclude>
+    <ClInclude Include="Matrix4.h">
+      <Filter>Math</Filter>
+    </ClInclude>
+    <ClInclude Include="GPUHelpers.h">
+      <Filter>Helpers</Filter>
+    </ClInclude>
+    <ClInclude Include="RGBColor.h">
+      <Filter>Helpers</Filter>
+    </ClInclude>
+    <ClInclude Include="GPUTexture.cuh">
+      <Filter>Renderer\Shading</Filter>
+    </ClInclude>
+    <ClInclude Include="SampleState.h">
+      <Filter>Renderer\Shading</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>

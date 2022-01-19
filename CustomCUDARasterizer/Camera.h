@@ -1,65 +1,59 @@
 #pragma once
-#include "EMath.h"
-#include "EMathUtilities.h"
-
-using namespace Elite;
+#include "Math.h"
 
 class Camera
 {
 public:
-	static void CreateInstance(const FPoint3& position, float fov)
-	{
-		if (!m_pCamera) m_pCamera = new Camera{ position, fov };
-	}
-	static Camera* GetInstance()
-	{
-		if (!m_pCamera) return nullptr;
-		return m_pCamera;
-	}
-	~Camera();
+	explicit Camera(const FPoint3& position, float fov = 45.f);
+	virtual ~Camera() = default;
 
-	const FVector3& GetRight();
-	const FVector3& GetUp();
-	const FVector3& GetForward(const FPoint3& origin);
+	void SetPos(const FPoint3& pos) { m_Position = pos; };
+	void Update(float elapsedSec);
 
-	const FMatrix4& GenerateLookAt();
-	const FMatrix3& GenerateRotation();
-	const FMatrix4 GetLookAtMatrixConst() const;
+	FPoint3 GetPos() const { return GetPos(GetLookAtMatrix()); };
+	FPoint3 GetPos(const FMatrix4& lookatMatrix) const { return FPoint3{ lookatMatrix(0, 3), lookatMatrix(1, 3), lookatMatrix(2, 3) }; };
+	const FVector3& GetRight() const { return m_Right; };
+	const FVector3& GetUp() const { return m_Up; };
+	const FVector3& GetForward() const { return m_Forward; };
 
-	float GetFov() const;
-	const FPoint3& GetPos() const;
-
-	void Rotate(FVector3& direction);
-
-	void SetAspectRatio(float width, float height);
-	float GetAspectRatio() const;
-
-	void ProcessInputs(bool lmb, bool rmb, bool mouse3, float elapsedSec);
-	void ChangeSpeed(float value);
-
+	FMatrix4 GetLookAtMatrix() const;
+	FMatrix4 GetViewMatrix() const { return Inverse(GetLookAtMatrix()); };
+	FMatrix4 GetViewMatrix(const FMatrix4& lookatMatrix) const { return Inverse(lookatMatrix); };
+	FMatrix3 GetRotationMatrix() const { return FMatrix3{ m_Right, m_Up, m_Forward }; };
 	FMatrix4 GetProjectionMatrix() const;
 
+	float SetFov(float degrees);
+	float GetFov() const { return m_FOV; };
+
+	float GetNearValue() const { return m_Near; }
+	float GetFarValue() const { return m_Far; }
+	//TODO: use dirty flag for that extra bit of spicy performance/optimization
+	void SetNearValue(float near);
+	void SetFarValue(float far);
+
+	void RotateVector(FVector3& direction);
+
+	void SetAspectRatio(float width, float height);
+	float GetAspectRatio() const { return m_AspectRatio; };
+
+	void ChangeSpeed(float value);
+
 private:
-	explicit Camera(const FPoint3& position, float fov);
-
-	static Camera* m_pCamera;
-
 	float m_FOV;
 	float m_AspectRatio;
-	float m_CameraSpeed = 10.f;
-
+	float m_CameraSpeed;
 	float m_Near;
 	float m_Far;
 
 	FPoint3 m_Position;
+	FVector3 m_Forward;
+	FVector3 m_Up;
+	FVector3 m_Right;
 
-	FMatrix3 m_RotationMatrix;
+	static const FVector3 m_WorldUp;
 
-	FVector3 m_Forward = { 0.f, 0.f, 1.f };
-	const FVector3 m_WorldUp = { 0.f, 1.f, 0.f };
-	FVector3 m_Up = { 0.f, 1.f, 0.f };
-	FVector3 m_Right = { 1.f, 0.f, 0.f };
-	FMatrix4 m_LookAt = { FVector4{m_Right, 0}, FVector4{m_Up, 0}, FVector4{m_Forward, 0}, FVector4{0, 0, 0, 1.f} };
+public:
+	void RecalculateRightUpVectors();
 
 	void TranslateX(float value);
 	void TranslateY(float value);
@@ -67,4 +61,3 @@ private:
 
 	void PrintCamSpeed();
 };
-

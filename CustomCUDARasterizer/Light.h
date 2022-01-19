@@ -1,9 +1,6 @@
 #pragma once
-#include "ERGBColor.h"
-#include "EMath.h"
-#include "EMathUtilities.h"
-
-using namespace Elite;
+#include "RGBColor.h"
+#include "Math.h"
 
 class Light
 {

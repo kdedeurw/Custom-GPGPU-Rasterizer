@@ -2,9 +2,7 @@
 #include <vector>
 #include <string>
 #include <fstream>
-#include "ERGBColor.h"
-#include "EMath.h"
-#include "EMathUtilities.h"
+#include "Math.h"
 #include "Vertex.h"
 
 class ObjParser

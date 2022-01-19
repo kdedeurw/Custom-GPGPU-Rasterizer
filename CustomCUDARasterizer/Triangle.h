@@ -1,10 +1,7 @@
 #pragma once
-#include "EMath.h"
-#include "EMathUtilities.h"
+#include "Math.h"
 #include "Vertex.h"
 #include <array>
-
-using namespace Elite;
 
 class Triangle
 {

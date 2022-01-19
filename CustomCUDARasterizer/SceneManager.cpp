@@ -31,11 +31,14 @@ SceneGraph* SceneManager::AddSceneGraph(SceneGraph* pSceneGraph)
 
 SceneGraph* SceneManager::GetSceneGraph() const
 {
-	if (!m_pSceneGraphs.size())
+	const size_t size = m_pSceneGraphs.size();
+	if (size == 0)
 	{
 		std::cout << "\n!Warning; no SceneGraph(s) detected in the SceneManager!\n";
 		return nullptr;
 	}
+	else if (m_Index >= size)
+		return m_pSceneGraphs.at(size - 1);
 	return m_pSceneGraphs.at(m_Index);
 }
 

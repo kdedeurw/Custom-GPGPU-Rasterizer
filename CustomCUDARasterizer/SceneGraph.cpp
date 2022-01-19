@@ -1,6 +1,7 @@
 #include "PCH.h"
 #include "SceneGraph.h"
 #include "Mesh.h"
+#include "Light.h"
 
 SceneGraph::SceneGraph()
 	: SceneGraph{ std::vector<Mesh*>{} }
@@ -17,6 +18,11 @@ SceneGraph::~SceneGraph()
 		delete pMesh;
 	}
 	m_pMeshes.clear();
+	for (Light* pLight : m_pLights)
+	{
+		delete pLight;
+	}
+	m_pLights.clear();
 }
 
 Mesh* SceneGraph::AddMesh(Mesh* pMesh)

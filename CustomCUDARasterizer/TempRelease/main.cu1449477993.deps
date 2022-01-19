@@ -1,0 +1,38 @@
+C:\Program Files (x86)\Microsoft Visual Studio\2019\Enterprise\VC\Tools\MSVC\14.29.30133\include\cassert
+C:\Program Files (x86)\Microsoft Visual Studio\2019\Enterprise\VC\Tools\MSVC\14.29.30133\include\concurrencysal.h
+C:\Program Files (x86)\Microsoft Visual Studio\2019\Enterprise\VC\Tools\MSVC\14.29.30133\include\crtdefs.h
+C:\Program Files (x86)\Microsoft Visual Studio\2019\Enterprise\VC\Tools\MSVC\14.29.30133\include\limits.h
+C:\Program Files (x86)\Microsoft Visual Studio\2019\Enterprise\VC\Tools\MSVC\14.29.30133\include\sal.h
+C:\Program Files (x86)\Microsoft Visual Studio\2019\Enterprise\VC\Tools\MSVC\14.29.30133\include\vadefs.h
+C:\Program Files (x86)\Microsoft Visual Studio\2019\Enterprise\VC\Tools\MSVC\14.29.30133\include\vcruntime.h
+C:\Program Files (x86)\Microsoft Visual Studio\2019\Enterprise\VC\Tools\MSVC\14.29.30133\include\vcruntime_string.h
+C:\Program Files (x86)\Microsoft Visual Studio\2019\Enterprise\VC\Tools\MSVC\14.29.30133\include\xkeycheck.h
+C:\Program Files (x86)\Microsoft Visual Studio\2019\Enterprise\VC\Tools\MSVC\14.29.30133\include\yvals_core.h
+C:\Program Files (x86)\Windows Kits\10\Include\10.0.18362.0\ucrt\corecrt.h
+C:\Program Files (x86)\Windows Kits\10\Include\10.0.18362.0\ucrt\corecrt_memcpy_s.h
+C:\Program Files (x86)\Windows Kits\10\Include\10.0.18362.0\ucrt\corecrt_memory.h
+C:\Program Files (x86)\Windows Kits\10\Include\10.0.18362.0\ucrt\corecrt_wstring.h
+C:\Program Files (x86)\Windows Kits\10\Include\10.0.18362.0\ucrt\corecrt_wtime.h
+C:\Program Files (x86)\Windows Kits\10\Include\10.0.18362.0\ucrt\errno.h
+C:\Program Files (x86)\Windows Kits\10\Include\10.0.18362.0\ucrt\stddef.h
+C:\Program Files (x86)\Windows Kits\10\Include\10.0.18362.0\ucrt\string.h
+C:\Program Files (x86)\Windows Kits\10\Include\10.0.18362.0\ucrt\time.h
+D:\Program Files\NVIDIA GPU Computing\include\builtin_types.h
+D:\Program Files\NVIDIA GPU Computing\include\channel_descriptor.h
+D:\Program Files\NVIDIA GPU Computing\include\crt\common_functions.h
+D:\Program Files\NVIDIA GPU Computing\include\crt\host_config.h
+D:\Program Files\NVIDIA GPU Computing\include\crt\host_defines.h
+D:\Program Files\NVIDIA GPU Computing\include\crt\math_functions.h
+D:\Program Files\NVIDIA GPU Computing\include\cuda_device_runtime_api.h
+D:\Program Files\NVIDIA GPU Computing\include\cuda_runtime.h
+D:\Program Files\NVIDIA GPU Computing\include\cuda_runtime_api.h
+D:\Program Files\NVIDIA GPU Computing\include\device_types.h
+D:\Program Files\NVIDIA GPU Computing\include\driver_functions.h
+D:\Program Files\NVIDIA GPU Computing\include\driver_types.h
+D:\Program Files\NVIDIA GPU Computing\include\library_types.h
+D:\Program Files\NVIDIA GPU Computing\include\surface_types.h
+D:\Program Files\NVIDIA GPU Computing\include\texture_types.h
+D:\Program Files\NVIDIA GPU Computing\include\vector_functions.h
+D:\Program Files\NVIDIA GPU Computing\include\vector_functions.hpp
+D:\Program Files\NVIDIA GPU Computing\include\vector_types.h
+D:\SchoolRelated\CUDA\CustomCUDARasterizer\math.h

@@ -1,12 +1,18 @@
 #pragma once
-
+//CUDA includes
 #include "cuda_runtime.h"
 #include "device_launch_parameters.h"
 
+//Standard includes
 #include <stdio.h>
 #include <iostream>
 #include <assert.h>
 #include <iostream>
+
+//Math includes
+#include "Math.h"
+#include "MathUtilities.h"
+#include "RGBColor.h"
 
 // Convenience function for checking CUDA runtime API results
 // can be wrapped around any runtime API call. No-op in release builds.

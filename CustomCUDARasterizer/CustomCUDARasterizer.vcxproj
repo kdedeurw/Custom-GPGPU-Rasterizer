@@ -112,7 +112,10 @@ xcopy "$(SolutionDir)3rdParty\lib\vld\x64\Microsoft.DTfW.DHL.manifest" "$(OutDir
     </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <CudaCompile Include="kernel.cu" />
+    <CudaCompile Include="CUDAROPs.cu" />
+    <CudaCompile Include="main.cu" />
+    <CudaCompile Include="Renderer.cu" />
+    <CudaCompile Include="GPUTexture.cu" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="Camera.cpp" />
@@ -134,37 +137,43 @@ xcopy "$(SolutionDir)3rdParty\lib\vld\x64\Microsoft.DTfW.DHL.manifest" "$(OutDir
     <ClCompile Include="Triangle.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="BoundingBox.h" />
     <ClInclude Include="Camera.h" />
+    <ClInclude Include="CUDAROPs.cuh" />
     <ClInclude Include="DirectionalLight.h" />
-    <ClInclude Include="EMath.h" />
-    <ClInclude Include="EMathUtilities.h" />
-    <ClInclude Include="EMatrix.h" />
-    <ClInclude Include="EMatrix2.h" />
-    <ClInclude Include="EMatrix3.h" />
-    <ClInclude Include="EMatrix4.h" />
-    <ClInclude Include="EPoint.h" />
-    <ClInclude Include="EPoint2.h" />
-    <ClInclude Include="EPoint3.h" />
-    <ClInclude Include="EPoint4.h" />
     <ClInclude Include="ERenderer.h" />
-    <ClInclude Include="ERGBColor.h" />
     <ClInclude Include="ETimer.h" />
-    <ClInclude Include="EVector.h" />
-    <ClInclude Include="EVector2.h" />
-    <ClInclude Include="EVector3.h" />
-    <ClInclude Include="EVector4.h" />
     <ClInclude Include="EventManager.h" />
+    <ClInclude Include="GPUHelpers.h" />
     <ClInclude Include="Light.h" />
+    <ClInclude Include="Math.h" />
+    <ClInclude Include="MathUtilities.h" />
+    <ClInclude Include="Matrix.h" />
+    <ClInclude Include="Matrix2.h" />
+    <ClInclude Include="Matrix3.h" />
+    <ClInclude Include="Matrix4.h" />
     <ClInclude Include="Mesh.h" />
     <ClInclude Include="ObjParser.h" />
     <ClInclude Include="PCH.h" />
+    <ClInclude Include="Point.h" />
+    <ClInclude Include="Point2.h" />
+    <ClInclude Include="Point3.h" />
+    <ClInclude Include="Point4.h" />
     <ClInclude Include="PointLight.h" />
+    <ClInclude Include="Renderer.cuh" />
+    <ClInclude Include="RGBColor.h" />
+    <ClInclude Include="SampleState.h" />
     <ClInclude Include="SceneGraph.h" />
     <ClInclude Include="SceneManager.h" />
+    <ClInclude Include="GPUTexture.cuh" />
     <ClInclude Include="Texture.h" />
     <ClInclude Include="Triangle.h" />
+    <ClInclude Include="Vector.h" />
+    <ClInclude Include="Vector2.h" />
+    <ClInclude Include="Vector3.h" />
+    <ClInclude Include="Vector4.h" />
     <ClInclude Include="Vertex.h" />
-    <ClInclude Include="Vertices.h" />
+    <ClInclude Include="WindowHelper.h" />
   </ItemGroup>
   <ItemGroup>
     <None Include="CustomCUDARasterizer.props" />

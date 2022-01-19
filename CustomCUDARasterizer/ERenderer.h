@@ -11,12 +11,15 @@
 #include <cstdint>
 #include <vector>
 
-#include "Vertex.h"
 #include "Mesh.h"
 
 struct SDL_Window;
 struct SDL_Surface;
 
+class Camera;
+struct BoundingBox;
+struct IVertex;
+struct OVertex;
 namespace Elite
 {
 	class Renderer final
@@ -32,6 +35,7 @@ namespace Elite
 
 		void Render();
 		bool SaveBackbufferToImage() const;
+		void SetCamera(Camera* pCamera) { m_pCamera = pCamera; };
 
 	private:
 		SDL_Window* m_pWindow = nullptr;
@@ -40,25 +44,28 @@ namespace Elite
 		uint32_t* m_pBackBufferPixels = nullptr;
 		uint32_t m_Width = 0;
 		uint32_t m_Height = 0;
-		float m_RasterScreenSpaceX[3]{}, m_RasterScreenSpaceY[3]{};
 		float* m_pDepthBuffer{};
+		Camera* m_pCamera{};
+		const Mesh::Textures* m_pTextures{};
 
 		void CreateDepthBuffer();
-		void ClearDepthBuffer();
-		void ClearScreen();
-		void BlackDraw(uint32_t c, uint32_t r);
+		inline void ClearDepthBuffer();
+		inline void ClearScreen();
+		inline void BlackDraw(unsigned short c, unsigned short r);
 
-		bool FrustumTest(const OVertex NDC[3]);
-		bool FrustumTestVertex(const OVertex& NDC);
-		void SetVerticesToRasterScreenSpace(const OVertex triangle[3]);
-		void RenderPixelsInTriangle(const OVertex triangle[3], const Mesh::Textures& textures, const uint32_t boundingValues[4]);
-		void RenderPixelsInTriangle(const OVertex triangle[3], const Mesh::Textures& textures);
-		bool IsPixelInTriangle(const FPoint2& pixel, float weights[3]);
-		bool DepthTest(const OVertex triangle[3], float& depthBuffer, float weights[3], float& zInterpolated);
-		void SetBoundingBox(uint32_t boundingValues[4]);
-		OVertex GetNDCVertex(const IVertex& vertex, const FMatrix4& worldMatrix = FMatrix4::Identity());
-		std::vector<OVertex> GetNDCMeshVertices(const std::vector<IVertex>& vertices, const FMatrix4& worldMatrix = FMatrix4::Identity());
-		void ShadePixel(const OVertex& oVertex, const Mesh::Textures& textures);
+		inline void RenderTriangle(OVertex* NDCTriangle[3]);
+
+		bool FrustumTest(OVertex* NDC[3]);
+		inline bool FrustumTestVertex(const OVertex& NDC);
+		inline void SetVerticesToRasterScreenSpace(OVertex* triangle[3]);
+		inline void RenderPixelsInTriangle(OVertex* screenspaceTriangle[3]);
+		inline bool IsPixelInTriangle(OVertex* screenspaceTriangle[3], const FPoint2& pixel, float weights[3]);
+		inline bool DepthTest(OVertex* triangle[3], float& depthBuffer, float weights[3], float& zInterpolated);
+		BoundingBox GetBoundingBox(OVertex* screenspaceTriangle[3]);
+		OVertex GetNDCVertexDeprecated(const IVertex& vertex, const FMatrix4& worldMatrix = FMatrix4::Identity());
+		inline OVertex GetNDCVertex(const IVertex& vertex, const FMatrix4& viewProjectionMatrix, const FMatrix4& worldMatrix = FMatrix4::Identity());
+		std::vector<OVertex> GetNDCMeshVertices(const std::vector<IVertex>& vertices, const FMatrix4& iewProjectionMatrix, const FMatrix4& worldMatrix = FMatrix4::Identity());
+		inline void ShadePixel(const OVertex& oVertex, const Mesh::Textures& textures);
 	};
 }
 

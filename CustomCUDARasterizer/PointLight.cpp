@@ -15,11 +15,11 @@ RGBColor PointLight::GetBiradiance(const FPoint3& pointToShade) const
 
 FVector3 PointLight::GetDirection(const FPoint3& pointToShade) const
 {
-	return Elite::GetNormalized(m_Position - pointToShade);
-	//return Elite::GetNormalized(pointToShade - m_Position);
+	return GetNormalized(m_Position - pointToShade);
+	//return GetNormalized(pointToShade - m_Position);
 }
 
 //float PointLight::GetLambertCosineLaw(const HitRecord& hitRecord) const
 //{
-//	return Elite::Dot(hitRecord.normal, GetDirection(hitRecord.point));
+//	return Dot(hitRecord.normal, GetDirection(hitRecord.point));
 //}

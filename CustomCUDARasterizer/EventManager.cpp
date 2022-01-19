@@ -4,15 +4,11 @@
 #include "Camera.h"
 #include "SceneManager.h"
 
-EventManager* EventManager::m_pEventManager{ nullptr };
-
-EventManager::~EventManager()
-{
-	m_pEventManager = nullptr;
-}
+int EventManager::m_ScrollWheelValue{};
 
 void EventManager::ProcessInputs(bool& isLooping, bool& takeScreenshot, float elapsedSec)
 {
+	m_ScrollWheelValue = 0;
 	SDL_Event e;
 	while (SDL_PollEvent(&e) != 0)
 	{
@@ -24,16 +20,17 @@ void EventManager::ProcessInputs(bool& isLooping, bool& takeScreenshot, float el
 		case SDL_KEYDOWN:
 			if (e.key.keysym.sym == SDLK_ESCAPE)
 			{
-				m_IsRelativeMouse = !m_IsRelativeMouse;
-				if (m_IsRelativeMouse)
-					SDL_SetRelativeMouseMode(SDL_TRUE);
-				else
-					SDL_SetRelativeMouseMode(SDL_FALSE);
+				bool isRelativeMouse = SDL_GetRelativeMouseMode();
+				isRelativeMouse = !isRelativeMouse;
+				SDL_SetRelativeMouseMode((SDL_bool)isRelativeMouse);
 			}
 			KeyDownEvent(e.key);
 			break;
 		case SDL_KEYUP:
-			if (e.key.keysym.scancode == SDL_SCANCODE_X) takeScreenshot = true;
+			if (e.key.keysym.scancode == SDL_SCANCODE_X)
+			{
+				takeScreenshot = true;
+			}
 			KeyUpEvent(e.key);
 			break;
 		case SDL_MOUSEMOTION:
@@ -50,9 +47,6 @@ void EventManager::ProcessInputs(bool& isLooping, bool& takeScreenshot, float el
 			break;
 		}
 	}
-
-	//--------- CameraMovement ---------
-	Camera::GetInstance()->ProcessInputs(m_IsLMB, m_IsRMB, m_IsMouse3, elapsedSec);
 }
 
 void EventManager::KeyDownEvent(const SDL_KeyboardEvent & e)
@@ -88,13 +82,10 @@ void EventManager::MouseDownEvent(const SDL_MouseButtonEvent & e)
 	switch (e.button)
 	{
 	case SDL_BUTTON_LEFT:
-		m_IsLMB = true;
 		break;
 	case SDL_BUTTON_RIGHT:
-		m_IsRMB = true;
 		break;
 	case SDL_BUTTON_MIDDLE:
-		m_IsMouse3 = true;
 		break;
 	}
 }
@@ -104,39 +95,36 @@ void EventManager::MouseUpEvent(const SDL_MouseButtonEvent & e)
 	switch (e.button)
 	{
 	case SDL_BUTTON_LEFT:
-		m_IsLMB = false;
 		break;
 	case SDL_BUTTON_RIGHT:
-		m_IsRMB = false;
 		break;
 	case SDL_BUTTON_MIDDLE:
-		m_IsMouse3 = false;
 		break;
 	}
 }
 
 void EventManager::MouseWheelEvent(const SDL_MouseWheelEvent & e)
 {
-	Camera& cam = *Camera::GetInstance();
+	m_ScrollWheelValue = e.y;
+}
 
-	switch (e.y)
-	{
-	case 1:
-		//Camera::ChangeSpeed(e.y);
-		cam.ChangeSpeed(1.f);
-		break;
-	case -1:
-		//Camera::ChangeSpeed(e.y);
-		cam.ChangeSpeed(-1.f);
-		break;
-	}
+void EventManager::GetMouseButtonStates(bool& isLmb, bool& isRmb)
+{
+	int x, y;
+	const Uint32 buttons = SDL_GetMouseState(&x, &y);
+	isLmb = buttons & SDL_BUTTON_LMASK;
+	isRmb = buttons & SDL_BUTTON_RMASK;
 }
 
 void EventManager::GetRelativeMouseValues(float& xValue, float& yValue)
 {
-	int x{}, y{};
-	//Uint32 mouseButton = SDL_GetRelativeMouseState(&x, &y);
-	SDL_GetRelativeMouseState(&x, &y);
+	int x, y;
+	const Uint32 buttons = SDL_GetRelativeMouseState(&x, &y);
 	xValue = float(x);
 	yValue = float(y);
+}
+
+void EventManager::GetScrollWheelValue(int& scrollWheelValue)
+{
+	scrollWheelValue = m_ScrollWheelValue;
 }

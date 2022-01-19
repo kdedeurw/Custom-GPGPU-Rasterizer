@@ -1,92 +1,13 @@
-﻿  Compiling CUDA source file kernel.cu...
-  
-  D:\SchoolRelated\CUDA\CustomCUDARasterizer>"D:\Program Files\NVIDIA GPU Computing\bin\nvcc.exe" -gencode=arch=compute_61,code=\"sm_61,compute_61\" --use-local-env -ccbin "C:\Program Files (x86)\Microsoft Visual Studio\2019\Enterprise\VC\Tools\MSVC\14.29.30133\bin\HostX86\x64" -x cu   -I"D:\SchoolRelated\CUDA\3rdParty\include\sdl2-2.0.9\\" -I"D:\SchoolRelated\CUDA\3rdParty\include\sdl2_image-2.0.5\\" -ID:\SchoolRelated\CUDA\3rdParty\include\vld\ -I../include/vld -I"../include/sdl2-2.0.9" -I"D:\Program Files\NVIDIA GPU Computing\include" -I"D:\Program Files\NVIDIA GPU Computing\include"  -G   --keep-dir x64\Debug  -maxrregcount=0 --ptxas-options=-v --machine 64 --compile -cudart static  -g  -DWIN32 -DWIN64 -D_DEBUG -D_CONSOLE -D_MBCS -Xcompiler "/EHsc /W3 /nologo /Od /FdTempDebug\vc142.pdb /FS /Zi /RTC1 /MDd " -o TempDebug\kernel.cu.obj "D:\SchoolRelated\CUDA\CustomCUDARasterizer\kernel.cu" 
-D:\SchoolRelated\CUDA\CustomCUDARasterizer\Mesh.h(30): warning #815-D: type qualifier on return type is meaningless
-  
-D:\SchoolRelated\CUDA\CustomCUDARasterizer\kernel.cu(173): warning #550-D: variable "cudaStatus" was set but never used
-  
-D:\SchoolRelated\CUDA\CustomCUDARasterizer\kernel.cu(210): warning #177-D: variable "deltaTime" was declared but never referenced
-  
-  ptxas info    : 0 bytes gmem
-  ptxas info    : Function properties for _ZnwyPv
-      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
-  ptxas info    : Function properties for _ZNSt16initializer_listI7IVertexEC1EPKS0_S3_
-      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
-  ptxas info    : Function properties for _ZNSt16initializer_listI7IVertexEC2EPKS0_S3_
-      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
-  ptxas info    : Function properties for _ZNKSt16initializer_listI7IVertexE5beginEv
-      8 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
-  ptxas info    : Function properties for _ZNKSt16initializer_listI7IVertexE3endEv
-      8 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
-  ptxas info    : Function properties for _ZNSt16initializer_listIiEC1EPKiS2_
-      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
-  ptxas info    : Function properties for _ZNSt16initializer_listIiEC2EPKiS2_
-      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
-  ptxas info    : Function properties for _ZNKSt16initializer_listIiE5beginEv
-      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
-  ptxas info    : Function properties for _ZNKSt16initializer_listIiE3endEv
-      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
-  ptxas info    : Function properties for _ZSt7forwardISaIcEEOT_RNSt16remove_referenceIS1_E4typeE
-      8 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
-  ptxas info    : Function properties for _ZSt7forwardIPSt17_Container_base12EOT_RNSt16remove_referenceIS2_E4typeE
-      8 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
-  ptxas info    : Function properties for _ZSt7forwardIRKPcEOT_RNSt16remove_referenceIS3_E4typeE
-      8 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
-  ptxas info    : Function properties for _ZSt4moveIRSaIcEEONSt16remove_referenceIT_E4typeEOS3_
-      8 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
-  ptxas info    : Function properties for _ZSt7forwardIRPcEOT_RNSt16remove_referenceIS2_E4typeE
-      8 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
-  ptxas info    : Function properties for _ZSt7forwardIRPSt11_Facet_baseEOT_RNSt16remove_referenceIS3_E4typeE
-      8 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
-  ptxas info    : Function properties for _ZSt7forwardIRKSaI7IVertexEEOT_RNSt16remove_referenceIS4_E4typeE
-      8 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
-  ptxas info    : Function properties for _ZSt7forwardIRK7IVertexEOT_RNSt16remove_referenceIS3_E4typeE
-      8 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
-  ptxas info    : Function properties for _ZSt7forwardISaI7IVertexEEOT_RNSt16remove_referenceIS2_E4typeE
-      8 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
-  ptxas info    : Function properties for _ZSt7forwardIR7IVertexEOT_RNSt16remove_referenceIS2_E4typeE
-      8 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
-  ptxas info    : Function properties for _ZSt7forwardIRKSaIiEEOT_RNSt16remove_referenceIS3_E4typeE
-      8 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
-  ptxas info    : Function properties for _ZSt7forwardIRKiEOT_RNSt16remove_referenceIS2_E4typeE
-      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
-  ptxas info    : Function properties for _ZSt7forwardISaIiEEOT_RNSt16remove_referenceIS1_E4typeE
-      8 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
-  ptxas info    : Function properties for _ZSt7forwardIRiEOT_RNSt16remove_referenceIS1_E4typeE
-      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
-  ptxas info    : Function properties for _ZSt7forwardIRKP10SceneGraphEOT_RNSt16remove_referenceIS4_E4typeE
-      8 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
-  ptxas info    : Function properties for _ZSt4moveIRP10SceneGraphEONSt16remove_referenceIT_E4typeEOS4_
-      8 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
-  ptxas info    : Function properties for _ZSt7forwardIP10SceneGraphEOT_RNSt16remove_referenceIS2_E4typeE
-      8 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
-D:\SchoolRelated\CUDA\CustomCUDARasterizer\Mesh.h(30): warning #815-D: type qualifier on return type is meaningless
-  
-  kernel.cu
-  PCH.cpp
-  Camera.cpp
-  DirectionalLight.cpp
-  ERenderer.cpp
-  ETimer.cpp
-  EventManager.cpp
-  Light.cpp
-  Mesh.cpp
-  ObjParser.cpp
-  PointLight.cpp
-  SceneGraph.cpp
-  SceneManager.cpp
-  Texture.cpp
-D:\SchoolRelated\CUDA\CustomCUDARasterizer\Texture.cpp(63,15): warning C4244: '=': conversion from 'const uint32_t' to 'float', possible loss of data
-D:\SchoolRelated\CUDA\CustomCUDARasterizer\Texture.cpp(67,15): warning C4244: '=': conversion from 'const uint32_t' to 'float', possible loss of data
-  Triangle.cpp
-  Generating Code...
-     Creating library D:\SchoolRelated\CUDA\bin\Debug\CustomCUDARasterizer.lib and object D:\SchoolRelated\CUDA\bin\Debug\CustomCUDARasterizer.exp
+﻿  ERenderer.cpp
+D:\SchoolRelated\CUDA\CustomCUDARasterizer\Texture.h(65,16): warning C4018: '<': signed/unsigned mismatch
+D:\SchoolRelated\CUDA\CustomCUDARasterizer\Texture.h(69,16): warning C4018: '<': signed/unsigned mismatch
+D:\SchoolRelated\CUDA\CustomCUDARasterizer\ERenderer.cpp(224,31): warning C4018: '<': signed/unsigned mismatch
+D:\SchoolRelated\CUDA\CustomCUDARasterizer\ERenderer.cpp(226,32): warning C4018: '<': signed/unsigned mismatch
+D:\SchoolRelated\CUDA\CustomCUDARasterizer\ERenderer.cpp(539,14): warning C4018: '>': signed/unsigned mismatch
+D:\SchoolRelated\CUDA\CustomCUDARasterizer\ERenderer.cpp(540,14): warning C4018: '>': signed/unsigned mismatch
   CustomCUDARasterizer.vcxproj -> D:\SchoolRelated\CUDA\bin\Debug\CustomCUDARasterizer.exe
-  D:\SchoolRelated\CUDA\3rdParty\lib\sdl2-2.0.9\x64\SDL2.dll
-  1 File(s) copied
-  D:\SchoolRelated\CUDA\3rdParty\lib\vld\x64\vld_x64.dll
-  1 File(s) copied
-  D:\SchoolRelated\CUDA\3rdParty\lib\vld\x64\dbghelp.dll
-  1 File(s) copied
-  D:\SchoolRelated\CUDA\3rdParty\lib\vld\x64\Microsoft.DTfW.DHL.manifest
-  1 File(s) copied
+  0 File(s) copied
+  0 File(s) copied
+  0 File(s) copied
+  0 File(s) copied
+  0 File(s) copied

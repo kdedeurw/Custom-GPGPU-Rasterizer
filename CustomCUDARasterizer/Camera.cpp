@@ -3,25 +3,25 @@
 #include "EventManager.h"
 #include <iostream>
 
-Camera* Camera::m_pCamera{ nullptr };
+const FVector3 Camera::m_WorldUp{ 0.f, 1.f, 0.f };
 
 Camera::Camera(const FPoint3& position, float fov)
-	: m_Position{ position }
-	, m_FOV{ tanf(ToRadians(fov) / 2) }
+	: m_FOV{ SetFov(fov) }
 	, m_AspectRatio{}
+	, m_CameraSpeed{ 10.f }
+	, m_Near{ 0.1f }
+	, m_Far{ 100.f }
+	, m_Position{ position }
 	, m_Forward{ 0, 0, 1.f }
 	, m_Up{ 0, 1.f, 0 }
 	, m_Right{ 1.f, 0, 0 }
-	, m_LookAt{ FVector4{m_Right, 0}, FVector4{m_Up, 0}, FVector4{m_Forward, 0}, FVector4{0, 0, 0, 1.f} }
-	, m_RotationMatrix{}
-	, m_Near{ 0.1f }
-	, m_Far{ 100.f }
 {
 }
 
-Camera::~Camera()
+float Camera::SetFov(float degrees)
 {
-	m_pCamera = nullptr;
+	m_FOV = tanf(ToRadians(degrees) / 2.f);
+	return m_FOV;
 }
 
 void Camera::SetAspectRatio(float width, float height)
@@ -29,85 +29,48 @@ void Camera::SetAspectRatio(float width, float height)
 	m_AspectRatio = width / height;
 }
 
-float Camera::GetAspectRatio() const
+FMatrix4 Camera::GetLookAtMatrix() const
 {
-	return m_AspectRatio;
-}
-
-float Camera::GetFov() const
-{
-	return m_FOV;
-}
-
-const FPoint3& Camera::GetPos() const
-{
-	return m_Position;
+	return FMatrix4{
+		m_Right.x, m_Up.x, m_Forward.x, m_Position.x,
+		m_Right.y, m_Up.y, m_Forward.y, m_Position.y,
+		m_Right.z, m_Up.z, m_Forward.z, m_Position.z,
+		0.f, 0.f, 0.f, 1.f  };
 }
 
 FMatrix4 Camera::GetProjectionMatrix() const
 {
-	// projectionmatrix
-	float A{ m_Far / (m_Near - m_Far) };
-	float B{ ((m_Far * m_Near) / (m_Near - m_Far)) };
-	FMatrix4 projectionMatrix{
-		1.f / (m_AspectRatio * m_FOV), 0.f, 0.f, 0.f,
+	const float A{ m_Far / (m_Near - m_Far) };
+	const float B{ ((m_Far * m_Near) / (m_Near - m_Far)) };
+	const FMatrix4 projectionMatrix = 
+	{	1.f / (m_AspectRatio * m_FOV), 0.f, 0.f, 0.f,
 		0.f, 1.f / m_FOV, 0.f, 0.f,
 		0.f, 0.f, A, B,
-		0.f, 0.f, -1.f, 0.f
-	};
+		0.f, 0.f, -1.f, 0.f };
 	// negative Z & W values bc right-handed coordinate system!
 	return projectionMatrix;
 }
 
-const FMatrix4& Camera::GenerateLookAt()
+void Camera::RecalculateRightUpVectors()
 {
-	FVector4 right{ GetRight() };
-	FVector4 up{ GetUp() };
-	m_LookAt = FMatrix4{
-		right.x, up.x, m_Forward.x, m_Position.x,
-		right.y, up.y, m_Forward.y, m_Position.y,
-		right.z, up.z, m_Forward.z, m_Position.z,
-		0.f, 0.f, 0.f, 1.f };
-	//m_LookAt = FMatrix4{ GetRight(), GetUp(), m_Forward, FVector4{FVector3{m_Position}, 1.f} };
-	return m_LookAt;
+	Normalize(m_Right);
+	m_Right = Cross(m_WorldUp, m_Forward);
+	Normalize(m_Up);
+	m_Up = Cross(m_Forward, m_Right);
 }
 
-const FMatrix3& Camera::GenerateRotation()
+void Camera::SetNearValue(float near)
 {
-	m_RotationMatrix = FMatrix3(GetRight(), GetUp(), m_Forward);
-	return m_RotationMatrix;
+	m_Near = near;
+}
+void Camera::SetFarValue(float far)
+{
+	m_Far = far;
 }
 
-void Camera::Rotate(FVector3& direction)
+void Camera::RotateVector(FVector3& direction)
 {
-	GenerateRotation();
-	direction = m_RotationMatrix * direction;
-}
-
-const FMatrix4 Camera::GetLookAtMatrixConst() const
-{
-	return FMatrix4{ FVector4{m_Right, 0}, FVector4{m_Up, 0}, FVector4{m_Forward, 0}, FVector4{FVector3{m_Position}, 1.f} };
-}
-
-const FVector3& Camera::GetRight()
-{
-	m_Right = Elite::Cross(m_WorldUp, m_Forward);
-	//Elite::Normalize(m_Right);
-	return m_Right;
-}
-
-const FVector3& Camera::GetUp()
-{
-	m_Up = Elite::Cross(m_Forward, m_Right);
-	//Elite::Normalize(m_Up);
-	return m_Up;
-}
-
-const FVector3& Camera::GetForward(const FPoint3& origin)
-{
-	m_Forward = { m_Position - origin };
-	//Elite::Normalize(m_Forward);
-	return m_Forward;
+	direction = GetRotationMatrix() * direction;
 }
 
 void Camera::TranslateX(float value)
@@ -117,65 +80,78 @@ void Camera::TranslateX(float value)
 
 void Camera::TranslateY(float value)
 {
-	//m_Position += m_Up * value;
 	m_Position += m_WorldUp * value;
 }
 
 void Camera::TranslateZ(float value)
 {
 	m_Position += m_Forward * value;
-	//m_Position.z += MakeTranslation(m_Forward).data[3][2];
 }
 
-void Camera::ProcessInputs(bool lmb, bool rmb, bool mouse3, float elapsedSec)
+void Camera::Update(float elapsedSec)
 {
-	const float limit{ 250.f };
-	float x{}, y{};
-	EventManager::GetInstance()->GetRelativeMouseValues(x, y);
 	const Uint8* pStates = SDL_GetKeyboardState(nullptr);
+	const float limit{ 250.f };
 
-	if (lmb && rmb)
+	float x{}, y{};
+	EventManager::GetRelativeMouseValues(x, y);
+
+	bool isLmb{}, isRmb{};
+	EventManager::GetMouseButtonStates(isLmb, isRmb);
+
+	int scrollWheelValue{};
+	EventManager::GetScrollWheelValue(scrollWheelValue);
+	if (scrollWheelValue != 0)
+	{
+		ChangeSpeed((float)scrollWheelValue);
+	}
+
+	bool hasMoved{}, hasRotated{};
+	if (isLmb && isRmb)
 	{
 		TranslateY(y / 50.f);
+		hasMoved = true;
 	}
-	else if (lmb && !rmb)
+	else if (isLmb && !isRmb)
 	{
 		TranslateZ(y / 50.f);
 		m_Forward = MakeRotationY(float(x) / limit) * m_Forward;
 		//m_Forward = MakeRotation(float(y / limit)) * m_Forward;
+		hasRotated = true;
 	}
-	else if (rmb && !lmb)
+	else if (isRmb && !isLmb)
 	{
-		//FMatrix4 temp = MakeTranslation(m_Forward) * m_Position;
-		//m_Position.x += MakeTranslation(m_Forward).data[3][0];
-		//MakeRotation(x);
-		//m_RotationMatrix;
-		//MakeRotation(m_RotationMatrix);
 		m_Forward = MakeRotationZYX(float(-y / limit), float(-x / limit), 0.f) * m_Forward;
-
-		// !ROTATING AROUND FIXED POSITION!, seems like
-
-		//MakeTranslation(FVector2{m_Position.x, m_Position.y}, );
+		hasRotated = true;
 	}
 
 	if (pStates[SDL_SCANCODE_W])
 	{
 		TranslateZ(-m_CameraSpeed * elapsedSec);
+		hasMoved = true;
 	}
 	else if (pStates[SDL_SCANCODE_S])
 	{
 		TranslateZ(m_CameraSpeed * elapsedSec);
+		hasMoved = true;
 	}
 	if (pStates[SDL_SCANCODE_A])
 	{
 		TranslateX(-m_CameraSpeed * elapsedSec);
+		hasMoved = true;
 	}
 	else if (pStates[SDL_SCANCODE_D])
 	{
 		TranslateX(m_CameraSpeed * elapsedSec);
+		hasMoved = true;
 	}
-
-	GenerateLookAt();
+	
+	//Positional changes directly impact the lookat matrix's pos
+	if (hasRotated)
+	{
+		RecalculateRightUpVectors();
+		Normalize(m_Forward);
+	}
 }
 
 void Camera::ChangeSpeed(float value)

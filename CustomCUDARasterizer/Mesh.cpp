@@ -51,31 +51,6 @@ Mesh::~Mesh()
 	}
 }
 
-const std::vector<IVertex>& Mesh::GetVertices() const
-{
-	return m_VertexBuffer;
-}
-
-const std::vector<int>& Mesh::GetIndexes() const
-{
-	return m_IndexBuffer;
-}
-
-const Mesh::PrimitiveTopology Mesh::GetTopology() const
-{
-	return m_Topology;
-}
-
-const Mesh::Textures& Mesh::GetTextures() const
-{
-	return m_pTextures;
-}
-
-const FMatrix4& Mesh::GetWorldMatrix() const
-{
-	return m_WorldSpace;
-}
-
 void Mesh::Update(float elapsedSec)
 {
 	m_WorldSpace *= (FMatrix4)MakeRotationY(m_RotateSpeed * elapsedSec);
