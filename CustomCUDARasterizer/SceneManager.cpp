@@ -3,12 +3,12 @@
 #include <iostream>
 #include "SceneGraph.h"
 #include "Mesh.h"
-
-SceneManager* SceneManager::m_pSceneManager{ nullptr };
+#include "EventManager.h"
 
 SceneManager::SceneManager()
-	: m_pSceneGraphs{}
-	, m_Index{4}
+	: m_IsDepthColour{}
+	, m_pSceneGraphs{}
+	, m_Index{}
 	, m_SampleState{ SampleState::Point }
 {}
 
@@ -19,8 +19,6 @@ SceneManager::~SceneManager()
 		delete pSceneGraph;
 	}
 	m_pSceneGraphs.clear();
-
-	m_pSceneManager = nullptr;
 }
 
 SceneGraph* SceneManager::AddSceneGraph(SceneGraph* pSceneGraph)
@@ -54,11 +52,31 @@ void SceneManager::ChangeSceneGraph()
 		m_Index = 0;
 }
 
+void SceneManager::ChangeSceneGraph(int idx)
+{
+	if (idx > 0 && idx < m_pSceneGraphs.size())
+		m_Index = idx;
+}
+
 void SceneManager::Update(float elapsedSec)
 {
 	for (SceneGraph* pSceneGraph : m_pSceneGraphs)
 	{
 		pSceneGraph->Update(elapsedSec);
+	}
+
+	//Handle Input Events
+	if (EventManager::IsKeyPressed(SDLK_TAB) || EventManager::IsKeyPressed(SDLK_MINUS))
+	{
+		ChangeSceneGraph();
+	}
+	if (EventManager::IsKeyPressed(SDLK_r))
+	{
+		ToggleDepthColour();
+	}
+	if (EventManager::IsKeyPressed(SDLK_f))
+	{
+		ToggleSampleState();
 	}
 }
 

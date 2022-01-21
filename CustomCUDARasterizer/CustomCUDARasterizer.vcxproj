@@ -114,8 +114,7 @@ xcopy "$(SolutionDir)3rdParty\lib\vld\x64\Microsoft.DTfW.DHL.manifest" "$(OutDir
   <ItemGroup>
     <CudaCompile Include="CUDAROPs.cu" />
     <CudaCompile Include="main.cu" />
-    <CudaCompile Include="Renderer.cu" />
-    <CudaCompile Include="GPUTexture.cu" />
+    <CudaCompile Include="CUDARenderer.cu" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="Camera.cpp" />
@@ -145,6 +144,7 @@ xcopy "$(SolutionDir)3rdParty\lib\vld\x64\Microsoft.DTfW.DHL.manifest" "$(OutDir
     <ClInclude Include="ETimer.h" />
     <ClInclude Include="EventManager.h" />
     <ClInclude Include="GPUHelpers.h" />
+    <ClInclude Include="GPUTextures.h" />
     <ClInclude Include="Light.h" />
     <ClInclude Include="Math.h" />
     <ClInclude Include="MathUtilities.h" />
@@ -160,12 +160,12 @@ xcopy "$(SolutionDir)3rdParty\lib\vld\x64\Microsoft.DTfW.DHL.manifest" "$(OutDir
     <ClInclude Include="Point3.h" />
     <ClInclude Include="Point4.h" />
     <ClInclude Include="PointLight.h" />
-    <ClInclude Include="Renderer.cuh" />
+    <ClInclude Include="CUDARenderer.cuh" />
     <ClInclude Include="RGBColor.h" />
     <ClInclude Include="SampleState.h" />
     <ClInclude Include="SceneGraph.h" />
     <ClInclude Include="SceneManager.h" />
-    <ClInclude Include="GPUTexture.cuh" />
+    <ClInclude Include="GPUTextureSampler.cuh" />
     <ClInclude Include="Texture.h" />
     <ClInclude Include="Triangle.h" />
     <ClInclude Include="Vector.h" />

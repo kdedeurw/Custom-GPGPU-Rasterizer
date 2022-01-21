@@ -30,3 +30,4 @@ inline void GPUAssert(cudaError_t code, const char* file, int line, bool abort =
 //Own evil MACRO's
 #define GPU_KERNEL __global__
 #define GPU_SHARED_MEMORY __shared__
+#define GPU_INLINE __forceinline__

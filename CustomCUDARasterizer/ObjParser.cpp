@@ -3,33 +3,27 @@
 #include <iostream>
 #include <sstream>
 
-ObjParser::ObjParser() : ObjParser{ "" } {}
+const char* ObjParser::OBJ_EXTENSION = ".obj";
 
-ObjParser::ObjParser(const std::string& filePath)
-	: m_ReadFile{}
-	, m_pVertices{}
+ObjParser::ObjParser()
+	: m_IsYAxisInverted{}
+	, m_ReadFile{}
 	, m_Positions{}
 	, m_PositionIndices{}
-	, m_IndexBuffer{}
 	, m_UVIndices{}
 	, m_NormalIndices{}
-{
-	OpenFile(filePath);
-}
+{}
 
 ObjParser::~ObjParser()
 {
-	if (m_pVertices)
-	{
-		m_pVertices->clear();
-		delete m_pVertices;
-	}
-	m_pVertices = nullptr;
 	CloseFile();
 }
 
-void ObjParser::ReadFromObjFile()
+void ObjParser::ReadFromObjFile(std::vector<IVertex>& vertexBuffer, std::vector<unsigned int>& indexBuffer)
 {
+	//Clear all buffers
+	ClearData();
+
 	if (m_ReadFile.is_open())
 	{
 		std::string line{};
@@ -73,23 +67,14 @@ void ObjParser::ReadFromObjFile()
 
 		std::cout << "\n!Done parsing, creating vertices based on parsed info now!\n";
 
-		AssignVertices(); // create vertices, filled with positions, normals, UV coords (and colours?) all at once (store them all in vertex)
+		// create vertices, filled with positions, normals, UV coords (and colours?) all at once (store them all in vertex)
+		vertexBuffer.clear();
+		indexBuffer.clear();
+		AssignVertices(vertexBuffer, indexBuffer);
 
 		std::cout << "\n!All done!\n";
 	}
 	else std::cout << "\n!Unable to open file!\n";
-}
-
-void ObjParser::ReadFromObjFile(const std::string& filePath)
-{
-	if (m_ReadFile.is_open())
-	{
-		CloseFile();
-		OpenFile(filePath);
-	}
-	else /*if (!m_ReadFile.is_open())*/ OpenFile(filePath);
-	
-	ReadFromObjFile();
 }
 
 void ObjParser::StorePosition(std::stringstream& position)
@@ -111,7 +96,7 @@ void ObjParser::StoreFace(std::stringstream& face)
 
 	const std::string* faces[3]{ &first, &second, &third };
 
-	std::vector<int> faceIndexes{};
+	std::vector<unsigned int> faceIndexes{};
 	faceIndexes.reserve(3); // atleast 3 indexes (max 9?)
 
 	std::string index{};
@@ -191,20 +176,16 @@ void ObjParser::GetFirstSecondThird(std::stringstream& fst, std::string& first, 
 	// third now contains 3.000
 }
 
-void ObjParser::AssignVertices()
+void ObjParser::AssignVertices(std::vector<IVertex>& vertexBuffer, std::vector<unsigned int>& indexBuffer)
 {
-	if (m_pVertices)
-	{
-		m_pVertices->clear();
-		delete m_pVertices;
-	}
-	m_pVertices = new std::vector<IVertex>{};
-	m_pVertices->reserve(m_Positions.size());
+	vertexBuffer.clear();
+	indexBuffer.clear();
+	vertexBuffer.reserve(m_Positions.size());
 
 	bool isUVs{ static_cast<bool>(m_UVs.size()) };
 	bool isNormals{ static_cast<bool>(m_Normals.size()) };
 
-	int indexCounter{};
+	unsigned int indexCounter{};
 	std::vector<Indexed> blackList{};
 
 	if (isUVs && isNormals)
@@ -213,7 +194,7 @@ void ObjParser::AssignVertices()
 		{
 			bool isUnique{ true };
 			Indexed index{};
-			int changes{};
+			unsigned int changes{};
 
 			for (Indexed& bl : blackList) // check for blacklisted vertices
 			{
@@ -237,27 +218,26 @@ void ObjParser::AssignVertices()
 
 			if (isUnique)
 			{
-				m_pVertices->push_back(IVertex{ m_Positions[m_PositionIndices[i]], m_UVs[m_UVIndices[i]], m_Normals[m_NormalIndices[i]] });
+				vertexBuffer.push_back(IVertex{ m_Positions[m_PositionIndices[i]], m_UVs[m_UVIndices[i]], m_Normals[m_NormalIndices[i]] });
 				index.v = m_PositionIndices[i]; index.vt = m_UVIndices[i]; index.vn = m_NormalIndices[i]; index.idx = indexCounter;
 				blackList.push_back(index);
 				++indexCounter;
 			}
-			m_IndexBuffer.push_back(index.idx);
+			indexBuffer.push_back(index.idx);
 		}
 
-		std::vector<IVertex>& vertices = (*m_pVertices);
-		for (uint32_t i{}; i < m_IndexBuffer.size(); i += 3)
+		for (uint32_t i{}; i < indexBuffer.size(); i += 3)
 		{
-			uint32_t idx0{ uint32_t(m_IndexBuffer[i]) };
-			uint32_t idx1{ uint32_t(m_IndexBuffer[i + 1]) };
-			uint32_t idx2{ uint32_t(m_IndexBuffer[i + 2]) };
+			uint32_t idx0{ uint32_t(indexBuffer[i]) };
+			uint32_t idx1{ uint32_t(indexBuffer[i + 1]) };
+			uint32_t idx2{ uint32_t(indexBuffer[i + 2]) };
 
-			const FPoint3 p0{ vertices[idx0].v };
-			const FPoint3 p1{ vertices[idx1].v };
-			const FPoint3 p2{ vertices[idx2].v };
-			const FVector3 uv0{ vertices[idx0].uv };
-			const FVector3 uv1{ vertices[idx1].uv };
-			const FVector3 uv2{ vertices[idx2].uv };
+			const FPoint3 p0{ vertexBuffer[idx0].v };
+			const FPoint3 p1{ vertexBuffer[idx1].v };
+			const FPoint3 p2{ vertexBuffer[idx2].v };
+			const FVector3 uv0{ vertexBuffer[idx0].uv };
+			const FVector3 uv1{ vertexBuffer[idx1].uv };
+			const FVector3 uv2{ vertexBuffer[idx2].uv };
 
 			const FVector3 edge0{ p1 - p0 };
 			const FVector3 edge1{ p2 - p0 };
@@ -266,11 +246,11 @@ void ObjParser::AssignVertices()
 			float r{ 1.f / Cross(diffX, diffY) };
 
 			FVector3 tangent{ (edge0 * diffY.y - edge1 * diffY.x) * r };
-			vertices[idx0].tan += tangent;
-			vertices[idx1].tan += tangent;
-			vertices[idx2].tan += tangent;
+			vertexBuffer[idx0].tan += tangent;
+			vertexBuffer[idx1].tan += tangent;
+			vertexBuffer[idx2].tan += tangent;
 		}
-		for (IVertex& vertex : vertices)
+		for (IVertex& vertex : vertexBuffer)
 		{
 			vertex.tan = GetNormalized(Reject(vertex.tan, vertex.n));
 		}
@@ -301,12 +281,12 @@ void ObjParser::AssignVertices()
 
 			if (isUnique)
 			{
-				m_pVertices->push_back(IVertex{ m_Positions[m_PositionIndices[i]], m_UVs[m_UVIndices[i]], m_Normals[m_NormalIndices[i]] });
+				vertexBuffer.push_back(IVertex{ m_Positions[m_PositionIndices[i]], m_UVs[m_UVIndices[i]], m_Normals[m_NormalIndices[i]] });
 				index.v = m_PositionIndices[i]; index.vt = m_UVIndices[i]; index.vn = m_NormalIndices[i]; index.idx = indexCounter;
 				blackList.push_back(index);
 				++indexCounter;
 			}
-			m_IndexBuffer.push_back(index.idx);
+			indexBuffer.push_back(index.idx);
 		}
 	}
 	else if (!isUVs && !isNormals)
@@ -329,25 +309,24 @@ void ObjParser::AssignVertices()
 
 			if (isUnique)
 			{
-				m_pVertices->push_back(IVertex{ m_Positions[m_PositionIndices[i]], FVector2{} });
+				vertexBuffer.push_back(IVertex{ m_Positions[m_PositionIndices[i]], FVector2{} });
 				index.v = m_PositionIndices[i]; index.idx = indexCounter;
 				blackList.push_back(index);
 				++indexCounter;
 			}
-			m_IndexBuffer.push_back(index.idx);
+			indexBuffer.push_back(index.idx);
 		}
 	}
 }
 
-std::vector<IVertex> const* ObjParser::GetVertexBuffer() const
+void ObjParser::ClearData()
 {
-	if (!m_pVertices) return nullptr;
-	return m_pVertices;
-}
-
-const std::vector<int> ObjParser::GetIndexBuffer() const
-{
-	return m_IndexBuffer;
+	m_Positions.clear();
+	m_UVs.clear();
+	m_Normals.clear();
+	m_PositionIndices.clear();
+	m_UVIndices.clear();
+	m_NormalIndices.clear();
 }
 
 void ObjParser::SetInvertYAxis(bool value)
@@ -358,10 +337,20 @@ void ObjParser::SetInvertYAxis(bool value)
 bool ObjParser::OpenFile(const std::string& filePath)
 {
 	size_t posOfDot{ filePath.find('.') };
-	if (posOfDot == std::string::npos) return false; // no initial value of filePath, means no dot, return false == no opening and no crash either
-	if (filePath.substr(posOfDot) != ".obj") return false; // not a .obj file!
+	// no initial value of filePath, means no dot, return false == no opening and no crash either
+	if (posOfDot == std::string::npos)
+		return false;
 
-	if (m_ReadFile.is_open()) return false;
+	 // not a .obj file!
+	const std::string fileExtension = filePath.substr(posOfDot);
+	if (filePath.substr(posOfDot) != OBJ_EXTENSION)
+	{
+		std::cout << "Only \'" << OBJ_EXTENSION << "\' file formats are supported\n Current file extension is : " << fileExtension << '\n';
+		return false;
+	}
+
+	if (m_ReadFile.is_open())
+		CloseFile();
 
 	m_ReadFile.open(filePath);
 	return m_ReadFile.is_open();

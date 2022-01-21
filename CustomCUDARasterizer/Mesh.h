@@ -23,7 +23,7 @@ public:
 	};
 
 	explicit Mesh(const std::vector<IVertex>& vertices, 
-		const std::vector<int>& indexes, 
+		const std::vector<unsigned int>& indexes, 
 		const std::string texPaths[4], 
 		PrimitiveTopology pT = PrimitiveTopology::TriangleList, 
 		float rotSpeed = 0.f, 
@@ -31,7 +31,7 @@ public:
 	virtual ~Mesh();
 
 	const std::vector<IVertex>& GetVertices() const { return m_VertexBuffer; };
-	const std::vector<int>& GetIndexes() const { return m_IndexBuffer; };
+	const std::vector<unsigned int>& GetIndexes() const { return m_IndexBuffer; };
 	PrimitiveTopology GetTopology() const { return m_Topology; };
 	const Textures& GetTextures() const { return m_pTextures; };
 	const FMatrix4& GetWorldMatrix() const { return m_WorldSpace; };
@@ -44,6 +44,6 @@ private:
 	Textures m_pTextures;
 	FMatrix4 m_WorldSpace;
 	const std::vector<IVertex> m_VertexBuffer;
-	const std::vector<int> m_IndexBuffer;
+	const std::vector<unsigned int> m_IndexBuffer;
 };
 

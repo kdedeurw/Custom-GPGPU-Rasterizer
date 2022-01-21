@@ -1,8 +1,7 @@
 #pragma once
-#include "SDL.h"
+#include <SDL.h>
 #include <vector>
 
-union SDL_Event;
 class EventManager
 {
 public:
@@ -10,6 +9,9 @@ public:
 	static void GetMouseButtonStates(bool& isLmb, bool& isRmb);
 	static void GetRelativeMouseValues(float& x, float& y);
 	static void GetScrollWheelValue(int& scrollWheelValue);
+
+	static bool IsInput(SDL_EventType type, SDL_Keycode key);
+	static bool IsKeyPressed(SDL_Keycode key);
 
 private:
 	EventManager() = default;
@@ -23,4 +25,5 @@ private:
 	static void MouseWheelEvent(const SDL_MouseWheelEvent& e);
 
 	static int m_ScrollWheelValue;
+	static std::vector<SDL_Event> m_Events;
 };

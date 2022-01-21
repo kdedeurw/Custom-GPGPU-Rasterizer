@@ -31,11 +31,8 @@
     <CudaCompile Include="CUDAROPs.cu">
       <Filter>Helpers\CUDA</Filter>
     </CudaCompile>
-    <CudaCompile Include="Renderer.cu">
-      <Filter>Renderer</Filter>
-    </CudaCompile>
-    <CudaCompile Include="GPUTexture.cu">
-      <Filter>Renderer\Shading</Filter>
+    <CudaCompile Include="CUDARenderer.cu">
+      <Filter>Helpers\CUDA</Filter>
     </CudaCompile>
   </ItemGroup>
   <ItemGroup>
@@ -130,9 +127,6 @@
     <ClInclude Include="BoundingBox.h">
       <Filter>Helpers</Filter>
     </ClInclude>
-    <ClInclude Include="Renderer.cuh">
-      <Filter>Renderer</Filter>
-    </ClInclude>
     <ClInclude Include="WindowHelper.h">
       <Filter>Helpers</Filter>
     </ClInclude>
@@ -184,11 +178,17 @@
     <ClInclude Include="RGBColor.h">
       <Filter>Helpers</Filter>
     </ClInclude>
-    <ClInclude Include="GPUTexture.cuh">
-      <Filter>Renderer\Shading</Filter>
-    </ClInclude>
     <ClInclude Include="SampleState.h">
       <Filter>Renderer\Shading</Filter>
+    </ClInclude>
+    <ClInclude Include="GPUTextures.h">
+      <Filter>Helpers</Filter>
+    </ClInclude>
+    <ClInclude Include="CUDARenderer.cuh">
+      <Filter>Helpers\CUDA</Filter>
+    </ClInclude>
+    <ClInclude Include="GPUTextureSampler.cuh">
+      <Filter>Helpers\CUDA</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>

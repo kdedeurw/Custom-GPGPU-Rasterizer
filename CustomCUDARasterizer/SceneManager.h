@@ -3,16 +3,13 @@
 #include "Texture.h"
 
 class SceneGraph;
-
-class SceneManager
+class SceneManager final
 {
 public:
-	static SceneManager* GetInstance()
-	{
-		if (!m_pSceneManager) m_pSceneManager = new SceneManager{};
-		return m_pSceneManager;
-	}
+	SceneManager();
 	~SceneManager();
+
+	void Update(float elapsedSec);
 
 	SceneGraph* AddSceneGraph(SceneGraph* pSceneGraph);
 
@@ -21,16 +18,13 @@ public:
 	SampleState GetSampleState() const;
 
 	void ChangeSceneGraph();
-	void Update(float elapsedSec);
+	void ChangeSceneGraph(int idx);
 	void ToggleDepthColour();
 	void ToggleSampleState();
 
 private:
-	SceneManager();
-	static SceneManager* m_pSceneManager;
-
-	bool m_IsDepthColour{};
-	size_t m_Index;
+	bool m_IsDepthColour;
+	int m_Index;
 	std::vector<SceneGraph*> m_pSceneGraphs;
 	SampleState m_SampleState;
 };

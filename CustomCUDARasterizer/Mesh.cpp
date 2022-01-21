@@ -2,7 +2,8 @@
 #include "Mesh.h"
 #include "Texture.h"
 
-Mesh::Mesh(const std::vector<IVertex>& vertices, const std::vector<int>& indexes, const std::string texPaths[4], PrimitiveTopology pT, float rotSpeed, const FPoint3& position)
+Mesh::Mesh(const std::vector<IVertex>& vertices, const std::vector<unsigned int>& indexes, 
+	const std::string texPaths[4], PrimitiveTopology pT, float rotSpeed, const FPoint3& position)
 	: m_VertexBuffer{vertices}
 	, m_IndexBuffer{indexes}
 	, m_Topology{pT}

@@ -344,7 +344,8 @@ BOTH_CALLABLE inline Matrix<4, 4, T> Inverse(const Matrix<4, 4, T>& m)
 	Vector<3, T> v = c * w - d * z;
 
 	T det = Dot(s, v) + Dot(t, u);
-	assert((!AreEqual(det, static_cast<T>(0))) && "ERROR: determinant is 0, there is no INVERSE!");
+	//assert((!AreEqual(det, static_cast<T>(0))) && "ERROR: determinant is 0, there is no INVERSE!");
+	assert(det != 0.f);
 	T invDet = static_cast<T>(1.0f / det);
 
 	s *= invDet; t *= invDet; u *= invDet; v *= invDet;

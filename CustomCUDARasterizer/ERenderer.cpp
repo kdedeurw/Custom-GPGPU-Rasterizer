@@ -36,7 +36,7 @@ Elite::Renderer::~Renderer()
 	m_pDepthBuffer = nullptr;
 }
 
-void Elite::Renderer::Render()
+void Elite::Renderer::Render(const SceneManager& sm)
 {
 	//Create valid rendering state
 	SDL_LockSurface(m_pBackBuffer);
@@ -44,7 +44,6 @@ void Elite::Renderer::Render()
 	ClearScreen();
 
 	//SceneGraph
-	SceneManager& sm = *SceneManager::GetInstance();
 	SceneGraph* pSceneGraph = sm.GetSceneGraph();
 	const std::vector<Mesh*>& pObjects = pSceneGraph->GetObjects();
 	const FMatrix4 lookatMatrix = m_pCamera->GetLookAtMatrix();
@@ -56,7 +55,7 @@ void Elite::Renderer::Render()
 	for (Mesh* pMesh : pObjects)
 	{
 		std::vector<OVertex> NDCVertices{ GetNDCMeshVertices(pMesh->GetVertices(), viewProjectionMatrix, pMesh->GetWorldMatrix()) }; // calculate all IVertices to OVertices !in NDC!
-		const std::vector<int>& indices{ pMesh->GetIndexes() };
+		const std::vector<unsigned int>& indices{ pMesh->GetIndexes() };
 		m_pTextures = &pMesh->GetTextures();
 		const Mesh::PrimitiveTopology pT{ pMesh->GetTopology() };
 		const size_t size{ indices.size() };
@@ -79,7 +78,7 @@ void Elite::Renderer::Render()
 				if (!FrustumTest(rasterCoords))
 					continue;
 
-				RenderTriangle(triangle, rasterCoords);
+				RenderTriangle(sm, triangle, rasterCoords);
 			}
 		}
 		else //if (pT == Mesh::PrimitiveTopology::TriangleStrip)
@@ -104,7 +103,7 @@ void Elite::Renderer::Render()
 				if (!FrustumTest(rasterCoords))
 					continue;
 
-				RenderTriangle(triangle, rasterCoords);
+				RenderTriangle(sm, triangle, rasterCoords);
 
 				isOdd = !isOdd; // !flip last 2 vertices each odd triangle!
 			}
@@ -117,10 +116,10 @@ void Elite::Renderer::Render()
 	SDL_UpdateWindowSurface(m_pWindow);
 }
 
-void Elite::Renderer::RenderTriangle(OVertex* triangle[3], FPoint4 rasterCoords[3])
+void Elite::Renderer::RenderTriangle(const SceneManager& sm, OVertex* triangle[3], FPoint4 rasterCoords[3])
 {
 	NDCToScreenSpace(rasterCoords); //NDC to Screenspace
-	RenderPixelsInTriangle(triangle, rasterCoords); //Rasterize Screenspace triangle
+	RenderPixelsInTriangle(sm, triangle, rasterCoords); //Rasterize Screenspace triangle
 }
 
 bool Elite::Renderer::SaveBackbufferToImage() const
@@ -215,9 +214,8 @@ std::vector<OVertex> Elite::Renderer::GetNDCMeshVertices(const std::vector<IVert
 	// Basically the compilers optimizes the proces above so an automatic std::move() will be used instead of a copy construction (thank god)
 }
 
-void Elite::Renderer::RenderPixelsInTriangle(OVertex* triangle[3], FPoint4 rasterCoords[3])
+void Elite::Renderer::RenderPixelsInTriangle(const SceneManager& sm, OVertex* triangle[3], FPoint4 rasterCoords[3])
 {
-	SceneManager& sm = *SceneManager::GetInstance();
 	const BoundingBox bb = GetBoundingBox(rasterCoords);
 
 	const OVertex& v0 = *triangle[0];
@@ -374,10 +372,8 @@ void Elite::Renderer::RenderPixelsInTriangle(OVertex* triangle[3], FPoint4 raste
 	}
 }
 
-void Elite::Renderer::ShadePixel(const OVertex& oVertex, const Mesh::Textures& textures)
+void Elite::Renderer::ShadePixel(const OVertex& oVertex, const Mesh::Textures& textures, const SceneManager& sm)
 {
-	SceneManager& sm = *SceneManager::GetInstance();
-	
 	RGBColor finalColour{};
 	if (!sm.IsDepthColour()) // show depth colour?
 	{

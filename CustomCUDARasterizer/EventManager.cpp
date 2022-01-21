@@ -2,16 +2,18 @@
 #include "EventManager.h"
 
 #include "Camera.h"
-#include "SceneManager.h"
 
 int EventManager::m_ScrollWheelValue{};
+std::vector<SDL_Event> EventManager::m_Events{};
 
 void EventManager::ProcessInputs(bool& isLooping, bool& takeScreenshot, float elapsedSec)
 {
+	m_Events.clear();
 	m_ScrollWheelValue = 0;
 	SDL_Event e;
 	while (SDL_PollEvent(&e) != 0)
 	{
+		m_Events.push_back(e);
 		switch (e.type)
 		{
 		case SDL_QUIT:
@@ -51,22 +53,6 @@ void EventManager::ProcessInputs(bool& isLooping, bool& takeScreenshot, float el
 
 void EventManager::KeyDownEvent(const SDL_KeyboardEvent & e)
 {
-	SceneManager& sm = *SceneManager::GetInstance();
-
-	switch (e.keysym.sym)
-	{
-	case::SDLK_TAB:
-		sm.ChangeSceneGraph();
-		break;
-	case::SDLK_MINUS:
-		break;
-	case::SDLK_r:
-		sm.ToggleDepthColour();
-		break;
-	case::SDLK_f:
-		sm.ToggleSampleState();
-		break;
-	}
 }
 
 void EventManager::KeyUpEvent(const SDL_KeyboardEvent & e)
@@ -127,4 +113,29 @@ void EventManager::GetRelativeMouseValues(float& xValue, float& yValue)
 void EventManager::GetScrollWheelValue(int& scrollWheelValue)
 {
 	scrollWheelValue = m_ScrollWheelValue;
+}
+
+bool EventManager::IsInput(SDL_EventType type, SDL_Keycode key)
+{
+	//TODO: command listeners lmao
+	for (const SDL_Event& e : m_Events)
+	{
+		if (e.type == type)
+		{
+			return e.key.keysym.sym == key;
+		}
+	}
+	return false;
+}
+
+bool EventManager::IsKeyPressed(SDL_Keycode key)
+{
+	for (const SDL_Event& e : m_Events)
+	{
+		if (e.type == SDL_KEYDOWN)
+		{
+			return e.key.keysym.sym == key;
+		}
+	}
+	return false;
 }

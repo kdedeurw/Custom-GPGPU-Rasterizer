@@ -8,62 +8,60 @@
 #include "RGBColor.h"
 #include "SampleState.h"
 #include "MathUtilities.h"
-#include <SDL_image.h>
-#include <SDL_surface.h>
+#include "GPUTextures.h"
 
 struct RGB
 {
+	//Uninitialized ctor
+	BOTH_CALLABLE RGB()
+	{}
+	BOTH_CALLABLE RGB(unsigned char r, unsigned char g, unsigned char b)
+		: r{r}
+		, g{g}
+		, b{b}
+	{}
 	unsigned char r;
 	unsigned char g;
 	unsigned char b;
 };
 
-struct SDL_Surface;
-class GPUTexture
+namespace GPUTextureSampler
 {
-public:
-	CPU_CALLABLE explicit GPUTexture(const char* file);
-	CPU_CALLABLE ~GPUTexture();
-	GPU_CALLABLE inline RGBColor Sample(const FVector2& uv, SampleState state = SampleState::Point) const;
-
-private:
-	SDL_Surface* m_pSurface;
-
-	GPU_CALLABLE inline RGBColor SamplePoint(const FVector2& uv) const;
-	GPU_CALLABLE inline RGBColor SampleLinear(const FVector2& uv) const;
-	GPU_CALLABLE inline RGB GetRGBFromTexture(const uint32_t* pPixels, uint32_t pixelIdx) const;
+	GPU_CALLABLE GPU_INLINE RGBColor Sample(const GPUTexture* pTexture, const FVector2& uv, const SampleState sampleState);
+	GPU_CALLABLE GPU_INLINE RGBColor SamplePoint(const GPUTexture* pTexture, const FVector2& uv);
+	GPU_CALLABLE GPU_INLINE RGBColor SampleLinear(const GPUTexture* pTexture, const FVector2& uv);
+	GPU_CALLABLE GPU_INLINE RGB GetRGBFromTexture(const uint32_t* pPixels, uint32_t pixelIdx);
 };
 
-GPU_CALLABLE __forceinline__ RGBColor GPUTexture::Sample(const FVector2& uv, SampleState state) const
+GPU_CALLABLE GPU_INLINE RGBColor GPUTextureSampler::Sample(const GPUTexture* pTexture, const FVector2& uv, const SampleState sampleState)
 {
-	if (state == SampleState::Linear)
-		return SampleLinear(uv);
-
-	return SamplePoint(uv);
+	if (sampleState == SampleState::Point)
+		return SamplePoint(pTexture, uv);
+	return SampleLinear(pTexture, uv);
 }
 
-GPU_CALLABLE RGBColor GPUTexture::SamplePoint(const FVector2& uv) const
+GPU_CALLABLE GPU_INLINE RGBColor GPUTextureSampler::SamplePoint(const GPUTexture* pTexture, const FVector2& uv)
 {
-	const uint32_t x{ uint32_t(uv.x * m_pSurface->w) };
-	const uint32_t y{ uint32_t(uv.y * m_pSurface->h) };
-	const uint32_t pixel = uint32_t(x + (y * m_pSurface->w));
+	const uint32_t x{ uint32_t(uv.x * pTexture->w) };
+	const uint32_t y{ uint32_t(uv.y * pTexture->h) };
+	const uint32_t pixel = uint32_t(x + (y * pTexture->w));
 	//const SDL_PixelFormat* pPixelFormat = new SDL_PixelFormat{ m_pSurface->format->BytesPerPixel };
-	const uint32_t* pixels = (uint32_t*)m_pSurface->pixels; // only works with uint32*, as seen in Renderer.h
+	const uint32_t* pixels = (uint32_t*)pTexture->pixels; // only works with uint32*, as seen in Renderer.h
 	//SDL_GetRGB(pixels[pixel], m_pSurface->format, &r, &g, &b);
 	const RGB rgb = GetRGBFromTexture(pixels, pixel);
 	return RGBColor{ rgb.r / 255.f, rgb.g / 255.f, rgb.b / 255.f };
 }
 
-GPU_CALLABLE RGBColor GPUTexture::SampleLinear(const FVector2& uv) const
+GPU_CALLABLE GPU_INLINE RGBColor GPUTextureSampler::SampleLinear(const GPUTexture* pTexture, const FVector2& uv)
 {
 	//Step 1: find pixel to sample from
-	const uint32_t x{ uint32_t(uv.x * m_pSurface->w) };
-	const uint32_t y{ uint32_t(uv.y * m_pSurface->h) };
+	const uint32_t x{ uint32_t(uv.x * pTexture->w) };
+	const uint32_t y{ uint32_t(uv.y * pTexture->h) };
 
 	//Step 2: find 4 neighbours
-	const uint32_t* rawData = (uint32_t*)m_pSurface->pixels;
-	const uint32_t max = m_pSurface->w * m_pSurface->h;
-	const uint32_t originalPixel = uint32_t(x + (y * m_pSurface->w));
+	const uint32_t* rawData = (uint32_t*)pTexture->pixels;
+	const uint32_t max = pTexture->w * pTexture->h;
+	const uint32_t originalPixel = uint32_t(x + (y * pTexture->w));
 
 	int neighbourpixels[4];
 	//sample 4 adjacent neighbours
@@ -75,10 +73,10 @@ GPU_CALLABLE RGBColor GPUTexture::SampleLinear(const FVector2& uv) const
 	if (neighbourpixels[1] < max)
 		neighbourpixels[1] = max;
 	//possible issue: x might shove back from right to left + 1y
-	neighbourpixels[2] = originalPixel + m_pSurface->w; //original pixel + 1y
+	neighbourpixels[2] = originalPixel + pTexture->w; //original pixel + 1y
 	if (neighbourpixels[2] < max)
 		neighbourpixels[2] = max;
-	neighbourpixels[3] = originalPixel - m_pSurface->w; //original pixel - 1y
+	neighbourpixels[3] = originalPixel - pTexture->w; //original pixel - 1y
 	if (neighbourpixels[3] < 0)
 		neighbourpixels[3] = 0;
 
@@ -134,9 +132,9 @@ GPU_CALLABLE RGBColor GPUTexture::SampleLinear(const FVector2& uv) const
 	return finalSampleColour / 255.f;
 }
 
-GPU_CALLABLE inline RGB GPUTexture::GetRGBFromTexture(const uint32_t* pPixels, uint32_t pixelIdx) const
+GPU_CALLABLE GPU_INLINE RGB GPUTextureSampler::GetRGBFromTexture(const uint32_t* pPixels, uint32_t pixelIdx)
 {
-	const Uint8* pRGB = (Uint8*)pPixels[pixelIdx];
+	const unsigned char* pRGB = (unsigned char*)pPixels[pixelIdx];
 	RGB rgb;
 	rgb.r = pRGB[0];
 	rgb.g = pRGB[1];
