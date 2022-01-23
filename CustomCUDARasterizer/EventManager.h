@@ -2,7 +2,7 @@
 #include <SDL.h>
 #include <vector>
 
-class EventManager
+class EventManager final
 {
 public:
 	static void ProcessInputs(bool& isLooping, bool& takeScreenshot, float elapsedSec);
@@ -14,8 +14,8 @@ public:
 	static bool IsKeyPressed(SDL_Keycode key);
 
 private:
-	EventManager() = default;
-	virtual ~EventManager();
+	EventManager() = delete;
+	~EventManager() = delete;
 
 	static void KeyDownEvent(const SDL_KeyboardEvent& e);
 	static void KeyUpEvent(const SDL_KeyboardEvent& e);

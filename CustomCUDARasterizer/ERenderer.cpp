@@ -11,6 +11,7 @@
 #include "Camera.h"
 #include "Mesh.h"
 #include "Texture.h"
+#include "Textures.h"
 #include "ObjParser.h"
 #include "DirectionalLight.h"
 #include "EventManager.h"
@@ -57,12 +58,12 @@ void Elite::Renderer::Render(const SceneManager& sm)
 		std::vector<OVertex> NDCVertices{ GetNDCMeshVertices(pMesh->GetVertices(), viewProjectionMatrix, pMesh->GetWorldMatrix()) }; // calculate all IVertices to OVertices !in NDC!
 		const std::vector<unsigned int>& indices{ pMesh->GetIndexes() };
 		m_pTextures = &pMesh->GetTextures();
-		const Mesh::PrimitiveTopology pT{ pMesh->GetTopology() };
+		const PrimitiveTopology pT{ pMesh->GetTopology() };
 		const size_t size{ indices.size() };
 
 		// Topology
 		//"A switch statement does a hidden check to see if there are more than 10 things to check, not just if - else." -Terry A. Davis
-		if (pT == Mesh::PrimitiveTopology::TriangleList)
+		if (pT == PrimitiveTopology::TriangleList)
 		{
 			for (size_t idx{ 2 }; idx < size; idx += 3)
 			{
@@ -81,7 +82,7 @@ void Elite::Renderer::Render(const SceneManager& sm)
 				RenderTriangle(sm, triangle, rasterCoords);
 			}
 		}
-		else //if (pT == Mesh::PrimitiveTopology::TriangleStrip)
+		else //if (pT == PrimitiveTopology::TriangleStrip)
 		{
 			bool isOdd{};//could replace with modulo operator, but this is way more performant, at the cost of using a tiny bit more memory
 			//https://embeddedgurus.com/stack-overflow/2011/02/efficient-c-tip-13-use-the-modulus-operator-with-caution/
@@ -100,7 +101,7 @@ void Elite::Renderer::Render(const SceneManager& sm)
 				FPoint4 rasterCoords[3]{ v0.v, v1.v, v2.v }; //painful, but unavoidable copy
 				//Otherwise any mesh that uses a vertex twice will literally get shredded due to same values being used for frustum tests etc.
 
-				if (!FrustumTest(rasterCoords))
+				if (FrustumTest(rasterCoords))
 					continue;
 
 				RenderTriangle(sm, triangle, rasterCoords);
@@ -372,7 +373,7 @@ void Elite::Renderer::RenderPixelsInTriangle(const SceneManager& sm, OVertex* tr
 	}
 }
 
-void Elite::Renderer::ShadePixel(const OVertex& oVertex, const Mesh::Textures& textures, const SceneManager& sm)
+void Elite::Renderer::ShadePixel(const OVertex& oVertex, const Textures& textures, const SceneManager& sm)
 {
 	RGBColor finalColour{};
 	if (!sm.IsDepthColour()) // show depth colour?
@@ -511,7 +512,7 @@ bool Elite::Renderer::FrustumTest(FPoint4 rasterCoords[3])
 {
 	if (!FrustumTestVertex(rasterCoords[0])) return false;
 	if (!FrustumTestVertex(rasterCoords[1])) return false;
-	return FrustumTestVertex(rasterCoords[2]); //we can return the last check
+	return !FrustumTestVertex(rasterCoords[2]); //we can return the last check
 }
 
 void Elite::Renderer::NDCToScreenSpace(FPoint4 rasterCoords[3])

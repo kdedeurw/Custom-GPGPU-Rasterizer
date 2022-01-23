@@ -26,6 +26,7 @@
 #include "SceneGraph.h"
 #include "DirectionalLight.h"
 #include "WindowHelper.h"
+#include "PrimitiveTopology.h"
 
 //Project CUDA includes
 #include "CUDARenderer.cuh"
@@ -40,17 +41,17 @@ void CreateScenes(SceneManager& sm)
 	{
 		// SceneGraph 1
 		SceneGraph* pSceneGraph = new SceneGraph{};
-		{
-			// Mesh 1 // Triangle 1
-			std::vector<IVertex> vertices{
-				IVertex{ FPoint3{ 0.f, 2.f, 0.f }, FVector2{} },
-				IVertex{ FPoint3{ -1.f, 0.f, 0.f }, FVector2{}},
-				IVertex{ FPoint3{ 1.f, 0.f, 0.f }, FVector2{} } };
-			std::vector<unsigned int> indices{ 0, 1, 2 };
-			const std::string texPaths[4]{ "", "", "", "" };
-			Mesh* pTriangle = new Mesh{ vertices, indices, texPaths, Mesh::PrimitiveTopology::TriangleList };
-			pSceneGraph->AddMesh(pTriangle);
-		}
+		//{
+		//	// Mesh 1 // Triangle 1
+		//	std::vector<IVertex> vertices{
+		//		IVertex{ FPoint3{ 0.f, 2.f, 0.f }, FVector2{} },
+		//		IVertex{ FPoint3{ -1.f, 0.f, 0.f }, FVector2{}},
+		//		IVertex{ FPoint3{ 1.f, 0.f, 0.f }, FVector2{} } };
+		//	std::vector<unsigned int> indices{ 0, 1, 2 };
+		//	const std::string texPaths[4]{ "", "", "", "" };
+		//	Mesh* pTriangle = new Mesh{ vertices, indices, texPaths, PrimitiveTopology::TriangleList };
+		//	pSceneGraph->AddMesh(pTriangle);
+		//}
 		{
 			// Mesh 2 // Triangle 2
 			std::vector<IVertex> vertices{
@@ -59,7 +60,7 @@ void CreateScenes(SceneManager& sm)
 				IVertex{ FPoint3{ 3.f, -2.f, -2.f }, FVector2{}, FVector3{1.f,1.f,1.f}, RGBColor{0.f, 0.f, 1.f} } };
 			std::vector<unsigned int> indices{ 0, 1, 2 };
 			const std::string texPaths[4]{ "", "", "", "" };
-			Mesh* pTriangle = new Mesh{ vertices, indices, texPaths, Mesh::PrimitiveTopology::TriangleList };
+			Mesh* pTriangle = new Mesh{ vertices, indices, texPaths, PrimitiveTopology::TriangleList };
 			pSceneGraph->AddMesh(pTriangle);
 		}
 		pSceneGraph->AddLight(new DirectionalLight{ RGBColor{1.f, 1.f, 1.f}, 2.f, FVector3{ 0.577f, -0.577f, -0.577f } });
@@ -85,13 +86,13 @@ void CreateScenes(SceneManager& sm)
 	//									6, 7, 4,
 	//									4, 7, 5,
 	//									7, 8, 5, }; // obviously a list
-	//		Mesh* pTriangleListQuad = new Mesh{ vertices, indices, texPaths, Mesh::PrimitiveTopology::TriangleList };
+	//		Mesh* pTriangleListQuad = new Mesh{ vertices, indices, texPaths, PrimitiveTopology::TriangleList };
 	//		//pSceneGraph->AddMesh(pMesh);
 	//	}
 	//	{
 	//		// Mesh 2 // TriangleStrip Quad
 	//		std::vector<unsigned int> indices{ 0, 3, 1, 4, 2, 5, 5, 3, 3, 6, 4, 7, 5, 8 }; // strip
-	//		Mesh* pTriangleStripQuad = new Mesh{ vertices, indices, texPaths, Mesh::PrimitiveTopology::TriangleStrip };
+	//		Mesh* pTriangleStripQuad = new Mesh{ vertices, indices, texPaths, PrimitiveTopology::TriangleStrip };
 	//		pSceneGraph->AddMesh(pTriangleStripQuad);
 	//		pSceneGraph->AddLight(new DirectionalLight{ RGBColor{1.f, 1.f, 1.f}, 2.f, FVector3{ 0.577f, -0.577f, -0.577f } });
 	//	}
@@ -107,7 +108,7 @@ void CreateScenes(SceneManager& sm)
 	//		parser.SetInvertYAxis(true);
 	//		parser.ReadFromObjFile(vertexBuffer, indexBuffer);
 	//		const std::string texPaths[4]{ "Resources/tuktuk.png", "", "", "" };
-	//		Mesh* pTukTukMesh = new Mesh{ vertexBuffer, indexBuffer, texPaths, Mesh::PrimitiveTopology::TriangleList, 1.f };
+	//		Mesh* pTukTukMesh = new Mesh{ vertexBuffer, indexBuffer, texPaths, PrimitiveTopology::TriangleList, 1.f };
 	//		pSceneGraph->AddMesh(pTukTukMesh);
 	//		pSceneGraph->AddLight(new DirectionalLight{ RGBColor{1.f, 1.f, 1.f}, 2.f, FVector3{ 0.577f, -0.577f, -0.577f } });
 	//	}
@@ -122,7 +123,7 @@ void CreateScenes(SceneManager& sm)
 	//		parser.OpenFile("Resources/lowpoly_bunny.obj");
 	//		parser.ReadFromObjFile(vertexBuffer, indexBuffer);
 	//		const std::string texPaths[4]{ "", "", "", "" };
-	//		Mesh* pBunnyMesh = new Mesh{ vertexBuffer, indexBuffer, texPaths, Mesh::PrimitiveTopology::TriangleList };
+	//		Mesh* pBunnyMesh = new Mesh{ vertexBuffer, indexBuffer, texPaths, PrimitiveTopology::TriangleList };
 	//		pSceneGraph->AddMesh(pBunnyMesh);
 	//		pSceneGraph->AddLight(new DirectionalLight{ RGBColor{1.f, 1.f, 1.f}, 2.f, FVector3{ 0.577f, -0.577f, -0.577f } });
 	//	}
@@ -138,7 +139,7 @@ void CreateScenes(SceneManager& sm)
 	//		parser.SetInvertYAxis(true);
 	//		parser.ReadFromObjFile(vertexBuffer, indexBuffer);
 	//		const std::string texPaths[4]{ "Resources/vehicle_diffuse.png", "Resources/vehicle_normal.png", "Resources/vehicle_specular.png", "Resources/vehicle_gloss.png" };
-	//		Mesh* pVehicleMesh = new Mesh{ vertexBuffer, indexBuffer, texPaths, Mesh::PrimitiveTopology::TriangleList, 1.f };
+	//		Mesh* pVehicleMesh = new Mesh{ vertexBuffer, indexBuffer, texPaths, PrimitiveTopology::TriangleList, 1.f };
 	//		pSceneGraph->AddMesh(pVehicleMesh);
 	//		pSceneGraph->AddLight(new DirectionalLight{ RGBColor{1.f, 1.f, 1.f}, 2.f, FVector3{ 0.577f, -0.577f, -0.577f } });
 	//	}
@@ -159,12 +160,9 @@ void ShutDown(SDL_Window* pWindow)
 
 int main(int argc, char* args[])
 {
-    cudaError_t cudaStatus{};
-
 	//Single-GPU setup
 	const int deviceId = 0;
-    cudaStatus = SetDeviceCuda(deviceId);
-	CheckErrorCuda(cudaStatus);
+	CheckErrorCuda(SetDeviceCuda(deviceId));
 
 	//Unreferenced parameters
 	(void)argc;
@@ -184,7 +182,7 @@ int main(int argc, char* args[])
 	if (!pWindow)
 		return 1;
 
-	//Initialize "framework"
+	//Initialize framework
 	Elite::Timer* pTimer = new Elite::Timer();
 	//Elite::Renderer* pRenderer = new Elite::Renderer(pWindow);
 
@@ -201,13 +199,11 @@ int main(int argc, char* args[])
 	windowHelper.pFrontBuffer = SDL_GetWindowSurface(pWindow);
 	windowHelper.pBackBuffer = SDL_CreateRGBSurface(0, width, height, 32, 0, 0, 0, 0);
 	windowHelper.pBackBufferPixels = (unsigned int*)windowHelper.pBackBuffer->pixels;
-	const size_t size = width * height;
-	windowHelper.pDepthBuffer = new float[size];
-	std::memset(windowHelper.pDepthBuffer, INT_MAX, sizeof(float) * size);
 
 	CreateScenes(sm);
 
 	CUDARenderer* pCudaRenderer = new CUDARenderer{ windowHelper };
+	pCudaRenderer->LoadScene(sm.GetSceneGraph());
 
 	//Start loop
 	pTimer->Start();
@@ -252,13 +248,12 @@ int main(int argc, char* args[])
 	}
 	pTimer->Stop();
 
-	cudaStatus = DeviceSynchroniseCuda();
-	CheckErrorCuda(cudaStatus);
+	CheckErrorCuda(DeviceSynchroniseCuda());
+	CheckErrorCuda(DeviceResetCuda());
 
-	//Shutdown "framework"
+	//Shutdown framework
 	//delete pRenderer;
 	delete pTimer;
-	delete[] windowHelper.pDepthBuffer;
 	delete pCudaRenderer;
 
 	ShutDown(pWindow);

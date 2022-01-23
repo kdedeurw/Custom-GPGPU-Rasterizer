@@ -78,6 +78,12 @@ xcopy "$(SolutionDir)3rdParty\lib\vld\x64\vld_x64.dll" "$(OutDir)" /y /D
 xcopy "$(SolutionDir)3rdParty\lib\vld\x64\dbghelp.dll" "$(OutDir)" /y /D
 xcopy "$(SolutionDir)3rdParty\lib\vld\x64\Microsoft.DTfW.DHL.manifest" "$(OutDir)" /y /D</Command>
     </PostBuildEvent>
+    <CudaLink>
+      <GPUDebugInfo>true</GPUDebugInfo>
+    </CudaLink>
+    <CudaLink>
+      <Optimization>Od</Optimization>
+    </CudaLink>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <ClCompile>
@@ -110,6 +116,12 @@ xcopy "$(SolutionDir)3rdParty\lib\vld\x64\vld_x64.dll" "$(OutDir)" /y /D
 xcopy "$(SolutionDir)3rdParty\lib\vld\x64\dbghelp.dll" "$(OutDir)" /y /D
 xcopy "$(SolutionDir)3rdParty\lib\vld\x64\Microsoft.DTfW.DHL.manifest" "$(OutDir)" /y /D</Command>
     </PostBuildEvent>
+    <CudaLink>
+      <GPUDebugInfo>false</GPUDebugInfo>
+    </CudaLink>
+    <CudaLink>
+      <Optimization>O3</Optimization>
+    </CudaLink>
   </ItemDefinitionGroup>
   <ItemGroup>
     <CudaCompile Include="CUDAROPs.cu" />
@@ -161,12 +173,14 @@ xcopy "$(SolutionDir)3rdParty\lib\vld\x64\Microsoft.DTfW.DHL.manifest" "$(OutDir
     <ClInclude Include="Point4.h" />
     <ClInclude Include="PointLight.h" />
     <ClInclude Include="CUDARenderer.cuh" />
+    <ClInclude Include="PrimitiveTopology.h" />
     <ClInclude Include="RGBColor.h" />
     <ClInclude Include="SampleState.h" />
     <ClInclude Include="SceneGraph.h" />
     <ClInclude Include="SceneManager.h" />
     <ClInclude Include="GPUTextureSampler.cuh" />
     <ClInclude Include="Texture.h" />
+    <ClInclude Include="Textures.h" />
     <ClInclude Include="Triangle.h" />
     <ClInclude Include="Vector.h" />
     <ClInclude Include="Vector2.h" />

@@ -10,8 +10,7 @@ public:
 	void SetPos(const FPoint3& pos) { m_Position = pos; };
 	void Update(float elapsedSec);
 
-	FPoint3 GetPos() const { return GetPos(GetLookAtMatrix()); };
-	FPoint3 GetPos(const FMatrix4& lookatMatrix) const { return FPoint3{ lookatMatrix(0, 3), lookatMatrix(1, 3), lookatMatrix(2, 3) }; };
+	const FPoint3& GetPos() const { return m_Position; };
 	const FVector3& GetRight() const { return m_Right; };
 	const FVector3& GetUp() const { return m_Up; };
 	const FVector3& GetForward() const { return m_Forward; };

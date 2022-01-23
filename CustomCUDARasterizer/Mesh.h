@@ -3,25 +3,12 @@
 #include "Vertex.h"
 #include <vector>
 #include <string>
-
-class Texture;
+#include "PrimitiveTopology.h"
+#include "Textures.h"
 
 class Mesh
 {
 public:
-	enum class PrimitiveTopology
-	{
-		TriangleList,
-		TriangleStrip
-	};
-	struct Textures
-	{
-		Texture* pDiff{};
-		Texture* pNorm{};
-		Texture* pSpec{};
-		Texture* pGloss{};
-	};
-
 	explicit Mesh(const std::vector<IVertex>& vertices, 
 		const std::vector<unsigned int>& indexes, 
 		const std::string texPaths[4], 

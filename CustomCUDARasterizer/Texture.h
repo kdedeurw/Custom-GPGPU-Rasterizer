@@ -5,6 +5,7 @@
 #include "MathUtilities.h"
 #include <SDL_image.h>
 #include <SDL_surface.h>
+#include "Textures.h"
 
 struct SDL_Surface;
 class Texture

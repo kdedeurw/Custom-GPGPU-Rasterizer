@@ -11,8 +11,6 @@
 #include <cstdint>
 #include <vector>
 
-#include "Mesh.h"
-
 struct SDL_Window;
 struct SDL_Surface;
 
@@ -21,6 +19,7 @@ struct BoundingBox;
 struct IVertex;
 struct OVertex;
 class SceneManager;
+struct Textures;
 namespace Elite
 {
 	class Renderer final
@@ -47,7 +46,7 @@ namespace Elite
 		uint32_t m_Height = 0;
 		float* m_pDepthBuffer{};
 		Camera* m_pCamera{};
-		const Mesh::Textures* m_pTextures{};
+		const Textures* m_pTextures{};
 
 		void CreateDepthBuffer();
 		inline void ClearDepthBuffer();
@@ -66,7 +65,7 @@ namespace Elite
 		OVertex GetNDCVertexDeprecated(const IVertex& vertex, const FMatrix4& worldMatrix = FMatrix4::Identity());
 		inline OVertex GetNDCVertex(const IVertex& vertex, const FMatrix4& viewProjectionMatrix, const FMatrix4& worldMatrix = FMatrix4::Identity());
 		std::vector<OVertex> GetNDCMeshVertices(const std::vector<IVertex>& vertices, const FMatrix4& iewProjectionMatrix, const FMatrix4& worldMatrix = FMatrix4::Identity());
-		inline void ShadePixel(const OVertex& oVertex, const Mesh::Textures& textures, const SceneManager& sm);
+		inline void ShadePixel(const OVertex& oVertex, const Textures& textures, const SceneManager& sm);
 	};
 }
 

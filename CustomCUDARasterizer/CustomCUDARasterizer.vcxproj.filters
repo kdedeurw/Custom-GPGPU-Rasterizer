@@ -190,6 +190,12 @@
     <ClInclude Include="GPUTextureSampler.cuh">
       <Filter>Helpers\CUDA</Filter>
     </ClInclude>
+    <ClInclude Include="PrimitiveTopology.h">
+      <Filter>Renderer</Filter>
+    </ClInclude>
+    <ClInclude Include="Textures.h">
+      <Filter>Renderer\Shading</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <None Include="CustomCUDARasterizer.props" />
