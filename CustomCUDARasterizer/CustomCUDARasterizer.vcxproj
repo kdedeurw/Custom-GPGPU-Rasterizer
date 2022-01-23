@@ -124,7 +124,6 @@ xcopy "$(SolutionDir)3rdParty\lib\vld\x64\Microsoft.DTfW.DHL.manifest" "$(OutDir
     </CudaLink>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <CudaCompile Include="CUDAROPs.cu" />
     <CudaCompile Include="main.cu" />
     <CudaCompile Include="CUDARenderer.cu" />
   </ItemGroup>
@@ -150,7 +149,6 @@ xcopy "$(SolutionDir)3rdParty\lib\vld\x64\Microsoft.DTfW.DHL.manifest" "$(OutDir
   <ItemGroup>
     <ClInclude Include="BoundingBox.h" />
     <ClInclude Include="Camera.h" />
-    <ClInclude Include="CUDAROPs.cuh" />
     <ClInclude Include="DirectionalLight.h" />
     <ClInclude Include="ERenderer.h" />
     <ClInclude Include="ETimer.h" />
@@ -175,6 +173,7 @@ xcopy "$(SolutionDir)3rdParty\lib\vld\x64\Microsoft.DTfW.DHL.manifest" "$(OutDir
     <ClInclude Include="CUDARenderer.cuh" />
     <ClInclude Include="PrimitiveTopology.h" />
     <ClInclude Include="RGBColor.h" />
+    <ClInclude Include="RGBRaw.h" />
     <ClInclude Include="SampleState.h" />
     <ClInclude Include="SceneGraph.h" />
     <ClInclude Include="SceneManager.h" />

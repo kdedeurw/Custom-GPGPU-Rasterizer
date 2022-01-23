@@ -3,7 +3,6 @@
 #include <vector>
 
 //Project CUDA includes
-#include "CUDAROPs.cuh"
 #include "GPUTextureSampler.cuh"
 
 //Project includes
@@ -15,6 +14,7 @@
 #include "Vertex.h"
 #include "BoundingBox.h"
 #include "GPUTextures.h"
+#include "RGBRaw.h"
 
 #pragma region STRUCT DECLARATIONS
 
@@ -44,31 +44,6 @@ struct TrianglePtr
 	OVertex* pV0;
 	OVertex* pV1;
 	OVertex* pV2;
-};
-
-struct RGBAValues
-{
-	unsigned char r;
-	unsigned char g;
-	unsigned char b;
-	unsigned char a;
-};
-
-union RGBA
-{
-	BOTH_CALLABLE RGBA() {}
-	BOTH_CALLABLE RGBA(const unsigned char c[4]) : colour{ std::move(*(unsigned int*)c) } {}
-	//SDL maps their surfaces opposite direction (bgra)
-	BOTH_CALLABLE RGBA(const RGBColor& colour)
-	{
-		values.r = (unsigned char)(colour.b * 255);
-		values.g = (unsigned char)(colour.g * 255);
-		values.b = (unsigned char)(colour.r * 255);
-		values.a = UCHAR_MAX;
-	}
-	BOTH_CALLABLE RGBA(const unsigned int c) : colour{ std::move(c) } {}
-	RGBAValues values;
-	unsigned int colour;
 };
 
 #pragma endregion
@@ -154,18 +129,6 @@ BOTH_CALLABLE float GetMaxElement(float val0, float val1, float val2)
 	if (val2 > max)
 		max = val2;
 	return max;
-}
-
-BOTH_CALLABLE unsigned int GetRGBA(const RGBColor& colour)
-{
-	const unsigned char rgba[4] = { (unsigned char)(colour.r * 255), (unsigned char)(colour.g * 255), (unsigned char)(colour.b * 255), UCHAR_MAX };
-	return *(unsigned int*)rgba;
-}
-
-//This will unnecessarily copy
-BOTH_CALLABLE unsigned int GetRGBA(const char rgba[4])
-{
-	return *(unsigned int*)rgba;
 }
 
 #pragma endregion
@@ -487,15 +450,16 @@ GPU_CALLABLE OVertex GetNDCVertex(const IVertex& iVertex, const FPoint3& camPos,
 
 	const FPoint3 worldPosition{ worldMatrix * FPoint4{ iVertex.p } };
 	const FMatrix4 worldViewProjectionMatrix = viewProjectionMatrix * worldMatrix;
+	//const FMatrix3 rotationMatrix = (FMatrix3)worldMatrix;
 
-	new (&oVertex.p) FPoint4{ worldViewProjectionMatrix * FPoint4{ iVertex.p.x, iVertex.p.y, iVertex.p.z, iVertex.p.z } };
+	new (&oVertex.p) FPoint4{ worldViewProjectionMatrix * FPoint4{ iVertex.p } };
 	oVertex.p.x /= oVertex.p.w;
 	oVertex.p.y /= oVertex.p.w;
 	oVertex.p.z /= oVertex.p.w;
 
 	new (&oVertex.vd) const FVector3{ GetNormalized(worldPosition - camPos) };
-	new (&oVertex.n) const FVector3{ worldMatrix * FVector4{ iVertex.n } };
-	new (&oVertex.tan) const FVector3{ worldMatrix * FVector4{ iVertex.tan } };
+	new (&oVertex.n) const FVector3{ (FMatrix3)worldMatrix * iVertex.n };
+	new (&oVertex.tan) const FVector3{ (FMatrix3)worldMatrix * iVertex.tan };
 
 	oVertex.uv = iVertex.uv;
 	oVertex.c = iVertex.c;
@@ -821,7 +785,7 @@ GPU_KERNEL void RasterizerKernel(Triangle dev_Triangles[], const size_t numTrian
 				{
 					const size_t pixelIdx = x + y * width;
 					const float zInterpolated = (weights[0] * rasterCoords[0].z) + (weights[1] * rasterCoords[1].z) + (weights[2] * rasterCoords[2].z);
-					if (DepthTest(dev_DepthBuffer, dev_Mutex, pixelIdx, weights, zInterpolated))
+					//if (DepthTest(dev_DepthBuffer, dev_Mutex, pixelIdx, weights, zInterpolated))
 					{
 						OVertex oVertex;
 
@@ -866,7 +830,7 @@ GPU_KERNEL void RasterizerKernel(Triangle dev_Triangles[], const size_t numTrian
 						//Pixel Shading
 						//const RGBColor colour = ShadePixel(oVertex, textures, sampleState, isDepthColour);
 						const RGBA rgba{ oVertex.c };
-						dev_FrameBuffer[pixelIdx] = rgba.colour;
+						dev_FrameBuffer[pixelIdx] += rgba.colour;
 					}
 				}
 			}

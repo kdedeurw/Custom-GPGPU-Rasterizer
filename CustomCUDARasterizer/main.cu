@@ -184,13 +184,13 @@ int main(int argc, char* args[])
 
 	//Initialize framework
 	Elite::Timer* pTimer = new Elite::Timer();
-	//Elite::Renderer* pRenderer = new Elite::Renderer(pWindow);
+	Elite::Renderer* pRenderer = new Elite::Renderer(pWindow);
 
 	SceneManager sm{};
 
 	Camera camera{ FPoint3{ 0.f, 0.f, 10.f }, 45.f };
 	camera.SetAspectRatio(float(width), float(height));
-	//pRenderer->SetCamera(&camera);
+	pRenderer->SetCamera(&camera);
 
 	WindowHelper windowHelper{};
 	windowHelper.pWindow = pWindow;
@@ -252,7 +252,7 @@ int main(int argc, char* args[])
 	CheckErrorCuda(DeviceResetCuda());
 
 	//Shutdown framework
-	//delete pRenderer;
+	delete pRenderer;
 	delete pTimer;
 	delete pCudaRenderer;
 

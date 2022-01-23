@@ -9,28 +9,14 @@
 #include "SampleState.h"
 #include "MathUtilities.h"
 #include "GPUTextures.h"
-
-struct RGB
-{
-	//Uninitialized ctor
-	BOTH_CALLABLE RGB()
-	{}
-	BOTH_CALLABLE RGB(unsigned char r, unsigned char g, unsigned char b)
-		: r{r}
-		, g{g}
-		, b{b}
-	{}
-	unsigned char r;
-	unsigned char g;
-	unsigned char b;
-};
+#include "RGBRaw.h"
 
 namespace GPUTextureSampler
 {
 	GPU_CALLABLE GPU_INLINE RGBColor Sample(const GPUTexture* pTexture, const FVector2& uv, const SampleState sampleState);
 	GPU_CALLABLE GPU_INLINE RGBColor SamplePoint(const GPUTexture* pTexture, const FVector2& uv);
 	GPU_CALLABLE GPU_INLINE RGBColor SampleLinear(const GPUTexture* pTexture, const FVector2& uv);
-	GPU_CALLABLE GPU_INLINE RGB GetRGBFromTexture(const uint32_t* pPixels, uint32_t pixelIdx);
+	GPU_CALLABLE GPU_INLINE RGBValues GetRGBFromTexture(const uint32_t* pPixels, uint32_t pixelIdx);
 };
 
 GPU_CALLABLE GPU_INLINE RGBColor GPUTextureSampler::Sample(const GPUTexture* pTexture, const FVector2& uv, const SampleState sampleState)
@@ -48,7 +34,7 @@ GPU_CALLABLE GPU_INLINE RGBColor GPUTextureSampler::SamplePoint(const GPUTexture
 	//const SDL_PixelFormat* pPixelFormat = new SDL_PixelFormat{ m_pSurface->format->BytesPerPixel };
 	const uint32_t* pixels = (uint32_t*)pTexture->pixels; // only works with uint32*, as seen in Renderer.h
 	//SDL_GetRGB(pixels[pixel], m_pSurface->format, &r, &g, &b);
-	const RGB rgb = GetRGBFromTexture(pixels, pixel);
+	const RGBValues rgb = GetRGBFromTexture(pixels, pixel);
 	return RGBColor{ rgb.r / 255.f, rgb.g / 255.f, rgb.b / 255.f };
 }
 
@@ -100,7 +86,7 @@ GPU_CALLABLE GPU_INLINE RGBColor GPUTextureSampler::SampleLinear(const GPUTextur
 	//weights might not always give a correct result, since I'm sharing finalSampleColour with all samples
 
 	//Step 4: Sample 4 neighbours and take average
-	RGB rgb;
+	RGBValues rgb;
 	RGBColor finalSampleColour{};
 	for (int i{}; i < 4; ++i)
 	{
@@ -132,10 +118,11 @@ GPU_CALLABLE GPU_INLINE RGBColor GPUTextureSampler::SampleLinear(const GPUTextur
 	return finalSampleColour / 255.f;
 }
 
-GPU_CALLABLE GPU_INLINE RGB GPUTextureSampler::GetRGBFromTexture(const uint32_t* pPixels, uint32_t pixelIdx)
+//Unecessary copy
+GPU_CALLABLE GPU_INLINE RGBValues GPUTextureSampler::GetRGBFromTexture(const uint32_t* pPixels, uint32_t pixelIdx)
 {
 	const unsigned char* pRGB = (unsigned char*)pPixels[pixelIdx];
-	RGB rgb;
+	RGBValues rgb;
 	rgb.r = pRGB[0];
 	rgb.g = pRGB[1];
 	rgb.b = pRGB[2];

@@ -155,18 +155,13 @@ OVertex Elite::Renderer::GetNDCVertexDeprecated(const IVertex& vertex, const FMa
 
 	const FPoint3 corrVertex{ screenspaceVertexX, screenspaceVertexY, screenspaceVertexZ };
 
-	const FPoint3 camPos = m_pCamera->GetPos();
+	const FPoint3& camPos = m_pCamera->GetPos();
 	const FPoint3 worldPosition{ worldMatrix * FPoint4{ vertex.p } };
 	const FVector3 viewDirection{ GetNormalized(worldPosition - camPos) };
-	const FVector3 worldNormal{ worldMatrix * FVector4{ vertex.n } };
-	const FVector3 worldTangent{ worldMatrix * FVector4{ vertex.tan } };
+	const FVector3 worldNormal{ (FMatrix3)worldMatrix * vertex.n };
+	const FVector3 worldTangent{ (FMatrix3)worldMatrix * vertex.tan };
 
-	return OVertex{ corrVertex,
-		vertex.uv,
-		worldNormal,
-		worldTangent,
-		vertex.c,
-		viewDirection };
+	return OVertex{ corrVertex, vertex.uv, worldNormal, worldTangent, vertex.c, viewDirection };
 }
 
 OVertex Elite::Renderer::GetNDCVertex(const IVertex& vertex, const FMatrix4& viewProjectionMatrix, const FMatrix4& worldMatrix)
@@ -187,18 +182,13 @@ OVertex Elite::Renderer::GetNDCVertex(const IVertex& vertex, const FMatrix4& vie
 	// !DONE AFTER FRUSTUMTEST!
 
 	const FPoint3 camPos = m_pCamera->GetPos();
-	const FMatrix3 rotationMatrix = (FMatrix3)worldMatrix;
+	//const FMatrix3 rotationMatrix = (FMatrix3)worldMatrix;
 	const FPoint3 worldPosition{ worldMatrix * FPoint4{ vertex.p } };
 	const FVector3 viewDirection{ GetNormalized(worldPosition - camPos) };
-	const FVector3 worldNormal{ rotationMatrix * vertex.n };
-	const FVector3 worldTangent{ rotationMatrix * vertex.tan };
+	const FVector3 worldNormal{ (FMatrix3)worldMatrix * vertex.n };
+	const FVector3 worldTangent{ (FMatrix3)worldMatrix * vertex.tan };
 
-	return OVertex{ NDCspace,
-		vertex.uv,
-		worldNormal,
-		worldTangent,
-		vertex.c,
-		viewDirection };
+	return OVertex{ NDCspace, vertex.uv, worldNormal, worldTangent, vertex.c, viewDirection };
 }
 
 std::vector<OVertex> Elite::Renderer::GetNDCMeshVertices(const std::vector<IVertex>& vertices, const FMatrix4& viewProjectionMatrix, const FMatrix4& worldMatrix)

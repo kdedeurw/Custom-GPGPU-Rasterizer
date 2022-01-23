@@ -28,9 +28,6 @@
   </ItemGroup>
   <ItemGroup>
     <CudaCompile Include="main.cu" />
-    <CudaCompile Include="CUDAROPs.cu">
-      <Filter>Helpers\CUDA</Filter>
-    </CudaCompile>
     <CudaCompile Include="CUDARenderer.cu">
       <Filter>Helpers\CUDA</Filter>
     </CudaCompile>
@@ -121,9 +118,6 @@
     <ClInclude Include="ERenderer.h">
       <Filter>Renderer</Filter>
     </ClInclude>
-    <ClInclude Include="CUDAROPs.cuh">
-      <Filter>Helpers\CUDA</Filter>
-    </ClInclude>
     <ClInclude Include="BoundingBox.h">
       <Filter>Helpers</Filter>
     </ClInclude>
@@ -195,6 +189,9 @@
     </ClInclude>
     <ClInclude Include="Textures.h">
       <Filter>Renderer\Shading</Filter>
+    </ClInclude>
+    <ClInclude Include="RGBRaw.h">
+      <Filter>Helpers</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>
