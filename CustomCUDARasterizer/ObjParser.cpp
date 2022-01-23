@@ -232,9 +232,9 @@ void ObjParser::AssignVertices(std::vector<IVertex>& vertexBuffer, std::vector<u
 			uint32_t idx1{ uint32_t(indexBuffer[i + 1]) };
 			uint32_t idx2{ uint32_t(indexBuffer[i + 2]) };
 
-			const FPoint3 p0{ vertexBuffer[idx0].v };
-			const FPoint3 p1{ vertexBuffer[idx1].v };
-			const FPoint3 p2{ vertexBuffer[idx2].v };
+			const FPoint3 p0{ vertexBuffer[idx0].p };
+			const FPoint3 p1{ vertexBuffer[idx1].p };
+			const FPoint3 p2{ vertexBuffer[idx2].p };
 			const FVector3 uv0{ vertexBuffer[idx0].uv };
 			const FVector3 uv1{ vertexBuffer[idx1].uv };
 			const FVector3 uv2{ vertexBuffer[idx2].uv };

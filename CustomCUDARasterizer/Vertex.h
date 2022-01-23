@@ -7,26 +7,24 @@
 
 struct IVertex_Base
 {
-	BOTH_CALLABLE IVertex_Base()
-		: IVertex_Base{ FPoint3{} }
+	BOTH_CALLABLE IVertex_Base() //Purposely uninitialized
 	{}
 	BOTH_CALLABLE IVertex_Base(const FPoint4& position)
 		: IVertex_Base{ FPoint3{ position } }
 	{}
 	BOTH_CALLABLE IVertex_Base(const FPoint3& position)
-		: v{ position }
+		: p{ position }
 	{}
 	BOTH_CALLABLE IVertex_Base(const IVertex_Base& other) // copy constructor => basically shallow copy
-		: v{ other.v }
+		: p{ other.p }
 	{}
 
-	FPoint3 v{}; // position
+	FPoint3 p; // position
 };
 
 struct IVertex : public IVertex_Base
 {
-	BOTH_CALLABLE IVertex()
-		: IVertex{ FPoint3{}, FVector2{}, FVector3{}, RGBColor{} }
+	BOTH_CALLABLE IVertex() //Purposely uninitialized
 	{}
 	BOTH_CALLABLE IVertex(const FPoint4& position,
 		const FVector2& uvcoordinates, 
@@ -44,37 +42,35 @@ struct IVertex : public IVertex_Base
 		, n{ normal }
 	{}
 	BOTH_CALLABLE IVertex(const IVertex& other) // copy constructor => basically shallow copy
-		: IVertex{ other.v, other.uv, other.n, other.c }
+		: IVertex{ other.p, other.uv, other.n, other.c }
 	{}
 
-	RGBColor c{}; // colour
-	FVector2 uv{}; // uv coordinate
-	FVector3 n{}; // normal
-	FVector3 tan{}; // tangent
+	RGBColor c; // colour
+	FVector2 uv; // uv coordinate
+	FVector3 n; // normal
+	FVector3 tan; // tangent
 };
 
 struct OVertex_Base
 {
-	BOTH_CALLABLE OVertex_Base()
-		: OVertex_Base{ FPoint4{} }
+	BOTH_CALLABLE OVertex_Base() //Purposely uninitialized
 	{}
 	BOTH_CALLABLE OVertex_Base(const FPoint3& position)
 		: OVertex_Base{ FPoint4{position} }
 	{}
 	BOTH_CALLABLE OVertex_Base(const FPoint4& position)
-		: v{ position }
+		: p{ position }
 	{}
 	BOTH_CALLABLE OVertex_Base(const OVertex_Base& other) // copy constructor => basically shallow copy
-		: v{ other.v }
+		: p{ other.p }
 	{}
 
-	FPoint4 v{}; // position
+	FPoint4 p; // position
 };
 
 struct OVertex : public OVertex_Base
 {
-	BOTH_CALLABLE OVertex()
-		: OVertex{ FPoint4{}, FVector2{} }
+	BOTH_CALLABLE OVertex() //Purposely uninitialized
 	{}
 	BOTH_CALLABLE OVertex(const FPoint3& position,
 		const FVector2& uvcoordinates, 
@@ -111,12 +107,12 @@ struct OVertex : public OVertex_Base
 		, vd{viewDirection}
 	{}
 	BOTH_CALLABLE OVertex(const OVertex& other) // copy constructor => basically shallow copy
-		: OVertex{ other.v, other.uv, other.n, other.tan, other.c, other.vd }
+		: OVertex{ other.p, other.uv, other.n, other.tan, other.c, other.vd }
 	{}
 
-	RGBColor c{}; // colour
-	FVector2 uv{}; // uv coordinate
-	FVector3 n{}; // normal
-	FVector3 tan{}; // tangent
-	FVector3 vd{};  // view direction
+	RGBColor c; // colour
+	FVector2 uv; // uv coordinate
+	FVector3 n; // normal
+	FVector3 tan; // tangent
+	FVector3 vd;  // view direction
 };

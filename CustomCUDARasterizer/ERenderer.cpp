@@ -73,7 +73,7 @@ void Elite::Renderer::Render(const SceneManager& sm)
 
 				// separate triangle representation (array of OVertex*)
 				OVertex* triangle[3]{ &v0, &v1, &v2 };
-				FPoint4 rasterCoords[3]{ v0.v, v1.v, v2.v }; //painful, but unavoidable copy
+				FPoint4 rasterCoords[3]{ v0.p, v1.p, v2.p }; //painful, but unavoidable copy
 				//Otherwise any mesh that uses a vertex twice will literally get shredded due to same values being used for frustum tests etc.
 
 				if (!FrustumTest(rasterCoords))
@@ -88,9 +88,9 @@ void Elite::Renderer::Render(const SceneManager& sm)
 			//https://embeddedgurus.com/stack-overflow/2011/02/efficient-c-tip-13-use-the-modulus-operator-with-caution/
 			for (size_t idx{}; idx < size - 2; ++idx)
 			{
-				const int idx0 = indices[idx];
-				const int idx1 = isOdd ? indices[idx + 2] : indices[idx + 1];
-				const int idx2 = isOdd ? indices[idx + 1] : indices[idx + 2];
+				const unsigned int idx0 = indices[idx];
+				const unsigned int idx1 = isOdd ? indices[idx + 2] : indices[idx + 1];
+				const unsigned int idx2 = isOdd ? indices[idx + 1] : indices[idx + 2];
 
 				OVertex& v0 = NDCVertices[idx0];
 				OVertex& v1 = NDCVertices[idx1];
@@ -98,10 +98,10 @@ void Elite::Renderer::Render(const SceneManager& sm)
 
 				// separate triangle representation (array of OVertex*)
 				OVertex* triangle[3]{ &v0, &v1, &v2 };
-				FPoint4 rasterCoords[3]{ v0.v, v1.v, v2.v }; //painful, but unavoidable copy
+				FPoint4 rasterCoords[3]{ v0.p, v1.p, v2.p }; //painful, but unavoidable copy
 				//Otherwise any mesh that uses a vertex twice will literally get shredded due to same values being used for frustum tests etc.
 
-				if (FrustumTest(rasterCoords))
+				if (!FrustumTest(rasterCoords))
 					continue;
 
 				RenderTriangle(sm, triangle, rasterCoords);
@@ -137,7 +137,7 @@ OVertex Elite::Renderer::GetNDCVertexDeprecated(const IVertex& vertex, const FMa
 	const float fov{ m_pCamera->GetFov() };
 
 	// view space
-	const FPoint3 viewSpaceVertex{ m_pCamera->GetViewMatrix() * FPoint4 { vertex.v } };
+	const FPoint3 viewSpaceVertex{ m_pCamera->GetViewMatrix() * FPoint4 { vertex.p } };
 
 	// projection space (perspective divide)
 	float projectedVertexX{ viewSpaceVertex.x / -viewSpaceVertex.z };
@@ -156,7 +156,7 @@ OVertex Elite::Renderer::GetNDCVertexDeprecated(const IVertex& vertex, const FMa
 	const FPoint3 corrVertex{ screenspaceVertexX, screenspaceVertexY, screenspaceVertexZ };
 
 	const FPoint3 camPos = m_pCamera->GetPos();
-	const FPoint3 worldPosition{ worldMatrix * FPoint4{ vertex.v } };
+	const FPoint3 worldPosition{ worldMatrix * FPoint4{ vertex.p } };
 	const FVector3 viewDirection{ GetNormalized(worldPosition - camPos) };
 	const FVector3 worldNormal{ worldMatrix * FVector4{ vertex.n } };
 	const FVector3 worldTangent{ worldMatrix * FVector4{ vertex.tan } };
@@ -173,7 +173,7 @@ OVertex Elite::Renderer::GetNDCVertex(const IVertex& vertex, const FMatrix4& vie
 {
 	//-----------------------------Matrix Based-----------------------------
 	const FMatrix4 worldViewProjectionMatrix{ viewProjectionMatrix * worldMatrix };
-	FPoint4 NDCspace = worldViewProjectionMatrix * FPoint4{ vertex.v.x, vertex.v.y, vertex.v.z, vertex.v.z };
+	FPoint4 NDCspace = worldViewProjectionMatrix * FPoint4{ vertex.p.x, vertex.p.y, vertex.p.z, vertex.p.z };
 
 	// converting to NDCspace
 	NDCspace.x /= NDCspace.w;
@@ -188,7 +188,7 @@ OVertex Elite::Renderer::GetNDCVertex(const IVertex& vertex, const FMatrix4& vie
 
 	const FPoint3 camPos = m_pCamera->GetPos();
 	const FMatrix3 rotationMatrix = (FMatrix3)worldMatrix;
-	const FPoint3 worldPosition{ worldMatrix * FPoint4{ vertex.v } };
+	const FPoint3 worldPosition{ worldMatrix * FPoint4{ vertex.p } };
 	const FVector3 viewDirection{ GetNormalized(worldPosition - camPos) };
 	const FVector3 worldNormal{ rotationMatrix * vertex.n };
 	const FVector3 worldTangent{ rotationMatrix * vertex.tan };
@@ -234,9 +234,10 @@ void Elite::Renderer::RenderPixelsInTriangle(const SceneManager& sm, OVertex* tr
 			if (IsPixelInTriangle(rasterCoords, pixel, weights))
 			{
 				float zInterpolated{};
-				if (DepthTest(rasterCoords, m_pDepthBuffer[size_t(c) + (size_t(r) * m_Width)], weights, zInterpolated))
+				const size_t pixelId = c + r * m_Width;
+				if (DepthTest(rasterCoords, m_pDepthBuffer[pixelId], weights, zInterpolated))
 				{
-					const float wInterpolated = (weights[0] * v0.v.w) + (weights[1] * v1.v.w) + (weights[2] * v2.v.w);
+					const float wInterpolated = (weights[0] * v0.p.w) + (weights[1] * v1.p.w) + (weights[2] * v2.p.w);
 
 					FVector2 interpolatedUV{ 
 						weights[0] * (v0.uv.x / rasterCoords[0].w) + weights[1] * (v1.uv.x / rasterCoords[1].w) + weights[2] * (v2.uv.x / rasterCoords[2].w),
@@ -363,7 +364,7 @@ void Elite::Renderer::RenderPixelsInTriangle(const SceneManager& sm, OVertex* tr
 					}
 
 					// final draw
-					m_pBackBufferPixels[c + (r * m_Width)] = SDL_MapRGB(m_pBackBuffer->format,
+					m_pBackBufferPixels[pixelId] = SDL_MapRGB(m_pBackBuffer->format,
 						static_cast<uint8_t>(finalColour.r * 255.f),
 						static_cast<uint8_t>(finalColour.g * 255.f),
 						static_cast<uint8_t>(finalColour.b * 255.f));
@@ -429,12 +430,12 @@ void Elite::Renderer::ShadePixel(const OVertex& oVertex, const Textures& texture
 	}
 	else
 	{
-		finalColour = RGBColor{ Remap(oVertex.v.z, 0.985f, 1.f), 0.f, 0.f }; // depth colour
+		finalColour = RGBColor{ Remap(oVertex.p.z, 0.985f, 1.f), 0.f, 0.f }; // depth colour
 		finalColour.ClampColor();
 	}
 	
 	// final draw
-	m_pBackBufferPixels[(int)oVertex.v.x + (int)(oVertex.v.y * m_Width)] = SDL_MapRGB(m_pBackBuffer->format,
+	m_pBackBufferPixels[(int)oVertex.p.x + (int)(oVertex.p.y * m_Width)] = SDL_MapRGB(m_pBackBuffer->format,
 		static_cast<uint8_t>(finalColour.r * 255.f),
 		static_cast<uint8_t>(finalColour.g * 255.f),
 		static_cast<uint8_t>(finalColour.b * 255.f));
@@ -492,7 +493,7 @@ bool Elite::Renderer::DepthTest(FPoint4 rasterCoords[3], float& depthBuffer, flo
 	zInterpolated = (weights[0] * rasterCoords[0].z) + (weights[1] * rasterCoords[1].z) + (weights[2] * rasterCoords[2].z);
 	//float wInterpolated = (weights[0] * triangle[0]->v.w) + (weights[1] * triangle[1]->v.w) + (weights[2] * triangle[2]->v.w);
 
-	if (zInterpolated < 0 || zInterpolated > 1.f) return false;
+	//if (zInterpolated < 0 || zInterpolated > 1.f) return false;
 	if (zInterpolated > depthBuffer) return false;
 
 	depthBuffer = zInterpolated;
@@ -500,11 +501,11 @@ bool Elite::Renderer::DepthTest(FPoint4 rasterCoords[3], float& depthBuffer, flo
 	return true;
 }
 
-bool Elite::Renderer::FrustumTestVertex(const FPoint4& NDCs)
+bool Elite::Renderer::FrustumTestVertex(const FPoint4& NDC)
 {
-	if (NDCs.x < -1.f || NDCs.x > 1.f) return false; // perspective divide X in NDC
-	if (NDCs.y < -1.f || NDCs.y > 1.f) return false; // perspective divide Y in NDC
-	if (NDCs.z < 0.f || NDCs.z > 1.f) return false; // perspective divide Z in NDC
+	if (NDC.x < -1.f || NDC.x > 1.f) return false; // perspective divide X in NDC
+	if (NDC.y < -1.f || NDC.y > 1.f) return false; // perspective divide Y in NDC
+	if (NDC.z < 0.f || NDC.z > 1.f) return false; // perspective divide Z in NDC
 	return true;
 }
 
@@ -512,7 +513,7 @@ bool Elite::Renderer::FrustumTest(FPoint4 rasterCoords[3])
 {
 	if (!FrustumTestVertex(rasterCoords[0])) return false;
 	if (!FrustumTestVertex(rasterCoords[1])) return false;
-	return !FrustumTestVertex(rasterCoords[2]); //we can return the last check
+	return FrustumTestVertex(rasterCoords[2]); //we can return the last check
 }
 
 void Elite::Renderer::NDCToScreenSpace(FPoint4 rasterCoords[3])

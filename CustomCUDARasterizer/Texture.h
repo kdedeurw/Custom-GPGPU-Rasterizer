@@ -48,13 +48,13 @@ RGBColor Texture::SamplePoint(const FVector2& uv) const
 RGBColor Texture::SampleLinear(const FVector2& uv) const
 {
 	//Step 1: find pixel to sample from
-	const uint32_t x{ uint32_t(uv.x * m_pSurface->w) };
-	const uint32_t y{ uint32_t(uv.y * m_pSurface->h) };
+	const int x{ int(uv.x * m_pSurface->w) };
+	const int y{ int(uv.y * m_pSurface->h) };
 
 	//Step 2: find 4 neighbours
 	const uint32_t* rawData = (uint32_t*)m_pSurface->pixels;
-	const uint32_t max = m_pSurface->w * m_pSurface->h;
-	const uint32_t originalPixel = uint32_t(x + (y * m_pSurface->w));
+	const int max = m_pSurface->w * m_pSurface->h;
+	const int originalPixel = uint32_t(x + (y * m_pSurface->w));
 
 	int pixels[4];
 	//sample 4 adjacent neighbours

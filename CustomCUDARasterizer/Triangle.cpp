@@ -16,14 +16,14 @@ Triangle::Triangle(const FPoint3& position, const IVertex& v0, const IVertex& v1
 	, m_Cullmode{ Cullmode::noculling }
 	, m_Vertices{v0, v1, v2}
 	, m_IsRotating{isRotating}
-	, m_Normal{ GetNormalized(Cross(FVector3{v1.v - v0.v}, FVector3{v2.v - v0.v})) }
-	, m_Center{ FPoint3{ (FVector3{v0.v.x, v0.v.y, v0.v.z} +FVector3{v1.v.x, v1.v.y, v1.v.z} +FVector3{v2.v.x, v2.v.y, v2.v.z}) / 3 } }
+	, m_Normal{ GetNormalized(Cross(FVector3{v1.p - v0.p}, FVector3{v2.p - v0.p})) }
+	, m_Center{ FPoint3{ (FVector3{v0.p.x, v0.p.y, v0.p.z} +FVector3{v1.p.x, v1.p.y, v1.p.z} +FVector3{v2.p.x, v2.p.y, v2.p.z}) / 3 } }
 	, m_Area{ CalculateArea() }
 {
-	FVector3 a{ v1.v - v0.v };
-	FVector3 b{ v2.v - v0.v };
+	FVector3 a{ v1.p - v0.p };
+	FVector3 b{ v2.p - v0.p };
 	m_Normal = GetNormalized(Cross(a, b));
-	m_Center = FPoint3{ (FVector3{v0.v.x, v0.v.y, v0.v.z} +FVector3{v1.v.x, v1.v.y, v1.v.z} +FVector3{v2.v.x, v2.v.y, v2.v.z}) / 3 };
+	m_Center = FPoint3{ (FVector3{v0.p.x, v0.p.y, v0.p.z} +FVector3{v1.p.x, v1.p.y, v1.p.z} +FVector3{v2.p.x, v2.p.y, v2.p.z}) / 3 };
 
 	switch (cullMode)
 	{
@@ -60,12 +60,12 @@ float Triangle::GetArea() const
 float Triangle::CalculateArea() const
 {
 	//std::initializer_list<float> yList{ m_Vertices.v0.v.y, m_Vertices.v1.v.y, m_Vertices.v2.v.y };
-	std::initializer_list<float> yList{ m_Vertices[0].v.y, m_Vertices[1].v.y, m_Vertices[2].v.y };
+	std::initializer_list<float> yList{ m_Vertices[0].p.y, m_Vertices[1].p.y, m_Vertices[2].p.y };
 	float hMax{ std::max(yList) };
 	float hMin{ std::min(yList) };
 	float height{ hMax - hMin };
 	//std::initializer_list<float> xList{ m_Vertices.v0.v.x, m_Vertices.v1.v.x, m_Vertices.v2.v.x };
-	std::initializer_list<float> xList{ m_Vertices[0].v.x, m_Vertices[1].v.x, m_Vertices[2].v.x };
+	std::initializer_list<float> xList{ m_Vertices[0].p.x, m_Vertices[1].p.x, m_Vertices[2].p.x };
 	float bMax{ std::max(xList) };
 	float bMin{ std::min(xList) };
 	float base{ bMax - bMin };

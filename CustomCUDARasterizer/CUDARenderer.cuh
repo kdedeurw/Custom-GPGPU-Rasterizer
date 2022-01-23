@@ -66,6 +66,7 @@ private:
 
 	const WindowHelper& m_WindowHelper;
 	size_t m_NumTriangles{};
+	unsigned int* m_h_pFrameBuffer{};
 	std::vector<MeshIdentifier> m_MeshIdentifiers{};
 
 	//CANNOT DIRECTLY COPY PINNED MEMORY TO CONST DEVICE MEMORY

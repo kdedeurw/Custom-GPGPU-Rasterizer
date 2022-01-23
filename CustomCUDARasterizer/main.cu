@@ -188,7 +188,7 @@ int main(int argc, char* args[])
 
 	SceneManager sm{};
 
-	Camera camera{ FPoint3{ 0.f, 5.f, 65.f }, 45.f };
+	Camera camera{ FPoint3{ 0.f, 0.f, 10.f }, 45.f };
 	camera.SetAspectRatio(float(width), float(height));
 	//pRenderer->SetCamera(&camera);
 

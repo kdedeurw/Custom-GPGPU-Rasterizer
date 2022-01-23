@@ -34,7 +34,7 @@ GPU_CALLABLE OVertex CUDAROP::GetNDCVertex(const IVertex& vertex, const FPoint3&
 	// combined worldViewProjectionMatrix
 	const FMatrix4 worldViewProjectionMatrix = projectionMatrix * viewMatrix * worldMatrix;
 
-	FPoint4 NDCspace = worldViewProjectionMatrix * FPoint4{ vertex.v.x, vertex.v.y, vertex.v.z, vertex.v.z };
+	FPoint4 NDCspace = worldViewProjectionMatrix * FPoint4{ vertex.p.x, vertex.p.y, vertex.p.z, vertex.p.z };
 	// converting to NDCspace
 	NDCspace.x /= NDCspace.w;
 	NDCspace.y /= NDCspace.w;
@@ -47,7 +47,7 @@ GPU_CALLABLE OVertex CUDAROP::GetNDCVertex(const IVertex& vertex, const FPoint3&
 	// !DONE AFTER FRUSTUMTEST!
 
 	// calculating vertex world position
-	const FPoint3 worldPosition{ worldMatrix * FPoint4{ vertex.v } };
+	const FPoint3 worldPosition{ worldMatrix * FPoint4{ vertex.p } };
 	const FVector3 viewDirection{ GetNormalized(worldPosition - camPos) };
 	const FVector3 worldNormal{ worldMatrix * FVector4{ vertex.n } };
 	const FVector3 worldTangent{ worldMatrix * FVector4{ vertex.tan } };
@@ -130,9 +130,9 @@ GPU_CALLABLE bool CUDAROP::DepthTest(FPoint4 rasterCoords[3], float& depthBuffer
 GPU_CALLABLE bool CUDAROP::FrustumTestVertex(const OVertex& NDC)
 {
 	bool isPassed{ false };
-	isPassed &= (NDC.v.x < -1.f || NDC.v.x > 1.f); // perspective divide X in NDC
-	isPassed &= (NDC.v.y < -1.f || NDC.v.y > 1.f); // perspective divide Y in NDC
-	isPassed &= (NDC.v.z < 0.f || NDC.v.z > 1.f); // perspective divide Z in NDC
+	isPassed &= (NDC.p.x < -1.f || NDC.p.x > 1.f); // perspective divide X in NDC
+	isPassed &= (NDC.p.y < -1.f || NDC.p.y > 1.f); // perspective divide Y in NDC
+	isPassed &= (NDC.p.z < 0.f || NDC.p.z > 1.f); // perspective divide Z in NDC
 	return isPassed;
 }
 
@@ -202,7 +202,7 @@ GPU_CALLABLE void CUDAROP::RenderPixelsInTriangle(OVertex* screenspaceTriangle[3
 				float zInterpolated{};
 				if (CUDAROP::DepthTest(rasterCoords, pDepthBuffer[size_t(c) + (size_t(r) * width)], weights, zInterpolated))
 				{
-					const float wInterpolated = (weights[0] * v0.v.w) + (weights[1] * v1.v.w) + (weights[2] * v2.v.w);
+					const float wInterpolated = (weights[0] * v0.p.w) + (weights[1] * v1.p.w) + (weights[2] * v2.p.w);
 
 					FVector2 interpolatedUV{
 						weights[0] * (v0.uv.x / rasterCoords[0].w) + weights[1] * (v1.uv.x / rasterCoords[1].w) + weights[2] * (v2.uv.x / rasterCoords[2].w),
@@ -232,7 +232,7 @@ GPU_CALLABLE void CUDAROP::RenderPixelsInTriangle(OVertex* screenspaceTriangle[3
 						weights[0] * (v0.c.b / rasterCoords[0].w) + weights[1] * (v1.c.b / rasterCoords[1].w) + weights[2] * (v2.c.b / rasterCoords[2].w) };
 
 					OVertex oVertex;
-					oVertex.v = FPoint4{ pixel, zInterpolated, wInterpolated };
+					oVertex.p = FPoint4{ pixel, zInterpolated, wInterpolated };
 					oVertex.c = std::move(interpolatedColour);
 					oVertex.uv = std::move(interpolatedUV);
 					oVertex.n = std::move(interpolatedNormal);
@@ -242,7 +242,7 @@ GPU_CALLABLE void CUDAROP::RenderPixelsInTriangle(OVertex* screenspaceTriangle[3
 					const RGBColor finalColour = CUDAROP::ShadePixel(oVertex, textures, sampleState, isDepthColour);
 
 					// final draw
-					unsigned char* pRGBA = (unsigned char*)pBufferPixels[(int)oVertex.v.x + (int)(oVertex.v.y * width)];
+					unsigned char* pRGBA = (unsigned char*)pBufferPixels[(int)oVertex.p.x + (int)(oVertex.p.y * width)];
 					pRGBA[0] = static_cast<uint8_t>(finalColour.r * 255.f);
 					pRGBA[1] = static_cast<uint8_t>(finalColour.g * 255.f);
 					pRGBA[2] = static_cast<uint8_t>(finalColour.b * 255.f);
@@ -259,7 +259,7 @@ GPU_CALLABLE RGBColor CUDAROP::ShadePixel(const OVertex& oVertex, const GPUTextu
 	RGBColor finalColour{};
 	if (isDepthColour)
 	{
-		finalColour = RGBColor{ Remap(oVertex.v.z, 0.985f, 1.f), 0.f, 0.f }; // depth colour
+		finalColour = RGBColor{ Remap(oVertex.p.z, 0.985f, 1.f), 0.f, 0.f }; // depth colour
 		finalColour.ClampColor();
 	}
 	else
