@@ -36,7 +36,7 @@ class CUDARenderer final
 	};
 	union CameraDataRaw
 	{
-		float data[];
+		float* data;
 		CameraData cameraData;
 	};
 
@@ -86,9 +86,9 @@ private:
 	//-----CPU HELPER FUNCTIONS-----
 	
 	//function that allocates input buffers from mesh
-	CPU_CALLABLE void AllocateMeshBuffers(const size_t numVertices, const size_t numIndices, int meshIdx = 0);
+	CPU_CALLABLE void AllocateMeshBuffers(const size_t numVertices, const size_t numIndices, size_t meshIdx = 0);
 	//function that copies output buffers vertex shader
-	CPU_CALLABLE void CopyMeshBuffers(const std::vector<IVertex>& vertexBuffer, const std::vector<unsigned int>& indexBuffer, int meshIdx = 0);
+	CPU_CALLABLE void CopyMeshBuffers(const std::vector<IVertex>& vertexBuffer, const std::vector<unsigned int>& indexBuffer, size_t meshIdx = 0);
 	//function that frees mesh buffers
 	CPU_CALLABLE void FreeMeshBuffers();
 	//function that allocates buffers
