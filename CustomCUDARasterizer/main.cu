@@ -222,7 +222,11 @@ int main(int argc, char* args[])
 
 		//--------- Render ---------
 		//pRenderer->Render(sm);
+		//pCudaRenderer->StartTimer();
 		pCudaRenderer->Render(sm, &camera);
+		//const float ms = pCudaRenderer->StopTimer();
+		//std::cout << "CUDARenderer total rendering time: " << ms << "ms\n";
+		//std::cout << "FPS: " << 1 / ms * 1000  << '\n';
 
 		//--------- Timer ---------
 		pTimer->Update();

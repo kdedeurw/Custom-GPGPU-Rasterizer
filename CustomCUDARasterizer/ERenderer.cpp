@@ -76,7 +76,7 @@ void Elite::Renderer::Render(const SceneManager& sm)
 				FPoint4 rasterCoords[3]{ v0.p, v1.p, v2.p }; //painful, but unavoidable copy
 				//Otherwise any mesh that uses a vertex twice will literally get shredded due to same values being used for frustum tests etc.
 
-				if (!FrustumTest(rasterCoords))
+				if (!IsTriangleVisible(rasterCoords))
 					continue;
 
 				RenderTriangle(sm, triangle, rasterCoords);
@@ -101,7 +101,7 @@ void Elite::Renderer::Render(const SceneManager& sm)
 				FPoint4 rasterCoords[3]{ v0.p, v1.p, v2.p }; //painful, but unavoidable copy
 				//Otherwise any mesh that uses a vertex twice will literally get shredded due to same values being used for frustum tests etc.
 
-				if (!FrustumTest(rasterCoords))
+				if (!IsTriangleVisible(rasterCoords))
 					continue;
 
 				RenderTriangle(sm, triangle, rasterCoords);
@@ -491,19 +491,51 @@ bool Elite::Renderer::DepthTest(FPoint4 rasterCoords[3], float& depthBuffer, flo
 	return true;
 }
 
-bool Elite::Renderer::FrustumTestVertex(const FPoint4& NDC)
+bool Elite::Renderer::IsAllXOutsideFrustum(FPoint4 NDC[3]) const
 {
+	return	(NDC[0].x < -1.f && NDC[1].x < -1.f && NDC[2].x < -1.f) ||
+		(NDC[0].x > 1.f && NDC[1].x > 1.f && NDC[2].x > 1.f);
+}
+
+bool Elite::Renderer::IsAllYOutsideFrustum(FPoint4 NDC[3]) const
+{
+	return	(NDC[0].y < -1.f && NDC[1].y < -1.f && NDC[2].y < -1.f) ||
+		(NDC[0].y > 1.f && NDC[1].y > 1.f && NDC[2].y > 1.f);
+}
+
+bool Elite::Renderer::IsAllZOutsideFrustum(FPoint4 NDC[3]) const
+{
+	return	(NDC[0].z < 0.f && NDC[1].z < 0.f && NDC[2].z < 0.f) ||
+		(NDC[0].z > 1.f && NDC[1].z > 1.f && NDC[2].z > 1.f);
+}
+
+bool Elite::Renderer::IsTriangleVisible(FPoint4 NDC[3]) const
+{
+	// Solution to FrustumCulling bug
+	//	   if (all x values are < -1.f or > 1.f) AT ONCE, cull
+	//	|| if (all y values are < -1.f or > 1.f) AT ONCE, cull
+	//	|| if (all z values are < 0.f or > 1.f) AT ONCE, cull
+	if (IsAllXOutsideFrustum(NDC)) return false;
+	if (IsAllYOutsideFrustum(NDC)) return false;
+	if (IsAllZOutsideFrustum(NDC)) return false;
+	return true;
+}
+
+bool Elite::Renderer::IsVertexInFrustum(const FPoint4& NDC) const
+{
+	//If the vertex is outside of the frustum
 	if (NDC.x < -1.f || NDC.x > 1.f) return false; // perspective divide X in NDC
 	if (NDC.y < -1.f || NDC.y > 1.f) return false; // perspective divide Y in NDC
 	if (NDC.z < 0.f || NDC.z > 1.f) return false; // perspective divide Z in NDC
 	return true;
 }
 
-bool Elite::Renderer::FrustumTest(FPoint4 rasterCoords[3])
+bool Elite::Renderer::IsTriangleInFrustum(FPoint4 rasterCoords[3]) const
 {
-	if (!FrustumTestVertex(rasterCoords[0])) return false;
-	if (!FrustumTestVertex(rasterCoords[1])) return false;
-	return FrustumTestVertex(rasterCoords[2]); //we can return the last check
+	//If any of the vertices are inside of the frustum
+	return(IsVertexInFrustum(rasterCoords[0]) 
+		|| IsVertexInFrustum(rasterCoords[1]) 
+		|| IsVertexInFrustum(rasterCoords[2]));
 }
 
 void Elite::Renderer::NDCToScreenSpace(FPoint4 rasterCoords[3])

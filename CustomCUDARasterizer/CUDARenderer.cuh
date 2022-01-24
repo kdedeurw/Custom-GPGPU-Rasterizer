@@ -56,6 +56,14 @@ public:
 	//function that launches the kernels
 	CPU_CALLABLE void Render(const SceneManager& sm, const Camera* pCamera);
 
+	//function that launches all kernels to eliminate overhead time (used for measuring)
+	CPU_CALLABLE void WarmUp();
+
+	//sets initial timepoint to measure between
+	CPU_CALLABLE void StartTimer();
+	//returns time in between start and stop in ms
+	CPU_CALLABLE float StopTimer();
+
 	struct MeshIdentifier
 	{
 		size_t Idx;
@@ -66,7 +74,9 @@ private:
 
 	const WindowHelper& m_WindowHelper;
 	size_t m_NumTriangles{};
+	float m_TimerMs{};
 	unsigned int* m_h_pFrameBuffer{};
+	cudaEvent_t m_StartEvent{}, m_StopEvent{};
 	std::vector<MeshIdentifier> m_MeshIdentifiers{};
 
 	//CANNOT DIRECTLY COPY PINNED MEMORY TO CONST DEVICE MEMORY
