@@ -38,34 +38,34 @@ void CreateScenes(SceneManager& sm)
 	std::vector<unsigned int> indexBuffer{};
 	std::vector<SceneGraph*> pSceneGraphs{};
 
-	{
-		// SceneGraph 1
-		SceneGraph* pSceneGraph = new SceneGraph{};
-		//{
-		//	// Mesh 1 // Triangle 1
-		//	std::vector<IVertex> vertices{
-		//		IVertex{ FPoint3{ 0.f, 2.f, 0.f }, FVector2{} },
-		//		IVertex{ FPoint3{ -1.f, 0.f, 0.f }, FVector2{}},
-		//		IVertex{ FPoint3{ 1.f, 0.f, 0.f }, FVector2{} } };
-		//	std::vector<unsigned int> indices{ 0, 1, 2 };
-		//	const std::string texPaths[4]{ "", "", "", "" };
-		//	Mesh* pTriangle = new Mesh{ vertices, indices, texPaths, PrimitiveTopology::TriangleList };
-		//	pSceneGraph->AddMesh(pTriangle);
-		//}
-		{
-			// Mesh 2 // Triangle 2
-			std::vector<IVertex> vertices{
-				IVertex{ FPoint3{ 0.f, 4.f, -2.f }, FVector2{}, FVector3{1.f,1.f,1.f}, RGBColor{1.f, 0.f, 0.f} },
-				IVertex{ FPoint3{ -3.f, -2.f, -2.f }, FVector2{}, FVector3{1.f,1.f,1.f}, RGBColor{0.f, 1.f, 0.f} },
-				IVertex{ FPoint3{ 3.f, -2.f, -2.f }, FVector2{}, FVector3{1.f,1.f,1.f}, RGBColor{0.f, 0.f, 1.f} } };
-			std::vector<unsigned int> indices{ 0, 1, 2 };
-			const std::string texPaths[4]{ "", "", "", "" };
-			Mesh* pTriangle = new Mesh{ vertices, indices, texPaths, PrimitiveTopology::TriangleList };
-			pSceneGraph->AddMesh(pTriangle);
-		}
-		//pSceneGraph->AddLight(new DirectionalLight{ RGBColor{1.f, 1.f, 1.f}, 2.f, FVector3{ 0.577f, -0.577f, -0.577f } });
-		pSceneGraphs.push_back(pSceneGraph);
-	}
+	//{
+	//	// SceneGraph 1
+	//	SceneGraph* pSceneGraph = new SceneGraph{};
+	//	//{
+	//	//	// Mesh 1 // Triangle 1
+	//	//	std::vector<IVertex> vertices{
+	//	//		IVertex{ FPoint3{ 0.f, 2.f, 0.f }, FVector2{} },
+	//	//		IVertex{ FPoint3{ -1.f, 0.f, 0.f }, FVector2{}},
+	//	//		IVertex{ FPoint3{ 1.f, 0.f, 0.f }, FVector2{} } };
+	//	//	std::vector<unsigned int> indices{ 0, 1, 2 };
+	//	//	const std::string texPaths[4]{ "", "", "", "" };
+	//	//	Mesh* pTriangle = new Mesh{ vertices, indices, texPaths, PrimitiveTopology::TriangleList };
+	//	//	pSceneGraph->AddMesh(pTriangle);
+	//	//}
+	//	{
+	//		// Mesh 2 // Triangle 2
+	//		std::vector<IVertex> vertices{
+	//			IVertex{ FPoint3{ 0.f, 4.f, -2.f }, FVector2{}, FVector3{1.f,1.f,1.f}, RGBColor{1.f, 0.f, 0.f} },
+	//			IVertex{ FPoint3{ -3.f, -2.f, -2.f }, FVector2{}, FVector3{1.f,1.f,1.f}, RGBColor{0.f, 1.f, 0.f} },
+	//			IVertex{ FPoint3{ 3.f, -2.f, -2.f }, FVector2{}, FVector3{1.f,1.f,1.f}, RGBColor{0.f, 0.f, 1.f} } };
+	//		std::vector<unsigned int> indices{ 0, 1, 2 };
+	//		const std::string texPaths[4]{ "", "", "", "" };
+	//		Mesh* pTriangle = new Mesh{ vertices, indices, texPaths, PrimitiveTopology::TriangleList };
+	//		pSceneGraph->AddMesh(pTriangle);
+	//	}
+	//	//pSceneGraph->AddLight(new DirectionalLight{ RGBColor{1.f, 1.f, 1.f}, 2.f, FVector3{ 0.577f, -0.577f, -0.577f } });
+	//	pSceneGraphs.push_back(pSceneGraph);
+	//}
 
 	//{
 	//	// SceneGraph 2
@@ -130,21 +130,21 @@ void CreateScenes(SceneManager& sm)
 	//	pSceneGraphs.push_back(pSceneGraph);
 	//}
 	//
-	//{
-	//	// SceneGraph 5 // Vehicle
-	//	SceneGraph* pSceneGraph = new SceneGraph{};
-	//	{
-	//		// Mesh 1 // Vehicle
-	//		parser.OpenFile("Resources/vehicle.obj");
-	//		parser.SetInvertYAxis(true);
-	//		parser.ReadFromObjFile(vertexBuffer, indexBuffer);
-	//		const std::string texPaths[4]{ "Resources/vehicle_diffuse.png", "Resources/vehicle_normal.png", "Resources/vehicle_specular.png", "Resources/vehicle_gloss.png" };
-	//		Mesh* pVehicleMesh = new Mesh{ vertexBuffer, indexBuffer, texPaths, PrimitiveTopology::TriangleList, 1.f };
-	//		pSceneGraph->AddMesh(pVehicleMesh);
-	//		pSceneGraph->AddLight(new DirectionalLight{ RGBColor{1.f, 1.f, 1.f}, 2.f, FVector3{ 0.577f, -0.577f, -0.577f } });
-	//	}
-	//	pSceneGraphs.push_back(pSceneGraph);
-	//}
+	{
+		// SceneGraph 5 // Vehicle
+		SceneGraph* pSceneGraph = new SceneGraph{};
+		{
+			// Mesh 1 // Vehicle
+			parser.OpenFile("Resources/vehicle.obj");
+			parser.SetInvertYAxis(true);
+			parser.ReadFromObjFile(vertexBuffer, indexBuffer);
+			const std::string texPaths[4]{ "Resources/vehicle_diffuse.png", "Resources/vehicle_normal.png", "Resources/vehicle_specular.png", "Resources/vehicle_gloss.png" };
+			Mesh* pVehicleMesh = new Mesh{ vertexBuffer, indexBuffer, texPaths, PrimitiveTopology::TriangleList, 1.f };
+			pSceneGraph->AddMesh(pVehicleMesh);
+			pSceneGraph->AddLight(new DirectionalLight{ RGBColor{1.f, 1.f, 1.f}, 2.f, FVector3{ 0.577f, -0.577f, -0.577f } });
+		}
+		pSceneGraphs.push_back(pSceneGraph);
+	}
 
 	for (SceneGraph* pSceneGraph : pSceneGraphs)
 	{
@@ -188,7 +188,7 @@ int main(int argc, char* args[])
 
 	SceneManager sm{};
 
-	Camera camera{ FPoint3{ 0.f, 0.f, 10.f }, 45.f };
+	Camera camera{ FPoint3{ 0.f, 5.f, 65.f }, 45.f };
 	camera.SetAspectRatio(float(width), float(height));
 	pRenderer->SetCamera(&camera);
 

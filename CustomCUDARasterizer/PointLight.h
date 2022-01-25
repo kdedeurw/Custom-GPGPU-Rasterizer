@@ -7,8 +7,8 @@ public:
 	explicit PointLight(const RGBColor& colour, float intensity, const FPoint3& position);
 	virtual ~PointLight() = default;
 
-	virtual RGBColor GetBiradiance(const FPoint3& pointToShade) const override;
-	virtual FVector3 GetDirection(const FPoint3& pointToShade) const override;
+	BOTH_CALLABLE virtual RGBColor GetBiradiance(const FPoint3& pointToShade) const override;
+	BOTH_CALLABLE virtual FVector3 GetDirection(const FPoint3& pointToShade) const override;
 	//virtual float GetLambertCosineLaw(const HitRecord& hitRecord) const override;
 
 private:

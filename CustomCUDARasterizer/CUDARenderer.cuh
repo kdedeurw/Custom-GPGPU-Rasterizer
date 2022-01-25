@@ -114,7 +114,7 @@ private:
 	CPU_CALLABLE void Clear(const RGBColor& colour = { 0.25f, 0.25f, 0.25f });
 	CPU_CALLABLE void VertexShader(const MeshIdentifier& mi, const FPoint3& camPos, const FMatrix4& viewProjectionMatrix, const FMatrix4& worldMatrix);
 	CPU_CALLABLE void TriangleAssembler(const MeshIdentifier& mi);
-	CPU_CALLABLE void Rasterizer(GPUTextures& textures, SampleState sampleState, bool isDepthColour);
+	CPU_CALLABLE void Rasterizer();
 	//DEPRECATED
 	CPU_CALLABLE void PixelShader(GPUTextures& textures, SampleState sampleState, bool isDepthColour);
 };

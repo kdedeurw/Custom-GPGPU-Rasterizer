@@ -32,17 +32,15 @@ RGBColor Texture::Sample(const FVector2& uv, SampleState state) const
 
 RGBColor Texture::SamplePoint(const FVector2& uv) const
 {
-	Uint8 r{}, g{}, b{};
-	//SDL_Color colour{};
-	const uint32_t x{ uint32_t(uv.x * m_pSurface->w) };
-	const uint32_t y{ uint32_t(uv.y * m_pSurface->h) };
-	const uint32_t pixel = uint32_t(x + (y * m_pSurface->w));
-	//const SDL_PixelFormat* pPixelFormat = new SDL_PixelFormat{ m_pSurface->format->BytesPerPixel };
-	const uint32_t* pixels = (uint32_t*)m_pSurface->pixels; // only works with uint32*, as seen in Renderer.h
+	Uint8 r, g, b;
+	const int x = int(uv.x * m_pSurface->w);
+	const int y = int(uv.y * m_pSurface->h);
+	//if (x < 0 || y < 0) //TODO: crash?
+	//	return RGBColor{ 1.f, 0.f, 1.f };
+	const uint32_t pixel = x + y * m_pSurface->w;
+	uint32_t* pixels = (uint32_t*)m_pSurface->pixels;
 	SDL_GetRGB(pixels[pixel], m_pSurface->format, &r, &g, &b);
-	//SDL_GetRGBA(pixels[pixel], m_pSurface->format, &colour.r, &colour.g, &colour.b, &colour.a);
 	return RGBColor{ r / 255.f, g / 255.f, b / 255.f };
-	//return RGBColor{ float(colour.r), float(colour.g), float(colour.b) } / 255.f;
 }
 
 RGBColor Texture::SampleLinear(const FVector2& uv) const
@@ -93,7 +91,7 @@ RGBColor Texture::SampleLinear(const FVector2& uv) const
 	//weights might not always give a correct result, since I'm sharing finalSampleColour with all samples
 
 	//Step 4: Sample 4 neighbours and take average
-	Uint8 r{}, g{}, b{};
+	Uint8 r, g, b;
 	RGBColor finalSampleColour{};
 	for (int i{}; i < 4; ++i)
 	{

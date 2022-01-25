@@ -67,12 +67,12 @@ void Elite::Renderer::Render(const SceneManager& sm)
 		{
 			for (size_t idx{ 2 }; idx < size; idx += 3)
 			{
-				OVertex& v0 = NDCVertices[indices[idx - 2]];
-				OVertex& v1 = NDCVertices[indices[idx - 1]];
-				OVertex& v2 = NDCVertices[indices[idx]];
+				const OVertex& v0 = NDCVertices[indices[idx - 2]];
+				const OVertex& v1 = NDCVertices[indices[idx - 1]];
+				const OVertex& v2 = NDCVertices[indices[idx]];
 
 				// separate triangle representation (array of OVertex*)
-				OVertex* triangle[3]{ &v0, &v1, &v2 };
+				const OVertex* triangle[3]{ &v0, &v1, &v2 };
 				FPoint4 rasterCoords[3]{ v0.p, v1.p, v2.p }; //painful, but unavoidable copy
 				//Otherwise any mesh that uses a vertex twice will literally get shredded due to same values being used for frustum tests etc.
 
@@ -92,12 +92,12 @@ void Elite::Renderer::Render(const SceneManager& sm)
 				const unsigned int idx1 = isOdd ? indices[idx + 2] : indices[idx + 1];
 				const unsigned int idx2 = isOdd ? indices[idx + 1] : indices[idx + 2];
 
-				OVertex& v0 = NDCVertices[idx0];
-				OVertex& v1 = NDCVertices[idx1];
-				OVertex& v2 = NDCVertices[idx2];
+				const OVertex& v0 = NDCVertices[idx0];
+				const OVertex& v1 = NDCVertices[idx1];
+				const OVertex& v2 = NDCVertices[idx2];
 
 				// separate triangle representation (array of OVertex*)
-				OVertex* triangle[3]{ &v0, &v1, &v2 };
+				const OVertex* triangle[3]{ &v0, &v1, &v2 };
 				FPoint4 rasterCoords[3]{ v0.p, v1.p, v2.p }; //painful, but unavoidable copy
 				//Otherwise any mesh that uses a vertex twice will literally get shredded due to same values being used for frustum tests etc.
 
@@ -117,9 +117,11 @@ void Elite::Renderer::Render(const SceneManager& sm)
 	SDL_UpdateWindowSurface(m_pWindow);
 }
 
-void Elite::Renderer::RenderTriangle(const SceneManager& sm, OVertex* triangle[3], FPoint4 rasterCoords[3])
+void Elite::Renderer::RenderTriangle(const SceneManager& sm, const OVertex* triangle[3], FPoint4 rasterCoords[3])
 {
-	NDCToScreenSpace(rasterCoords); //NDC to Screenspace
+	NDCToScreenSpace(rasterCoords[0]); //NDC to Screenspace
+	NDCToScreenSpace(rasterCoords[1]); //NDC to Screenspace
+	NDCToScreenSpace(rasterCoords[2]); //NDC to Screenspace
 	RenderPixelsInTriangle(sm, triangle, rasterCoords); //Rasterize Screenspace triangle
 }
 
@@ -168,7 +170,8 @@ OVertex Elite::Renderer::GetNDCVertex(const IVertex& vertex, const FMatrix4& vie
 {
 	//-----------------------------Matrix Based-----------------------------
 	const FMatrix4 worldViewProjectionMatrix{ viewProjectionMatrix * worldMatrix };
-	FPoint4 NDCspace = worldViewProjectionMatrix * FPoint4{ vertex.p.x, vertex.p.y, vertex.p.z, vertex.p.z };
+	//FPoint4 NDCspace = worldViewProjectionMatrix * FPoint4{ vertex.p.x, vertex.p.y, vertex.p.z, vertex.p.z };
+	FPoint4 NDCspace = worldViewProjectionMatrix * FPoint4{ vertex.p };
 
 	// converting to NDCspace
 	NDCspace.x /= NDCspace.w;
@@ -205,7 +208,7 @@ std::vector<OVertex> Elite::Renderer::GetNDCMeshVertices(const std::vector<IVert
 	// Basically the compilers optimizes the proces above so an automatic std::move() will be used instead of a copy construction (thank god)
 }
 
-void Elite::Renderer::RenderPixelsInTriangle(const SceneManager& sm, OVertex* triangle[3], FPoint4 rasterCoords[3])
+void Elite::Renderer::RenderPixelsInTriangle(const SceneManager& sm, const OVertex* triangle[3], FPoint4 rasterCoords[3])
 {
 	const BoundingBox bb = GetBoundingBox(rasterCoords);
 
@@ -227,14 +230,18 @@ void Elite::Renderer::RenderPixelsInTriangle(const SceneManager& sm, OVertex* tr
 				const size_t pixelId = c + r * m_Width;
 				if (DepthTest(rasterCoords, m_pDepthBuffer[pixelId], weights, zInterpolated))
 				{
-					const float wInterpolated = (weights[0] * v0.p.w) + (weights[1] * v1.p.w) + (weights[2] * v2.p.w);
+					const float v0InvDepth = 1.f / rasterCoords[0].w;
+					const float v1InvDepth = 1.f / rasterCoords[1].w;
+					const float v2InvDepth = 1.f / rasterCoords[2].w;
+					const float wInterpolated = 1.f / (v0InvDepth * weights[0] + v1InvDepth * weights[1] + v2InvDepth * weights[2]);
 
-					FVector2 interpolatedUV{ 
-						weights[0] * (v0.uv.x / rasterCoords[0].w) + weights[1] * (v1.uv.x / rasterCoords[1].w) + weights[2] * (v2.uv.x / rasterCoords[2].w),
-						weights[0] * (v0.uv.y / rasterCoords[0].w) + weights[1] * (v1.uv.y / rasterCoords[1].w) + weights[2] * (v2.uv.y / rasterCoords[2].w) };
+					FVector2 interpolatedUV{
+						weights[0] * (v0.uv.x * v0InvDepth) + weights[1] * (v1.uv.x * v1InvDepth) + weights[2] * (v2.uv.x * v2InvDepth),
+						weights[0] * (v0.uv.y * v0InvDepth) + weights[1] * (v1.uv.y * v1InvDepth) + weights[2] * (v2.uv.y * v2InvDepth) };
 					interpolatedUV *= wInterpolated;
 
-					RGBColor finalColour{};
+					RGBColor finalColour{ 1.f, 1.f, 1.f };
+					/*
 					if (!sm.IsDepthColour()) // show depth colour?
 					{
 						if (m_pTextures->pDiff) // diffuse map present?
@@ -248,16 +255,16 @@ void Elite::Renderer::RenderPixelsInTriangle(const SceneManager& sm, OVertex* tr
 								FVector3 normal{ normalRGB.r, normalRGB.g, normalRGB.b }; // sampled Normal form normalMap
 
 								FVector3 interpolatedNormal{
-									 weights[0] * (v0.n.x / rasterCoords[0].w) + weights[1] * (v1.n.x / rasterCoords[1].w) + weights[2] * (v2.n.x / rasterCoords[2].w),
-									 weights[0] * (v0.n.y / rasterCoords[0].w) + weights[1] * (v1.n.y / rasterCoords[1].w) + weights[2] * (v2.n.y / rasterCoords[2].w),
-									 weights[0] * (v0.n.z / rasterCoords[0].w) + weights[1] * (v1.n.z / rasterCoords[1].w) + weights[2] * (v2.n.z / rasterCoords[2].w) };
+									 weights[0] * (v0.n.x * v0InvDepth) + weights[1] * (v1.n.x * v1InvDepth) + weights[2] * (v2.n.x * v2InvDepth),
+									 weights[0] * (v0.n.y * v0InvDepth) + weights[1] * (v1.n.y * v1InvDepth) + weights[2] * (v2.n.y * v2InvDepth),
+									 weights[0] * (v0.n.z * v0InvDepth) + weights[1] * (v1.n.z * v1InvDepth) + weights[2] * (v2.n.z * v2InvDepth) };
 								// should be normalized anyway
 								interpolatedNormal *= wInterpolated;
 
 								const FVector3 interpolatedTangent{
-									weights[0] * (v0.tan.x / rasterCoords[0].w) + weights[1] * (v1.tan.x / rasterCoords[1].w) + weights[2] * (v2.tan.x / rasterCoords[2].w),
-									weights[0] * (v0.tan.y / rasterCoords[0].w) + weights[1] * (v1.tan.y / rasterCoords[1].w) + weights[2] * (v2.tan.y / rasterCoords[2].w),
-									weights[0] * (v0.tan.z / rasterCoords[0].w) + weights[1] * (v1.tan.z / rasterCoords[1].w) + weights[2] * (v2.tan.z / rasterCoords[2].w) };
+									weights[0] * (v0.tan.x * v0InvDepth) + weights[1] * (v1.tan.x * v1InvDepth) + weights[2] * (v2.tan.x * v2InvDepth),
+									weights[0] * (v0.tan.y * v0InvDepth) + weights[1] * (v1.tan.y * v1InvDepth) + weights[2] * (v2.tan.y * v2InvDepth),
+									weights[0] * (v0.tan.z * v0InvDepth) + weights[1] * (v1.tan.z * v1InvDepth) + weights[2] * (v2.tan.z * v2InvDepth) };
 								// should be normalized from the parser
 
 								FVector3 binormal{ Cross(interpolatedTangent, interpolatedNormal) };
@@ -274,9 +281,9 @@ void Elite::Renderer::RenderPixelsInTriangle(const SceneManager& sm, OVertex* tr
 								//Normalize(normal);
 
 								FVector3 interpolatedViewDirection{
-								weights[0] * (v0.vd.y / rasterCoords[0].w) + weights[1] * (v1.vd.y / rasterCoords[1].w) + weights[2] * (v2.vd.y / rasterCoords[2].w),
-								weights[0] * (v0.vd.x / rasterCoords[0].w) + weights[1] * (v1.vd.x / rasterCoords[1].w) + weights[2] * (v2.vd.x / rasterCoords[2].w),
-								weights[0] * (v0.vd.z / rasterCoords[0].w) + weights[1] * (v1.vd.z / rasterCoords[1].w) + weights[2] * (v2.vd.z / rasterCoords[2].w) };
+									weights[0] * (v0.vd.x * v0InvDepth) + weights[1] * (v1.vd.x * v1InvDepth) + weights[2] * (v2.vd.x * v2InvDepth),
+									weights[0] * (v0.vd.y * v0InvDepth) + weights[1] * (v1.vd.y * v1InvDepth) + weights[2] * (v2.vd.y * v2InvDepth),
+									weights[0] * (v0.vd.z * v0InvDepth) + weights[1] * (v1.vd.z * v1InvDepth) + weights[2] * (v2.vd.z * v2InvDepth) };
 								Normalize(interpolatedViewDirection);
 
 								//OVertex oVertex{};
@@ -352,6 +359,7 @@ void Elite::Renderer::RenderPixelsInTriangle(const SceneManager& sm, OVertex* tr
 						finalColour = RGBColor{ Remap(zInterpolated, 0.985f, 1.f), 0.f, 0.f }; // depth colour
 						finalColour.ClampColor();
 					}
+					*/
 
 					// final draw
 					m_pBackBufferPixels[pixelId] = SDL_MapRGB(m_pBackBuffer->format,
@@ -370,59 +378,57 @@ void Elite::Renderer::ShadePixel(const OVertex& oVertex, const Textures& texture
 	if (!sm.IsDepthColour()) // show depth colour?
 	{
 		const SampleState sampleState = sm.GetSampleState();
-		RGBColor diffuseColour = textures.pDiff->Sample(oVertex.uv, sampleState); // sample RGB colour
-	
-		const RGBColor normalRGB = textures.pNorm->Sample(oVertex.uv, sampleState); // sample RGB Normal
-		FVector3 normal{ normalRGB.r, normalRGB.g, normalRGB.b }; // sampled Normal form normalMap
-	
-		FVector3 binormal{ Cross(oVertex.tan, oVertex.n) };
-		//Normalize(binormal);
-		FMatrix3 tangentSpaceAxis{ oVertex.tan, binormal, oVertex.n };
-	
-		//normal /= 255.f; // normal to [0, 1]
-		normal.x = 2.f * normal.x - 1.f; // from [0, 1] to [-1, 1]
-		normal.y = 2.f * normal.y - 1.f;
-		normal.z = 2.f * normal.z - 1.f;
-		// !Already defined in [0, 1]!
-	
-		normal = tangentSpaceAxis * normal; // normal defined in tangent space
-		//Normalize(normal);
+
+		//global settings
+		bool isFlipGreenChannel = false;
+		const float shininess = 25.f;
+		const RGBColor ambientColour{ 0.05f, 0.05f, 0.05f };
+
+		// texture sampling
+		const RGBColor diffuseSample = textures.pDiff->Sample(oVertex.uv, sampleState);
+		const RGBColor normalSample = textures.pNorm->Sample(oVertex.uv, sampleState);
+		const RGBColor specularSample = textures.pSpec->Sample(oVertex.uv, sampleState);
+		const RGBColor glossSample = textures.pGloss->Sample(oVertex.uv, sampleState);
+
+		// normal mapping
+		FVector3 binormal = Cross(oVertex.tan, oVertex.n);
+		if (isFlipGreenChannel)
+			binormal = -binormal;
+		const FMatrix3 tangentSpaceAxis{ oVertex.tan, binormal, oVertex.n };
+
+		FVector3 finalNormal{ 2.f * normalSample.r - 1.f, 2.f * normalSample.g - 1.f, 2.f * normalSample.b - 1.f };
+		finalNormal = tangentSpaceAxis * finalNormal;
 
 		// light calculations
+		float totalObservedArea{};
+		float totalAngle{};
 		for (Light* pLight : sm.GetSceneGraph()->GetLights())
 		{
-			const FVector3& lightDir{ pLight->GetDirection(FPoint3{}) };
-			const float observedArea{ Dot(-normal, lightDir) };
-	
-			if (observedArea < 0.f)
-				continue;
+			const FVector3& lightDirection = pLight->GetDirection({});
+			float observedArea{ Dot(-finalNormal, lightDirection) };
+			Clamp(observedArea, 0.f, observedArea);
+			observedArea /= (float)PI;
+			observedArea *= pLight->GetIntensity();
+			totalObservedArea += observedArea;
 
-			//diffuseColour *= observedArea;
-	
-			const RGBColor biradiance{ pLight->GetBiradiance(FPoint3{}) };
-			// swapped direction of lights
-	
-			// phong
-			const FVector3 reflectV{ Reflect(lightDir, normal) };
-			float angle{ Dot(oVertex.vd, reflectV) };
-			angle = Clamp(angle, 0.f, 1.f);
-			const RGBColor specularSample{ textures.pSpec->Sample(oVertex.uv, sampleState) };
-			const RGBColor phongSpecularReflection{ specularSample * powf(angle, textures.pGloss->Sample(oVertex.uv, sampleState).r * 25.f) };
-	
-			//const RGBColor lambertColour{ diffuseColour * (RGBColor{1.f,1.f,1.f} - specularSample) };
-			//const RGBColor lambertColour{ (diffuseColour / float(E_PI)) * (RGBColor{1.f,1.f,1.f} - specularSample) };
-			const RGBColor lambertColour{ (diffuseColour * specularSample) / float(PI) }; //severely incorrect result, using diffusecolour for now
-			// Lambert diffuse == incoming colour multiplied by diffuse coefficient (1 in this case) divided by Pi
-			const RGBColor ambientColor = { 0.05f, 0.05f, 0.05f };
-			finalColour += biradiance * (diffuseColour + phongSpecularReflection) * observedArea;
+			// phong specular
+			const FVector3 reflectV{ Reflect(lightDirection, finalNormal) };
+			float angle{ Dot(oVertex.vd, reflectV) }; //MIGHT SWAP THESE
+			Clamp(angle, 0.f, 1.f);
+			angle = powf(angle, glossSample.r * shininess);
+			totalAngle += angle; //might clamp this
 		}
-		finalColour.ClampColor();
+
+		// final
+		const RGBColor diffuseColour = diffuseSample * totalObservedArea;
+		const RGBColor specularColour = specularSample * totalAngle;
+		finalColour = ambientColour + diffuseColour + specularColour;
 	}
 	else
 	{
 		finalColour = RGBColor{ Remap(oVertex.p.z, 0.985f, 1.f), 0.f, 0.f }; // depth colour
-		finalColour.ClampColor();
 	}
+	finalColour.ClampColor();
 	
 	// final draw
 	m_pBackBufferPixels[(int)oVertex.p.x + (int)(oVertex.p.y * m_Width)] = SDL_MapRGB(m_pBackBuffer->format,
@@ -481,9 +487,8 @@ bool Elite::Renderer::IsPixelInTriangle(FPoint4 rasterCoords[3], const FPoint2& 
 bool Elite::Renderer::DepthTest(FPoint4 rasterCoords[3], float& depthBuffer, float weights[3], float& zInterpolated)
 {
 	zInterpolated = (weights[0] * rasterCoords[0].z) + (weights[1] * rasterCoords[1].z) + (weights[2] * rasterCoords[2].z);
-	//float wInterpolated = (weights[0] * triangle[0]->v.w) + (weights[1] * triangle[1]->v.w) + (weights[2] * triangle[2]->v.w);
 
-	//if (zInterpolated < 0 || zInterpolated > 1.f) return false;
+	if (zInterpolated < 0 || zInterpolated > 1.f) return false;
 	if (zInterpolated > depthBuffer) return false;
 
 	depthBuffer = zInterpolated;
@@ -538,13 +543,10 @@ bool Elite::Renderer::IsTriangleInFrustum(FPoint4 rasterCoords[3]) const
 		|| IsVertexInFrustum(rasterCoords[2]));
 }
 
-void Elite::Renderer::NDCToScreenSpace(FPoint4 rasterCoords[3])
+void Elite::Renderer::NDCToScreenSpace(FPoint4& rasterCoords)
 {
-	for (int i{}; i < 3; ++i)
-	{
-		rasterCoords[i].x = ((rasterCoords[i].x + 1) / 2) * m_Width;
-		rasterCoords[i].y = ((1 - rasterCoords[i].y) / 2) * m_Height;
-	}
+	rasterCoords.x = ((rasterCoords.x + 1) / 2) * m_Width;
+	rasterCoords.y = ((1 - rasterCoords.y) / 2) * m_Height;
 }
 
 BoundingBox Elite::Renderer::GetBoundingBox(FPoint4 rasterCoords[3])

@@ -53,7 +53,7 @@ namespace Elite
 		inline void ClearScreen();
 		inline void BlackDraw(unsigned short c, unsigned short r);
 
-		inline void RenderTriangle(const SceneManager& sm, OVertex* triangle[3], FPoint4 rasterCoords[3]);
+		inline void RenderTriangle(const SceneManager& sm, const OVertex* triangle[3], FPoint4 rasterCoords[3]);
 
 		bool IsAllXOutsideFrustum(FPoint4 NDC[3]) const;
 		bool IsAllYOutsideFrustum(FPoint4 NDC[3]) const;
@@ -61,8 +61,8 @@ namespace Elite
 		bool IsTriangleVisible(FPoint4 NDC[3]) const;
 		bool IsTriangleInFrustum(FPoint4 NDCs[3]) const;
 		inline bool IsVertexInFrustum(const FPoint4& NDC) const;
-		inline void NDCToScreenSpace(FPoint4 rasterCoords[3]);
-		inline void RenderPixelsInTriangle(const SceneManager& sm, OVertex* triangle[3], FPoint4 rasterCoords[3]);
+		inline void NDCToScreenSpace(FPoint4& rasterCoords);
+		inline void RenderPixelsInTriangle(const SceneManager& sm, const OVertex* triangle[3], FPoint4 rasterCoords[3]);
 		inline bool IsPixelInTriangle(FPoint4 rasterCoords[3], const FPoint2& pixel, float weights[3]);
 		inline bool DepthTest(FPoint4 rasterCoords[3], float& depthBuffer, float weights[3], float& zInterpolated);
 		BoundingBox GetBoundingBox(FPoint4 rasterCoords[3]);
