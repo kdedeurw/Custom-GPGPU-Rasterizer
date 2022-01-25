@@ -47,6 +47,13 @@ struct Vertices
 	OVertex v2;
 };
 
+struct TriangleIdx
+{
+	unsigned int idx0;
+	unsigned int idx1;
+	unsigned int idx2;
+};
+
 struct PixelShade
 {
 	unsigned int colour;
@@ -70,29 +77,25 @@ float dev_RenderData_const[sizeof(RenderData) / sizeof(float)]{};
 //DEVICE MEMORY - Does have to be allocated and freed
 static unsigned int* dev_FrameBuffer{};
 static float* dev_DepthBuffer{};
-static Vertices* dev_Triangles{};
 static int* dev_Mutex{};
 static PixelShade* dev_PixelShadeBuffer{};
 static std::vector<IVertex*> dev_IVertexBuffer{};
 static std::vector<unsigned int*> dev_IndexBuffer{};
 static std::vector<OVertex*> dev_OVertexBuffer{};
+static std::vector<TriangleIdx*> dev_Triangles{};
 
 #pragma endregion
-
-//TODO: to counter global memory access sequencing
-//allocate buffers/dynamic pools per BLOCK (per screen bin)
-//Same goes with shared memory, but has bank conflicts
 
 //--------------------------
 
 CPU_CALLABLE
 CUDARenderer::CUDARenderer(const WindowHelper& windowHelper)
 	: m_WindowHelper{ windowHelper }
-	, m_NumTriangles{}
+	, m_TotalNumTriangles{}
 	, m_h_pFrameBuffer{}
 	, m_MeshIdentifiers{}
 {
-	InitCUDARasterizer();
+	InitCUDADeviceBuffers();
 
 	CheckErrorCuda(cudaEventCreate(&m_StartEvent));
 	CheckErrorCuda(cudaEventCreate(&m_StopEvent));
@@ -101,11 +104,10 @@ CUDARenderer::CUDARenderer(const WindowHelper& windowHelper)
 CPU_CALLABLE
 CUDARenderer::~CUDARenderer()
 {
-	//TODO: try global static functions for initialization
 	CheckErrorCuda(DeviceSynchroniseCuda());
 	CheckErrorCuda(cudaEventDestroy(m_StartEvent));
 	CheckErrorCuda(cudaEventDestroy(m_StopEvent));
-	FreeCUDARasterizer();
+	FreeCUDADeviceBuffers();
 }
 
 #pragma region MISC HELPER FUNCTIONS
@@ -267,7 +269,7 @@ void CUDARenderer::DisplayGPUSpecs(int deviceId)
 }
 
 CPU_CALLABLE
-void CUDARenderer::InitCUDARasterizer()
+void CUDARenderer::InitCUDADeviceBuffers()
 {
 #ifdef _DEBUG
 	DisplayGPUSpecs(0);
@@ -293,6 +295,9 @@ void CUDARenderer::InitCUDARasterizer()
 	size = sizeof(unsigned int);
 	CheckErrorCuda(cudaMallocHost((void**)&m_h_pFrameBuffer, width * height * size));
 	//CheckErrorCuda(cudaHostAlloc((void**)&m_h_pFrameBuffer, width * height * size, cudaHostAllocPortable));
+	
+	//host pinned memory without SDL window pixelbuffer
+	//SDL allows random access to pixelbuffer, but cuda does not allowed host memory to be there
 
 	//CUDAHOSTREGISTER FLAGS
 	/*
@@ -352,7 +357,7 @@ void CUDARenderer::InitCUDARasterizer()
 }
 
 CPU_CALLABLE
-void CUDARenderer::AllocateMeshBuffers(const size_t numVertices, const size_t numIndices, size_t meshIdx)
+void CUDARenderer::AllocateMeshBuffers(const size_t numVertices, const size_t numIndices, const size_t numTriangles, size_t meshIdx)
 {
 	//If no sufficient space in vector, enlarge
 	const size_t newSize = meshIdx + 1;
@@ -361,12 +366,14 @@ void CUDARenderer::AllocateMeshBuffers(const size_t numVertices, const size_t nu
 		dev_IVertexBuffer.resize(newSize);
 		dev_IndexBuffer.resize(newSize);
 		dev_OVertexBuffer.resize(newSize);
+		dev_Triangles.resize(newSize);
 	}
 
 	//Free unwanted memory
 	CheckErrorCuda(cudaFree(dev_IVertexBuffer[meshIdx]));
 	CheckErrorCuda(cudaFree(dev_IndexBuffer[meshIdx]));
 	CheckErrorCuda(cudaFree(dev_OVertexBuffer[meshIdx]));
+	CheckErrorCuda(cudaFree(dev_Triangles[meshIdx]));
 
 	//Allocate Input Vertex Buffer
 	CheckErrorCuda(cudaMalloc((void**)&dev_IVertexBuffer[meshIdx], numVertices * sizeof(IVertex)));
@@ -374,6 +381,8 @@ void CUDARenderer::AllocateMeshBuffers(const size_t numVertices, const size_t nu
 	CheckErrorCuda(cudaMalloc((void**)&dev_IndexBuffer[meshIdx], numIndices * sizeof(unsigned int)));
 	//Allocate Ouput Vertex Buffer
 	CheckErrorCuda(cudaMalloc((void**)&dev_OVertexBuffer[meshIdx], numVertices * sizeof(OVertex)));
+	//Allocate device memory for entire range of triangles
+	CheckErrorCuda(cudaMalloc((void**)&dev_Triangles[meshIdx], numTriangles * sizeof(TriangleIdx)));
 }
 
 CPU_CALLABLE
@@ -396,15 +405,18 @@ void CUDARenderer::FreeMeshBuffers()
 		dev_IndexBuffer[i] = nullptr;
 		CheckErrorCuda(cudaFree(dev_OVertexBuffer[i]));
 		dev_OVertexBuffer[i] = nullptr;
+		CheckErrorCuda(cudaFree(dev_Triangles[i]));
+		dev_Triangles[i] = nullptr;
 	}
 	m_MeshIdentifiers.clear();
 	dev_IVertexBuffer.clear();
 	dev_IndexBuffer.clear();
 	dev_OVertexBuffer.clear();
+	dev_Triangles.clear();
 }
 
 CPU_CALLABLE
-void CUDARenderer::FreeCUDARasterizer()
+void CUDARenderer::FreeCUDADeviceBuffers()
 {
 	//Free buffers
 	CheckErrorCuda(cudaFree(dev_FrameBuffer));
@@ -421,9 +433,6 @@ void CUDARenderer::FreeCUDARasterizer()
 
 	cudaFree(dev_Mutex);
 	dev_Mutex = nullptr;
-
-	CheckErrorCuda(cudaFree(dev_Triangles));
-	dev_Triangles = nullptr;
 
 	FreeMeshBuffers();
 }
@@ -566,8 +575,8 @@ bool IsPixelInTriangle(const RasterTriangle& triangle, const FPoint2& pixel, flo
 	}
 
 	if (EdgeFunction(v0, edgeA, pixel, weights[2])) return false;
-	if (EdgeFunction(v1, edgeB, pixel, weights[1])) return false;
-	if (EdgeFunction(v2, edgeC, pixel, weights[0])) return false;
+	if (EdgeFunction(v1, edgeB, pixel, weights[0])) return false;
+	if (EdgeFunction(v2, edgeC, pixel, weights[1])) return false;
 	weights[0] /= totalArea;
 	weights[1] /= totalArea;
 	weights[2] /= totalArea;
@@ -700,6 +709,8 @@ RGBColor ShadePixel(const PixelShade& pixelShade, const GPUTextures& textures, S
 	}
 	else
 	{
+		return GetRGBColor_SDL(pixelShade.colour);
+		
 		//global settings
 		bool isFlipGreenChannel = false;
 		const RGBColor ambientColour{ 0.05f, 0.05f, 0.05f };
@@ -807,7 +818,7 @@ void VertexShaderKernel(const IVertex* __restrict__ dev_IVertices, OVertex* dev_
 }
 
 GPU_KERNEL
-void TriangleAssemblerKernel(Vertices* dev_Triangles, const OVertex* __restrict__ const dev_OVertices, const unsigned int* __restrict__ const dev_IndexBuffer,
+void TriangleAssemblerKernel(TriangleIdx* dev_Triangles, const unsigned int* __restrict__ const dev_IndexBuffer,
 	const size_t numIndices, const PrimitiveTopology pt)
 {
 	//'talk about naming gore, eh?
@@ -818,10 +829,10 @@ void TriangleAssemblerKernel(Vertices* dev_Triangles, const OVertex* __restrict_
 		const unsigned int correctedIdx = (indexIdx * 3) + 2;
 		if (correctedIdx < numIndices)
 		{
-			Vertices triangle;
-			triangle.v0 = dev_OVertices[dev_IndexBuffer[correctedIdx - 2]];
-			triangle.v1 = dev_OVertices[dev_IndexBuffer[correctedIdx - 1]];
-			triangle.v2 = dev_OVertices[dev_IndexBuffer[correctedIdx]];
+			TriangleIdx triangle;
+			triangle.idx0 = dev_IndexBuffer[correctedIdx - 2];
+			triangle.idx1 = dev_IndexBuffer[correctedIdx - 1];
+			triangle.idx2 = dev_IndexBuffer[correctedIdx];
 			dev_Triangles[indexIdx] = triangle;
 		}
 	}
@@ -830,21 +841,21 @@ void TriangleAssemblerKernel(Vertices* dev_Triangles, const OVertex* __restrict_
 		//'talk about naming gore, eh?
 		if (indexIdx < numIndices - 2)
 		{
-			Vertices triangle;
+			TriangleIdx triangle;
 			const bool isOdd = !(indexIdx % 2);
 			const unsigned int idx0{ dev_IndexBuffer[indexIdx] };
 			const unsigned int idx1 = isOdd ? dev_IndexBuffer[indexIdx + 2] : dev_IndexBuffer[indexIdx + 1];
 			const unsigned int idx2 = isOdd ? dev_IndexBuffer[indexIdx + 1] : dev_IndexBuffer[indexIdx + 2];
-			triangle.v0 = dev_OVertices[dev_IndexBuffer[idx0]];
-			triangle.v1 = dev_OVertices[dev_IndexBuffer[idx1]];
-			triangle.v2 = dev_OVertices[dev_IndexBuffer[idx2]];
+			triangle.idx0 = dev_IndexBuffer[idx0];
+			triangle.idx1 = dev_IndexBuffer[idx1];
+			triangle.idx2 = dev_IndexBuffer[idx2];
 			dev_Triangles[indexIdx] = triangle;
 		}
 	}
 }
 
 GPU_KERNEL
-void RasterizerKernel(const Vertices* __restrict__ const dev_Triangles, const size_t numTriangles, 
+void RasterizerKernel(const TriangleIdx* __restrict__ const dev_Triangles, const OVertex* __restrict__ const dev_OVertices, const size_t numTriangles,
 	PixelShade* dev_PixelShadeBuffer, float* dev_DepthBuffer, int* dev_Mutex, const unsigned int width, const unsigned int height)
 {
 	//TODO: use shared memory, then coalesced copy
@@ -863,12 +874,15 @@ void RasterizerKernel(const Vertices* __restrict__ const dev_Triangles, const si
 	//Every thread processes 1 single triangle for now
 	if (triangleIndex < numTriangles)
 	{
-		//TODO: make either array of references or array of OVertex indexes
-		Vertices triangle = dev_Triangles[triangleIndex];
+		TriangleIdx triangleIdx = dev_Triangles[triangleIndex];
+		const OVertex v0 = dev_OVertices[triangleIdx.idx0];
+		const OVertex v1 = dev_OVertices[triangleIdx.idx1];
+		const OVertex v2 = dev_OVertices[triangleIdx.idx2];
+
 		RasterTriangle rasterTriangle;
-		rasterTriangle.v0 = triangle.v0.p;
-		rasterTriangle.v1 = triangle.v1.p;
-		rasterTriangle.v2 = triangle.v2.p;
+		rasterTriangle.v0 = v0.p;
+		rasterTriangle.v1 = v1.p;
+		rasterTriangle.v2 = v2.p;
 
 		//TODO: add early out in triangle assembler?
 		//Or clip
@@ -890,14 +904,9 @@ void RasterizerKernel(const Vertices* __restrict__ const dev_Triangles, const si
 				if (IsPixelInTriangle(rasterTriangle, pixel, weights))
 				{
 					const size_t pixelIdx = x + y * width;
-					const float zInterpolated = (weights[0] * triangle.v0.p.z) + (weights[1] * triangle.v1.p.z) + (weights[2] * triangle.v2.p.z);
+					const float zInterpolated = (weights[0] * v0.p.z) + (weights[1] * v1.p.z) + (weights[2] * v2.p.z);
 					if (IsDepthTestSucceeded(dev_DepthBuffer, dev_Mutex, pixelIdx, zInterpolated))
 					{
-						//TODO: get triangle with index from buffer
-						const OVertex& v0 = triangle.v0;
-						const OVertex& v1 = triangle.v1;
-						const OVertex& v2 = triangle.v2;
-
 						const float v0InvDepth = 1.f / rasterTriangle.v0.w;
 						const float v1InvDepth = 1.f / rasterTriangle.v1.w;
 						const float v2InvDepth = 1.f / rasterTriangle.v2.w;
@@ -954,9 +963,9 @@ void PixelShaderKernel(unsigned int* dev_FrameBuffer, const PixelShade* __restri
 	{
 		const unsigned int pixelIdx = x + y * width;
 		const PixelShade pixelShade = dev_PixelShadeBuffer[pixelIdx];
-		//const RGBColor colour = ShadePixel(pixelShade, textures, sampleState, isDepthColour);
-		//RGBA rgba{ colour };
-		dev_FrameBuffer[pixelIdx] = pixelShade.colour;
+		const RGBColor colour = ShadePixel(pixelShade, textures, sampleState, isDepthColour);
+		RGBA rgba{ colour };
+		dev_FrameBuffer[pixelIdx] = rgba.colour;
 	}
 }
 
@@ -1003,18 +1012,18 @@ void CUDARenderer::TriangleAssembler(const MeshIdentifier& mi)
 	const unsigned int numThreadsPerBlock = 256;
 	const unsigned int numBlocks = ((unsigned int)numIndices + numThreadsPerBlock - 1) / numThreadsPerBlock;
 	TriangleAssemblerKernel<<<numBlocks, numThreadsPerBlock>>>(
-		dev_Triangles, dev_OVertexBuffer[mi.Idx], dev_IndexBuffer[mi.Idx], numIndices, topology);
+		dev_Triangles[mi.Idx], dev_IndexBuffer[mi.Idx], numIndices, topology);
 }
 
 CPU_CALLABLE
-void CUDARenderer::Rasterizer()
+void CUDARenderer::Rasterizer(const MeshIdentifier& mi)
 {
 	const unsigned int numThreadsPerBlock = 256;
-	const unsigned int numBlocks = ((unsigned int)m_NumTriangles - 1) / numThreadsPerBlock + 1;
-	const size_t numSharedMemoryBytesPerBlock = (sizeof(Vertices) * m_NumTriangles) / numBlocks;
+	const unsigned int numBlocks = ((unsigned int)m_TotalNumTriangles - 1) / numThreadsPerBlock + 1;
+	const size_t numSharedMemoryBytesPerBlock = (sizeof(TriangleIdx) * m_TotalNumTriangles) / numBlocks;
 	RasterizerKernel<<<numBlocks, numThreadsPerBlock>>>(
-		dev_Triangles, m_NumTriangles, dev_PixelShadeBuffer,
-		dev_DepthBuffer, dev_Mutex,
+		dev_Triangles[mi.Idx], dev_OVertexBuffer[mi.Idx], mi.NumTriangles, 
+		dev_PixelShadeBuffer, dev_DepthBuffer, dev_Mutex,
 		m_WindowHelper.Width, m_WindowHelper.Height);
 }
 
@@ -1037,15 +1046,20 @@ void CUDARenderer::PixelShader(GPUTextures& textures, SampleState sampleState, b
 CPU_CALLABLE
 void CUDARenderer::LoadScene(const SceneGraph* pSceneGraph)
 {
-	m_NumTriangles = 0;
-	FreeMeshBuffers(); //!must be called before MeshIdentifiers.clear()!
+	if (!pSceneGraph)
+	{
+		std::cout << "!CUDARenderer::LoadScene > Invalid scenegraph!\n";
+		return;
+	}
+	m_TotalNumTriangles = 0;
+	FreeMeshBuffers();
 	const std::vector<Mesh*>& pMeshes = pSceneGraph->GetObjects();
 	for (const Mesh* pMesh : pMeshes)
 	{
 		MeshIdentifier mi{};
 		mi.Idx = m_MeshIdentifiers.size();
 		mi.pMesh = pMesh;
-		m_MeshIdentifiers.push_back(mi);
+		size_t numTriangles{};
 
 		const std::vector<IVertex>& vertexBuffer = pMesh->GetVertices();
 		const std::vector<unsigned int>& indexBuffer = pMesh->GetIndexes();
@@ -1054,37 +1068,29 @@ void CUDARenderer::LoadScene(const SceneGraph* pSceneGraph)
 		const PrimitiveTopology topology = pMesh->GetTopology();
 		const FMatrix4& worldMat = pMesh->GetWorldMatrix();
 
-		AllocateMeshBuffers(numVertices, numIndices, mi.Idx);
-		CopyMeshBuffers(vertexBuffer, indexBuffer, mi.Idx);
-
 		switch (topology)
 		{
 		case PrimitiveTopology::TriangleList:
-			m_NumTriangles += numIndices / 3;
+			numTriangles += numIndices / 3;
 			break;
 		case PrimitiveTopology::TriangleStrip:
-			m_NumTriangles += numIndices - 2;
+			numTriangles += numIndices - 2;
 			break;
 		default:
 			break;
 		}
-	}
+		mi.NumTriangles = numTriangles;
 
-	CheckErrorCuda(cudaFree(dev_Triangles)); //Free unwanted memory
-	//Allocate device memory for entire range of triangles
-	CheckErrorCuda(cudaMalloc((void**)&dev_Triangles, m_NumTriangles * sizeof(Vertices)));
+		m_MeshIdentifiers.push_back(mi);
+		AllocateMeshBuffers(numVertices, numIndices, numTriangles, mi.Idx);
+		CopyMeshBuffers(vertexBuffer, indexBuffer, mi.Idx);
+		m_TotalNumTriangles += numTriangles;
+	}
 }
 
 CPU_CALLABLE
 void CUDARenderer::Render(const SceneManager& sm, const Camera* pCamera)
 {
-#ifdef _DEBUG
-	if (EnterValidRenderingState())
-		exit(1);
-#else
-	EnterValidRenderingState();
-#endif
-
 	//Render Data
 	const bool isDepthColour = sm.IsDepthColour();
 	const SampleState sampleState = sm.GetSampleState();
@@ -1106,7 +1112,6 @@ void CUDARenderer::Render(const SceneManager& sm, const Camera* pCamera)
 	const SceneGraph* pSceneGraph = sm.GetSceneGraph();
 	const std::vector<Mesh*>& pObjects = pSceneGraph->GetObjects();
 
-	//TODO: create big coalesced memory array of buffer(s)?
 	for (const MeshIdentifier& mi : m_MeshIdentifiers)
 	{
 		//Mesh Data
@@ -1139,12 +1144,12 @@ void CUDARenderer::Render(const SceneManager& sm, const Camera* pCamera)
 		//StartTimer();
 
 		//---STAGE 3---: Peform Triangle Rasterization & Pixel Shading
-		Rasterizer();
+		Rasterizer(mi);
 		CheckErrorCuda(cudaDeviceSynchronize());
 		//---END STAGE 3---
 
 		//std::cout << "Rasterizer total time: " << StopTimer() << "ms\n";
-		
+
 		//---STAGE 3---: Peform  Pixel Shading
 		const Textures& textures = pMesh->GetTextures();
 		GPUTextures gpuTextures{};
@@ -1152,6 +1157,19 @@ void CUDARenderer::Render(const SceneManager& sm, const Camera* pCamera)
 		CheckErrorCuda(cudaDeviceSynchronize());
 		//---END STAGE 3---
 	}
+}
+
+CPU_CALLABLE
+void CUDARenderer::RenderAuto(const SceneManager& sm, const Camera* pCamera)
+{
+#ifdef _DEBUG
+	if (EnterValidRenderingState())
+		exit(1);
+#else
+	EnterValidRenderingState();
+#endif
+
+	Render(sm, pCamera);
 
 	//TODO: parallel copies (streams & async)
 	//Swap out buffers and update window
@@ -1179,8 +1197,8 @@ void CUDARenderer::WarmUp()
 	ResetDepthBufferKernel<<<0, 0>>>(nullptr, m_WindowHelper.Width, m_WindowHelper.Height);
 	ClearFrameBufferKernel<<<0, 0>>>(nullptr, m_WindowHelper.Width, m_WindowHelper.Height, 0);
 	VertexShaderKernel<<<0, 0>>>(nullptr, nullptr, 0, {}, {}, {});
-	TriangleAssemblerKernel<<<0, 0>>>(nullptr, nullptr, nullptr, 0, (PrimitiveTopology)0);
-	RasterizerKernel<<<0, 0>>>(nullptr, 0, nullptr, nullptr, nullptr, m_WindowHelper.Width, m_WindowHelper.Height);
+	TriangleAssemblerKernel<<<0, 0>>>(nullptr, nullptr, 0, (PrimitiveTopology)0);
+	RasterizerKernel<<<0, 0>>>(nullptr, nullptr, 0, nullptr, nullptr, nullptr, m_WindowHelper.Width, m_WindowHelper.Height);
 	PixelShaderKernel<<<0, 0>>> (nullptr, nullptr, {}, SampleState{}, false, m_WindowHelper.Width, m_WindowHelper.Height);
 }
 

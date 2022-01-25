@@ -240,8 +240,7 @@ void Elite::Renderer::RenderPixelsInTriangle(const SceneManager& sm, const OVert
 						weights[0] * (v0.uv.y * v0InvDepth) + weights[1] * (v1.uv.y * v1InvDepth) + weights[2] * (v2.uv.y * v2InvDepth) };
 					interpolatedUV *= wInterpolated;
 
-					RGBColor finalColour{ 1.f, 1.f, 1.f };
-					/*
+					RGBColor finalColour{};
 					if (!sm.IsDepthColour()) // show depth colour?
 					{
 						if (m_pTextures->pDiff) // diffuse map present?
@@ -359,7 +358,6 @@ void Elite::Renderer::RenderPixelsInTriangle(const SceneManager& sm, const OVert
 						finalColour = RGBColor{ Remap(zInterpolated, 0.985f, 1.f), 0.f, 0.f }; // depth colour
 						finalColour.ClampColor();
 					}
-					*/
 
 					// final draw
 					m_pBackBufferPixels[pixelId] = SDL_MapRGB(m_pBackBuffer->format,
@@ -464,7 +462,7 @@ bool Elite::Renderer::IsPixelInTriangle(FPoint4 rasterCoords[3], const FPoint2& 
 	if (cross < 0.f)
 		return false;
 	// weight1
-	weights[1] = cross / totalArea;
+	weights[0] = cross / totalArea;
 
 	// edgeC
 	vertexToPixel = { pixel - v2 };
@@ -472,11 +470,11 @@ bool Elite::Renderer::IsPixelInTriangle(FPoint4 rasterCoords[3], const FPoint2& 
 	if (cross < 0.f)
 		return false;
 	// weight0
-	weights[0] = cross / totalArea;
+	weights[1] = cross / totalArea;
 
 	//weights == inverted negative cross of 'previous' edge
-	//weights[0] = Cross(-vertexToPixel, edgeC) / totalArea;
-	//weights[1] = Cross(-vertexToPixel, edgeB) / totalArea;
+	//weights[1] = Cross(-vertexToPixel, edgeC) / totalArea;
+	//weights[0] = Cross(-vertexToPixel, edgeB) / totalArea;
 	//weights[2] = Cross(-vertexToPixel, edgeA) / totalArea;
 	// gives positive results because counter-clockwise
 	//const float total = weights[0] + weights[1] + weights[2]; // total result equals 1

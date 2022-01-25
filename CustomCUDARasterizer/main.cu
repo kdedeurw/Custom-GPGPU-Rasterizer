@@ -98,8 +98,8 @@ void CreateScenes(SceneManager& sm)
 	//	}
 	//	pSceneGraphs.push_back(pSceneGraph);
 	//}
+	///
 	//
-	//{
 	//	// SceneGraph 3 // TukTuk
 	//	SceneGraph* pSceneGraph = new SceneGraph{};
 	//	{
@@ -113,7 +113,7 @@ void CreateScenes(SceneManager& sm)
 	//		pSceneGraph->AddLight(new DirectionalLight{ RGBColor{1.f, 1.f, 1.f}, 2.f, FVector3{ 0.577f, -0.577f, -0.577f } });
 	//	}
 	//	pSceneGraphs.push_back(pSceneGraph);
-	//}
+	//
 	//
 	//{
 	//	// SceneGraph 4 // Bunny
@@ -158,6 +158,22 @@ void ShutDown(SDL_Window* pWindow)
 	SDL_Quit();
 }
 
+int GetFPSImmediate(float ms)
+{
+	return int(1 / ms * 1000);
+}
+
+#pragma region GLOBAL DEFINES
+
+#ifndef HARDWARE_ACCELERATION
+#define HARDWARE_ACCELERATION
+	//#ifndef FPS_REALTIME
+	//#define FPS_REALTIME
+	//#endif
+#endif
+
+#pragma endregion
+
 int main(int argc, char* args[])
 {
 	//Single-GPU setup
@@ -183,14 +199,10 @@ int main(int argc, char* args[])
 		return 1;
 
 	//Initialize framework
-	Elite::Timer* pTimer = new Elite::Timer();
-	Elite::Renderer* pRenderer = new Elite::Renderer(pWindow);
-
 	SceneManager sm{};
-
 	Camera camera{ FPoint3{ 0.f, 5.f, 65.f }, 45.f };
 	camera.SetAspectRatio(float(width), float(height));
-	pRenderer->SetCamera(&camera);
+	Elite::Timer* pTimer = new Elite::Timer();
 
 	WindowHelper windowHelper{};
 	windowHelper.pWindow = pWindow;
@@ -202,8 +214,13 @@ int main(int argc, char* args[])
 
 	CreateScenes(sm);
 
+#ifdef HARDWARE_ACCELERATION
 	CUDARenderer* pCudaRenderer = new CUDARenderer{ windowHelper };
 	pCudaRenderer->LoadScene(sm.GetSceneGraph());
+#else
+	Elite::Renderer* pRenderer = new Elite::Renderer(pWindow);
+	pRenderer->SetCamera(&camera);
+#endif
 
 	//Start loop
 	pTimer->Start();
@@ -221,24 +238,33 @@ int main(int argc, char* args[])
 		camera.Update(elapsedSec);
 
 		//--------- Render ---------
-		//pRenderer->Render(sm);
-		//pCudaRenderer->StartTimer();
-		pCudaRenderer->Render(sm, &camera);
-		//const float ms = pCudaRenderer->StopTimer();
-		//std::cout << "CUDARenderer total rendering time: " << ms << "ms\n";
-		//std::cout << "FPS: " << 1 / ms * 1000  << '\n';
+#ifdef HARDWARE_ACCELERATION
+#ifdef FPS_REALTIME
+		pCudaRenderer->StartTimer();
+#endif
+		pCudaRenderer->RenderAuto(sm, &camera);
+#ifdef FPS_REALTIME
+		const float ms = pCudaRenderer->StopTimer();
+		std::cout << "CUDARenderer total rendering time: " << ms << "ms";
+		std::cout << " (" << GetFPSImmediate(ms) << " FPS)\r";
+#endif
+#else
+		pRenderer->Render(sm);
+#endif
 
 		//--------- Timer ---------
 		pTimer->Update();
+#ifndef FPS_REALTIME
 		printTimer += elapsedSec;
 		if (printTimer >= 1.f)
 		{
 			printTimer = 0.f;
 			std::cout << "FPS: " << pTimer->GetFPS() << std::endl;
 		}
+#endif
 
 		//--------- Update Meshes ---------
-		//sm.Update(elapsedSec);
+		sm.Update(0.f);
 
 		//Save screenshot after full render
 		//if (takeScreenshot)
@@ -252,13 +278,16 @@ int main(int argc, char* args[])
 	}
 	pTimer->Stop();
 
-	CheckErrorCuda(DeviceSynchroniseCuda());
-	CheckErrorCuda(DeviceResetCuda());
-
 	//Shutdown framework
-	delete pRenderer;
-	delete pTimer;
+#ifdef HARDWARE_ACCELERATION
+	CheckErrorCuda(DeviceSynchroniseCuda());
 	delete pCudaRenderer;
+	CheckErrorCuda(DeviceResetCuda());
+#else
+	delete pRenderer;
+#endif
+	delete pTimer;
+
 
 	ShutDown(pWindow);
 	return 0;
