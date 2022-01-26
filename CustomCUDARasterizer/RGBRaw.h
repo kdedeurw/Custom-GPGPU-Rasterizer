@@ -96,3 +96,9 @@ BOTH_CALLABLE RGBColor GetRGBColor_SDL(unsigned int colour)
 	const RGBA c{ std::move(colour) };
 	return RGBColor{ c.values.r / 255.f, c.values.g / 255.f, c.values.b / 255.f };
 }
+
+BOTH_CALLABLE RGBColor GetRGBColor_SDL_RBFlipped(unsigned int colour)
+{
+	const RGBA c{ std::move(colour) };
+	return RGBColor{ c.values.b / 255.f, c.values.g / 255.f, c.values.r / 255.f };
+}

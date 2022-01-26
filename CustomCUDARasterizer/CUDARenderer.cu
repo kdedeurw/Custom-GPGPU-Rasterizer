@@ -443,35 +443,58 @@ void CUDARenderer::LoadMeshTextures(const std::string texturePaths[4], size_t me
 			const unsigned int height = pSurface->h;
 			const unsigned int* pixels = (unsigned int*)pSurface->pixels;
 			const int bpp = pSurface->format->BytesPerPixel;
-			const size_t sizeInBytes = width * height * bpp;
+			//const size_t sizeInBytes = width * height * bpp;
 			const size_t textureIdx = meshIdx * NumTextures + i;
 
 			//copy texture data to device
 			CheckErrorCuda(cudaFree(dev_TextureData[textureIdx]));
-			CheckErrorCuda(cudaMalloc((void**)&dev_TextureData[textureIdx], sizeInBytes));
-			CheckErrorCuda(cudaMemcpy(dev_TextureData[textureIdx], pixels, sizeInBytes, cudaMemcpyHostToDevice));
+			size_t pitch{};
+			CheckErrorCuda(cudaMallocPitch((void**)&dev_TextureData[textureIdx], &pitch, width * bpp, height)); //2D array
+			CheckErrorCuda(cudaMemcpy2D(dev_TextureData[textureIdx], pitch, pixels, pitch, width * bpp, height, cudaMemcpyHostToDevice));
 
 			//cudaChannelFormatDesc formatDesc = cudaCreateChannelDesc<unsigned int>();
 
 			cudaResourceDesc resDesc{};
-			resDesc.resType = cudaResourceTypeLinear;
-			resDesc.res.linear.devPtr = dev_TextureData[textureIdx];
-			resDesc.res.linear.desc.f = cudaChannelFormatKindUnsigned;
-			resDesc.res.linear.desc.x = pSurface->format->BitsPerPixel;
-			resDesc.res.linear.sizeInBytes = sizeInBytes;
+			resDesc.resType = cudaResourceTypePitch2D;
+			resDesc.res.pitch2D.devPtr = dev_TextureData[textureIdx];
+			resDesc.res.pitch2D.desc.f = cudaChannelFormatKindUnsigned;
+			resDesc.res.pitch2D.desc.x = pSurface->format->BitsPerPixel;
+			resDesc.res.pitch2D.width = width;
+			resDesc.res.pitch2D.height = height;
 
 			cudaTextureDesc texDesc{};
-			texDesc.normalizedCoords = false;
-			texDesc.filterMode = cudaFilterModePoint;
+			texDesc.normalizedCoords = true; //able to sample texture with normalized uv coordinates
+			texDesc.filterMode = cudaFilterModePoint; //linear only supports float (and double) type
 			texDesc.readMode = cudaReadModeElementType;
 
 			cudaTextureObject_t dev_TextureObject{};
 			CheckErrorCuda(cudaCreateTextureObject(&dev_TextureObject, &resDesc, &texDesc, nullptr));
 
+			/*{
+				cudaArray* dev_array;
+				cudaChannelFormatDesc formatDesc{};
+				formatDesc.f = cudaChannelFormatKindUnsigned;
+				formatDesc.x = 32;
+
+				cudaMallocArray(&dev_array, &formatDesc, width, height, cudaArrayTextureGather); //2D array
+				cudaMallocArray(&dev_array, &formatDesc, width * height, 1, cudaArrayTextureGather); //1D array
+				cudaMemcpyToArray(dev_array, 0, 0, dev_TextureData[textureIdx], width * height * bpp, cudaMemcpyHostToDevice);
+
+				cudaResourceDesc desc{};
+				desc.resType = cudaResourceTypeArray;
+				desc.res.array.array = dev_array;
+
+				cudaTextureObject_t dev_TextureObject{};
+				CheckErrorCuda(cudaCreateTextureObject(&dev_TextureObject, &desc, &texDesc, nullptr));
+
+
+				cudaFreeArray(dev_array);
+			}*/
+
 			gpuTexture->dev_pTex = dev_TextureObject;
 			gpuTexture->w = width;
 			gpuTexture->h = height;
-			gpuTexture->bpp = bpp;
+			gpuTexture->dev_TextureData = dev_TextureData[textureIdx];
 
 			/*DEPRECATED
 				//bind texture
@@ -914,29 +937,6 @@ RGBColor ShadePixel(const PixelShade& pixelShade, bool isDepthColour)
 //Kernel launch params:	numBlocks, numThreadsPerBlock, numSharedMemoryBytes, stream
 
 GPU_KERNEL
-void TextureTest(unsigned int* dev_FrameBuffer, GPUTexture texture, const unsigned int width, const unsigned int height)
-{
-	const unsigned int x = (blockIdx.x * blockDim.x) + threadIdx.x;
-	const unsigned int y = (blockIdx.y * blockDim.y) + threadIdx.y;
-	if (x < width && y < height)
-	{
-		const unsigned int pixelIdx = x + y * width;
-		//remap uv's to stretch towards the window's dimensions (broken)
-		//float u{ (float(x) / width) * texture.w };
-		//float v{ (float(y) / height) * texture.h };
-		float u = Clamp(float(x), 0.f, (float)texture.w);
-		float v = Clamp(float(y), 0.f, (float)texture.h);
-		float sampleIdx = u + v * texture.w;
-		unsigned int sample = tex1Dfetch<unsigned int>(texture.dev_pTex, (int)sampleIdx);
-		RGBA rgba = sample;
-		unsigned char b = rgba.values.b;
-		rgba.values.b = rgba.values.r;
-		rgba.values.r = b;
-		dev_FrameBuffer[pixelIdx] = rgba.colour;
-	}
-}
-
-GPU_KERNEL
 void ResetDepthBufferKernel(float* dev_DepthBuffer, const unsigned int width, const unsigned int height)
 {
 	//TODO: too many global accesses
@@ -1131,61 +1131,8 @@ void RasterizerKernel(const TriangleIdx* __restrict__ const dev_Triangles, const
 	}
 }
 
-void CUDARenderer::DrawTexture(char* tP)
-{
-	SDL_Surface* pS = IMG_Load(tP);
-
-	int w = pS->w;
-	int h = pS->h;
-	int N = w * h;
-	unsigned int* buffer;
-	cudaMalloc(&buffer, N * sizeof(unsigned int));
-	cudaMemcpy(buffer, pS->pixels, N * sizeof(unsigned int), cudaMemcpyHostToDevice);
-
-	//create texture object
-	cudaResourceDesc resDesc;
-	memset(&resDesc, 0, sizeof(resDesc));
-	resDesc.resType = cudaResourceTypeLinear;
-	resDesc.res.linear.devPtr = buffer;
-	resDesc.res.linear.desc.f = cudaChannelFormatKindUnsigned;
-	resDesc.res.linear.desc.x = pS->format->BitsPerPixel;
-	resDesc.res.linear.sizeInBytes = N * sizeof(unsigned int);
-
-	cudaTextureDesc texDesc;
-	memset(&texDesc, 0, sizeof(texDesc));
-	texDesc.readMode = cudaReadModeElementType;
-	texDesc.addressMode[0] = cudaAddressModeBorder;
-	texDesc.addressMode[1] = cudaAddressModeBorder;
-	texDesc.addressMode[2] = cudaAddressModeBorder;
-
-	//create texture object
-	cudaTextureObject_t tex = 0;
-	cudaCreateTextureObject(&tex, &resDesc, &texDesc, NULL);
-
-	GPUTexture texture{};
-	texture.dev_pTex = tex;
-	texture.w = w;
-	texture.h = h;
-
-	EnterValidRenderingState();
-
-	const dim3 numThreadsPerBlock{ 16, 16 };
-	const dim3 numBlocks{ m_WindowHelper.Width / numThreadsPerBlock.x, m_WindowHelper.Height / numThreadsPerBlock.y };
-	TextureTest<<<numBlocks, numThreadsPerBlock>>>(dev_FrameBuffer, texture, m_WindowHelper.Width, m_WindowHelper.Height);
-
-	Present();
-
-	//destroy texture object
-	cudaDestroyTextureObject(tex);
-
-	SDL_FreeSurface(pS);
-
-	//do not free buffer if it is meant to be reused
-	cudaFree(buffer);
-}
-
 GPU_KERNEL
-void PixelShaderKernel(unsigned int* dev_FrameBuffer, const PixelShade* __restrict__ const dev_PixelShadeBuffer, 
+void PixelShaderKernel(unsigned int* dev_FrameBuffer, const PixelShade* __restrict__ const dev_PixelShadeBuffer,
 	bool isDepthColour, const unsigned int width, const unsigned int height)
 {
 	const unsigned int x = (blockIdx.x * blockDim.x) + threadIdx.x;
@@ -1205,6 +1152,61 @@ void PixelShaderKernel(unsigned int* dev_FrameBuffer, const PixelShade* __restri
 		//const RGBColor colour = ShadePixel(pixelShade, isDepthColour);
 		//RGBA rgba{ colour };
 		dev_FrameBuffer[pixelIdx] = sample;
+	}
+}
+
+GPU_KERNEL
+void TextureTestKernel(unsigned int* dev_FrameBuffer, GPUTexture texture, const unsigned int width, const unsigned int height)
+{
+	const unsigned int x = (blockIdx.x * blockDim.x) + threadIdx.x;
+	const unsigned int y = (blockIdx.y * blockDim.y) + threadIdx.y;
+	if (x < width && y < height)
+	{
+		const unsigned int pixelIdx = x + y * width;
+		float u = float(x) / width;
+		float v = float(y) / height;
+		//u *= texture.w;
+		//v *= texture.h;
+		//float uC = Clamp(float(x), 0.f, (float)texture.w);
+		//float vC = Clamp(float(y), 0.f, (float)texture.h);
+		//float sampleIdx = u + v * texture.w;
+		//unsigned int sample = tex1Dfetch<unsigned int>(texture.dev_pTex, (int)sampleIdx);
+		//remap uv's to stretch towards the window's dimensions
+		unsigned int sample = tex2D<unsigned int>(texture.dev_pTex, u, v);
+		RGBA rgba = sample;
+		unsigned char b = rgba.values.b;
+		rgba.values.b = rgba.values.r;
+		rgba.values.r = b;
+		dev_FrameBuffer[pixelIdx] = rgba.colour;
+	}
+}
+
+GPU_KERNEL
+void DrawTextureGlobalKernel(unsigned int* dev_FrameBuffer, GPUTexture texture, bool isStretchedToWindow,
+	const unsigned int width, const unsigned int height)
+{
+	const unsigned int x = (blockIdx.x * blockDim.x) + threadIdx.x;
+	const unsigned int y = (blockIdx.y * blockDim.y) + threadIdx.y;
+	if (x < width && y < height)
+	{
+		const unsigned int pixelIdx = x + y * width;
+		//remap uv's to stretch towards the window's dimensions
+		FVector2 uv;
+		uv.x = float(x);
+		uv.y = float(y);
+		if (isStretchedToWindow)
+		{
+			uv.x /= width;
+			uv.y /= height;
+		}
+		else
+		{
+			uv.x /= texture.w;
+			uv.y /= texture.h;
+		}
+		RGBColor sample = GPUTextureSampler::Sample(texture, uv);
+		RGBA rgba = sample;
+		dev_FrameBuffer[pixelIdx] = rgba.colour;
 	}
 }
 
@@ -1274,6 +1276,91 @@ void CUDARenderer::PixelShader(bool isDepthColour)
 	PixelShaderKernel<<<numBlocks, numThreadsPerBlock>>>(
 		dev_FrameBuffer, dev_PixelShadeBuffer, isDepthColour,
 		m_WindowHelper.Width, m_WindowHelper.Height);
+}
+
+void CUDARenderer::DrawTexture(char* tP)
+{
+	SDL_Surface* pS = IMG_Load(tP);
+
+	int w = pS->w;
+	int h = pS->h;
+	int N = w * h;
+	int bpp = pS->format->BytesPerPixel;
+	unsigned int* buffer;
+	size_t pitch{};
+	CheckErrorCuda(cudaMallocPitch((void**)&buffer, &pitch, w * bpp, h)); //2D array
+	CheckErrorCuda(cudaMemcpy2D(buffer, pitch, buffer, pitch, w * bpp, h, cudaMemcpyHostToDevice));
+
+	//cudaChannelFormatDesc formatDesc = cudaCreateChannelDesc<unsigned int>();
+
+	cudaResourceDesc resDesc{};
+	resDesc.resType = cudaResourceTypePitch2D;
+	resDesc.res.pitch2D.devPtr = buffer;
+	resDesc.res.pitch2D.desc.f = cudaChannelFormatKindUnsigned;
+	resDesc.res.pitch2D.desc.x = pS->format->BitsPerPixel;
+	resDesc.res.pitch2D.width = w;
+	resDesc.res.pitch2D.height = h;
+	resDesc.res.pitch2D.pitchInBytes = pitch;
+
+	cudaTextureDesc texDesc{};
+	texDesc.normalizedCoords = true; //able to sample texture with normalized uv coordinates
+	texDesc.filterMode = cudaFilterModePoint; //linear only supports float (and double) type
+	texDesc.readMode = cudaReadModeElementType;
+
+	cudaTextureObject_t tex{};
+	CheckErrorCuda(cudaCreateTextureObject(&tex, &resDesc, &texDesc, nullptr));
+
+	GPUTexture texture{};
+	texture.dev_pTex = tex;
+	texture.w = w;
+	texture.h = h;
+	texture.dev_TextureData = buffer;
+
+	EnterValidRenderingState();
+
+	const dim3 numThreadsPerBlock{ 16, 16 };
+	const dim3 numBlocks{ m_WindowHelper.Width / numThreadsPerBlock.x, m_WindowHelper.Height / numThreadsPerBlock.y };
+	TextureTestKernel<<<numBlocks, numThreadsPerBlock>>>(dev_FrameBuffer, texture, m_WindowHelper.Width, m_WindowHelper.Height);
+
+	Present();
+
+	//destroy texture object
+	CheckErrorCuda(cudaDestroyTextureObject(tex));
+
+	SDL_FreeSurface(pS);
+
+	//do not free buffer if it is meant to be reused
+	CheckErrorCuda(cudaFree(buffer));
+}
+
+void CUDARenderer::DrawTextureGlobal(char* tp, bool isStretchedToWindow)
+{
+	SDL_Surface* pS = IMG_Load(tp);
+
+	int w = pS->w;
+	int h = pS->h;
+	int N = w * h;
+	unsigned int* buffer;
+	cudaMalloc(&buffer, N * sizeof(unsigned int));
+	cudaMemcpy(buffer, pS->pixels, N * sizeof(unsigned int), cudaMemcpyHostToDevice);
+
+	EnterValidRenderingState();
+
+	GPUTexture gpuTexture{};
+	gpuTexture.dev_pTex = 0; //none
+	gpuTexture.dev_TextureData = buffer;
+	gpuTexture.w = w;
+	gpuTexture.h = h;
+
+	const dim3 numThreadsPerBlock{ 16, 16 };
+	const dim3 numBlocks{ m_WindowHelper.Width / numThreadsPerBlock.x, m_WindowHelper.Height / numThreadsPerBlock.y };
+	DrawTextureGlobalKernel<<<numBlocks, numThreadsPerBlock>>>(dev_FrameBuffer, gpuTexture, isStretchedToWindow, m_WindowHelper.Width, m_WindowHelper.Height);
+
+	Present();
+
+	SDL_FreeSurface(pS);
+
+	cudaFree(buffer);
 }
 
 #pragma endregion

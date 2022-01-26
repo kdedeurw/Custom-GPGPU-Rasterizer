@@ -51,6 +51,7 @@ public:
 
 	//Testing purposes
 	void DrawTexture(char* tp);
+	void DrawTextureGlobal(char* tp, bool isStretchedToWindow = true);
 
 	//Preload and store scene in persistent memory
 	//This will eliminate overhead by loading mesh data and accessing global memory
@@ -75,10 +76,10 @@ public:
 
 	struct MeshIdentifier
 	{
-		size_t Idx;
-		size_t NumTriangles;
-		const Mesh* pMesh;
-		GPUTextures Textures;
+		size_t Idx; //<READ ONLY>
+		size_t NumTriangles; //<READ ONLY>
+		const Mesh* pMesh; //<READ ONLY>
+		GPUTextures Textures; //<READ ONLY>
 	};
 private:
 	//-----MEMBER VARIABLES-----

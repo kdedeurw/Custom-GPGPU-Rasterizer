@@ -218,7 +218,7 @@ int main(int argc, char* args[])
 
 #ifdef HARDWARE_ACCELERATION
 	CUDARenderer* pCudaRenderer = new CUDARenderer{ windowHelper };
-	pCudaRenderer->DrawTexture("Resources/tuktuk.png");
+	pCudaRenderer->DrawTextureGlobal("Resources/tuktuk.png", true);
 	//pCudaRenderer->LoadScene(sm.GetSceneGraph());
 #else
 	Elite::Renderer* pRenderer = new Elite::Renderer(pWindow);

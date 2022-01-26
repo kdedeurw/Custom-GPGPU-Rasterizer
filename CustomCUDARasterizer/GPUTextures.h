@@ -6,7 +6,8 @@ struct GPUTexture
 	cudaTextureObject_t dev_pTex; //cuda texture pointer address
 	unsigned int w; //height
 	unsigned int h; //width
-	unsigned int bpp = 4; //bytes per pixel
+	unsigned int* dev_TextureData;
+	const static unsigned int bpp = 4; //bytes per pixel
 };
 
 struct GPUTextures
