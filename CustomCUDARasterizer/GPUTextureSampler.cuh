@@ -57,12 +57,12 @@ RGBColor GPUTextureSampler::Sample2D(const GPUTexture& gpuTexture, const FVector
 GPU_CALLABLE GPU_INLINE
 RGBColor GPUTextureSampler::Sample(const GPUTexture& gpuTexture, const FVector2& uv)
 {
-	//// Transform coordinates
-	float u{ uv.x * gpuTexture.w };
-	float v{ uv.y * gpuTexture.h };
-	//u += 0.5f;
-	//v += 0.5f;
-	const unsigned int sampleIdx = (int)u + (int)v * gpuTexture.w;
+	// Transform coordinates
+	const int u{ int(uv.x * gpuTexture.w + 0.5f) };
+	const int v{ int(uv.y * gpuTexture.h + 0.5f) };
+	if (u < 0 || v < 0 || u > gpuTexture.w || v > gpuTexture.h)
+		return RGBColor{ 1.f, 0.f, 1.f };
+	const int sampleIdx = (int)u + (int)v * gpuTexture.w;
 	unsigned int sample = gpuTexture.dev_TextureData[sampleIdx];
 	RGBColor sampleColour = GetRGBColor_SDL(sample);
 	return sampleColour;

@@ -51,6 +51,7 @@ public:
 
 	//Testing purposes
 	void DrawTexture(char* tp);
+	//Testing purposes
 	void DrawTextureGlobal(char* tp, bool isStretchedToWindow = true);
 
 	//Preload and store scene in persistent memory

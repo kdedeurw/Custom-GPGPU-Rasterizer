@@ -75,7 +75,7 @@ float dev_RenderData_const[sizeof(RenderData) / sizeof(float)]{};
 static unsigned int* dev_FrameBuffer{};
 static float* dev_DepthBuffer{};
 static int* dev_Mutex{};
-static PixelShade* dev_PixelShadeBuffer{};
+static PixelShade* dev_PixelShadeBuffer{}; //(== fragmentbuffer)
 static std::vector<IVertex*> dev_IVertexBuffer{};
 static std::vector<unsigned int*> dev_IndexBuffer{};
 static std::vector<OVertex*> dev_OVertexBuffer{};
@@ -100,8 +100,10 @@ CPU_CALLABLE
 CUDARenderer::CUDARenderer(const WindowHelper& windowHelper)
 	: m_WindowHelper{ windowHelper }
 	, m_TotalNumTriangles{}
+	, m_TimerMs{}
 	, m_h_pFrameBuffer{}
 	, m_MeshIdentifiers{}
+	, m_TextureObjects{}
 {
 	InitCUDADeviceBuffers();
 	CheckErrorCuda(cudaEventCreate(&m_StartEvent));
@@ -736,6 +738,14 @@ bool IsPixelInTriangle(const RasterTriangle& triangle, const FPoint2& pixel, flo
 }
 
 GPU_CALLABLE static
+//UNUSED
+void ModifyPixelShadeBuffer()
+{
+
+}
+
+GPU_CALLABLE static
+//DEPRECATED
 //This will "block" the current thread into a while loop until depthtest is complete
 bool IsDepthTestSucceeded(float dev_DepthBuffer[], int dev_Mutex[], const size_t pixelIdx, float zInterpolated)
 {
@@ -753,12 +763,15 @@ bool IsDepthTestSucceeded(float dev_DepthBuffer[], int dev_Mutex[], const size_t
 		isDone = (atomicCAS(&dev_Mutex[pixelIdx], 0, 1) == 0);
 		if (isDone)
 		{
+			//critical section
 			if (zInterpolated > dev_DepthBuffer[pixelIdx]) //DEPTH BUFFER INVERTED INTERPRETATION
 			{
 				dev_DepthBuffer[pixelIdx] = zInterpolated;
+				//TODO: (atomically) write to pixelshaderbuffer
 				isDepthTestSucceeded = true;
 			}
 			dev_Mutex[pixelIdx] = 0;
+			//end of critical section
 		}
 	} while (!isDone);
 	return isDepthTestSucceeded;
@@ -1081,50 +1094,79 @@ void RasterizerKernel(const TriangleIdx* __restrict__ const dev_Triangles, const
 				{
 					const size_t pixelIdx = x + y * width;
 					const float zInterpolated = (weights[0] * v0.p.z) + (weights[1] * v1.p.z) + (weights[2] * v2.p.z);
-					if (IsDepthTestSucceeded(dev_DepthBuffer, dev_Mutex, pixelIdx, zInterpolated))
+
+					//peform early depth test
+					if (zInterpolated < 0 || zInterpolated > 1.f)
+						continue;
+
+					//Perform atomic depth test
+					bool isDone = false;
+					do
 					{
-						const float v0InvDepth = 1.f / rasterTriangle.v0.w;
-						const float v1InvDepth = 1.f / rasterTriangle.v1.w;
-						const float v2InvDepth = 1.f / rasterTriangle.v2.w;
-						const float wInterpolated = 1.f / (v0InvDepth * weights[0] + v1InvDepth * weights[1] + v2InvDepth * weights[2]);
+						isDone = (atomicCAS(&dev_Mutex[pixelIdx], 0, 1) == 0);
+						if (isDone)
+						{
+							//critical section
+							if (zInterpolated > dev_DepthBuffer[pixelIdx]) //DEPTH BUFFER INVERTED INTERPRETATION
+							{
 
-						PixelShade pixelShade;
+								const float v0InvDepth = 1.f / rasterTriangle.v0.w;
+								const float v1InvDepth = 1.f / rasterTriangle.v1.w;
+								const float v2InvDepth = 1.f / rasterTriangle.v2.w;
+								const float wInterpolated = 1.f / (v0InvDepth * weights[0] + v1InvDepth * weights[1] + v2InvDepth * weights[2]);
 
-						pixelShade.zInterpolated = zInterpolated;
-						pixelShade.wInterpolated = wInterpolated;
+								//create pixelshade object (== fragment)
+								PixelShade pixelShade;
 
-						new (&pixelShade.uv) FVector2{
-							weights[0] * (v0.uv.x * v0InvDepth) + weights[1] * (v1.uv.x * v1InvDepth) + weights[2] * (v2.uv.x * v2InvDepth),
-							weights[0] * (v0.uv.y * v0InvDepth) + weights[1] * (v1.uv.y * v1InvDepth) + weights[2] * (v2.uv.y * v2InvDepth) };
-						pixelShade.uv *= wInterpolated;
+								//depthbuffer visualisation
+								pixelShade.zInterpolated = zInterpolated;
+								pixelShade.wInterpolated = wInterpolated;
 
-						new (&pixelShade.n) FVector3{
-								weights[0] * (v0.n.x * v0InvDepth) + weights[1] * (v1.n.x * v1InvDepth) + weights[2] * (v2.n.x * v2InvDepth),
-								weights[0] * (v0.n.y * v0InvDepth) + weights[1] * (v1.n.y * v1InvDepth) + weights[2] * (v2.n.y * v2InvDepth),
-								weights[0] * (v0.n.z * v0InvDepth) + weights[1] * (v1.n.z * v1InvDepth) + weights[2] * (v2.n.z * v2InvDepth) };
-						pixelShade.n *= wInterpolated;
+								//uv
+								new (&pixelShade.uv) FVector2{
+									weights[0] * (v0.uv.x * v0InvDepth) + weights[1] * (v1.uv.x * v1InvDepth) + weights[2] * (v2.uv.x * v2InvDepth),
+									weights[0] * (v0.uv.y * v0InvDepth) + weights[1] * (v1.uv.y * v1InvDepth) + weights[2] * (v2.uv.y * v2InvDepth) };
+								pixelShade.uv *= wInterpolated;
 
-						new (&pixelShade.tan) FVector3{
-							weights[0] * (v0.tan.x * v0InvDepth) + weights[1] * (v1.tan.x * v1InvDepth) + weights[2] * (v2.tan.x * v2InvDepth),
-							weights[0] * (v0.tan.y * v0InvDepth) + weights[1] * (v1.tan.y * v1InvDepth) + weights[2] * (v2.tan.y * v2InvDepth),
-							weights[0] * (v0.tan.z * v0InvDepth) + weights[1] * (v1.tan.z * v1InvDepth) + weights[2] * (v2.tan.z * v2InvDepth) };
+								//normal
+								new (&pixelShade.n) FVector3{
+										weights[0] * (v0.n.x * v0InvDepth) + weights[1] * (v1.n.x * v1InvDepth) + weights[2] * (v2.n.x * v2InvDepth),
+										weights[0] * (v0.n.y * v0InvDepth) + weights[1] * (v1.n.y * v1InvDepth) + weights[2] * (v2.n.y * v2InvDepth),
+										weights[0] * (v0.n.z * v0InvDepth) + weights[1] * (v1.n.z * v1InvDepth) + weights[2] * (v2.n.z * v2InvDepth) };
+								pixelShade.n *= wInterpolated;
 
-						new (&pixelShade.vd) FVector3{
-							weights[0] * (v0.vd.x * v0InvDepth) + weights[1] * (v1.vd.x * v1InvDepth) + weights[2] * (v2.vd.x * v2InvDepth),
-							weights[0] * (v0.vd.y * v0InvDepth) + weights[1] * (v1.vd.y * v1InvDepth) + weights[2] * (v2.vd.y * v2InvDepth),
-							weights[0] * (v0.vd.z * v0InvDepth) + weights[1] * (v1.vd.z * v1InvDepth) + weights[2] * (v2.vd.z * v2InvDepth) };
-						Normalize(pixelShade.vd);
+								//tangent
+								new (&pixelShade.tan) FVector3{
+									weights[0] * (v0.tan.x * v0InvDepth) + weights[1] * (v1.tan.x * v1InvDepth) + weights[2] * (v2.tan.x * v2InvDepth),
+									weights[0] * (v0.tan.y * v0InvDepth) + weights[1] * (v1.tan.y * v1InvDepth) + weights[2] * (v2.tan.y * v2InvDepth),
+									weights[0] * (v0.tan.z * v0InvDepth) + weights[1] * (v1.tan.z * v1InvDepth) + weights[2] * (v2.tan.z * v2InvDepth) };
 
-						const RGBColor interpolatedColour{
-							weights[0] * v0.c.r + weights[1] * v1.c.r + weights[2] * v2.c.r,
-							weights[0] * v0.c.g + weights[1] * v1.c.g + weights[2] * v2.c.g,
-							weights[0] * v0.c.b + weights[1] * v1.c.b + weights[2] * v2.c.b };
-						pixelShade.colour = GetRGBA_SDL(interpolatedColour).colour;
+								//view direction
+								new (&pixelShade.vd) FVector3{
+									weights[0] * (v0.vd.x * v0InvDepth) + weights[1] * (v1.vd.x * v1InvDepth) + weights[2] * (v2.vd.x * v2InvDepth),
+									weights[0] * (v0.vd.y * v0InvDepth) + weights[1] * (v1.vd.y * v1InvDepth) + weights[2] * (v2.vd.y * v2InvDepth),
+									weights[0] * (v0.vd.z * v0InvDepth) + weights[1] * (v1.vd.z * v1InvDepth) + weights[2] * (v2.vd.z * v2InvDepth) };
+								Normalize(pixelShade.vd);
 
-						pixelShade.textures = textures;
+								//colour
+								const RGBColor interpolatedColour{
+									weights[0] * v0.c.r + weights[1] * v1.c.r + weights[2] * v2.c.r,
+									weights[0] * v0.c.g + weights[1] * v1.c.g + weights[2] * v2.c.g,
+									weights[0] * v0.c.b + weights[1] * v1.c.b + weights[2] * v2.c.b };
+								pixelShade.colour = GetRGBA_SDL(interpolatedColour).colour;
 
-						memcpy(&dev_PixelShadeBuffer[pixelIdx], &pixelShade, sizeof(PixelShade));
-					}
+								//store textures
+								pixelShade.textures = textures;
+
+								//update depthbuffer
+								dev_DepthBuffer[pixelIdx] = zInterpolated;
+								//modify pixelshadebuffer
+								dev_PixelShadeBuffer[pixelIdx] = pixelShade;
+							}
+							dev_Mutex[pixelIdx] = 0;
+							//end of critical section
+						}
+					} while (!isDone);
 				}
 			}
 		}
@@ -1139,19 +1181,11 @@ void PixelShaderKernel(unsigned int* dev_FrameBuffer, const PixelShade* __restri
 	const unsigned int y = (blockIdx.y * blockDim.y) + threadIdx.y;
 	if (x < width && y < height)
 	{
-		float u = x;
-		if (u > 1024)
-			u = 1024;
-		float v = y;
-		if (v > 1024)
-			v = 1024;
-		unsigned int sample = tex1D<unsigned int>(1, u + v);
-
 		const unsigned int pixelIdx = x + y * width;
-		//PixelShade pixelShade = dev_PixelShadeBuffer[pixelIdx];
-		//const RGBColor colour = ShadePixel(pixelShade, isDepthColour);
-		//RGBA rgba{ colour };
-		dev_FrameBuffer[pixelIdx] = sample;
+		PixelShade pixelShade = dev_PixelShadeBuffer[pixelIdx];
+		const RGBColor colour = ShadePixel(pixelShade, isDepthColour);
+		RGBA rgba{ colour };
+		dev_FrameBuffer[pixelIdx] = rgba.colour;
 	}
 }
 
@@ -1239,7 +1273,7 @@ void CUDARenderer::VertexShader(const MeshIdentifier& mi, const FPoint3& camPos,
 {
 	const size_t numVertices = mi.pMesh->GetVertices().size();
 	const unsigned int numThreadsPerBlock = 256;
-	const unsigned int numBlocks = (numVertices + numThreadsPerBlock - 1) / numThreadsPerBlock;
+	const unsigned int numBlocks = (unsigned int)(numVertices + numThreadsPerBlock - 1) / numThreadsPerBlock;
 	VertexShaderKernel<<<numBlocks, numThreadsPerBlock>>>(
 		dev_IVertexBuffer[mi.Idx], dev_OVertexBuffer[mi.Idx], numVertices,
 		camPos, viewProjectionMatrix, worldMatrix);
@@ -1278,13 +1312,13 @@ void CUDARenderer::PixelShader(bool isDepthColour)
 		m_WindowHelper.Width, m_WindowHelper.Height);
 }
 
+CPU_CALLABLE
 void CUDARenderer::DrawTexture(char* tP)
 {
 	SDL_Surface* pS = IMG_Load(tP);
 
 	int w = pS->w;
 	int h = pS->h;
-	int N = w * h;
 	int bpp = pS->format->BytesPerPixel;
 	unsigned int* buffer;
 	size_t pitch{};
@@ -1333,6 +1367,7 @@ void CUDARenderer::DrawTexture(char* tP)
 	CheckErrorCuda(cudaFree(buffer));
 }
 
+CPU_CALLABLE
 void CUDARenderer::DrawTextureGlobal(char* tp, bool isStretchedToWindow)
 {
 	SDL_Surface* pS = IMG_Load(tp);
@@ -1399,8 +1434,6 @@ void CUDARenderer::LoadScene(const SceneGraph* pSceneGraph)
 			break;
 		case PrimitiveTopology::TriangleStrip:
 			numTriangles += numIndices - 2;
-			break;
-		default:
 			break;
 		}
 		mi.NumTriangles = numTriangles;
