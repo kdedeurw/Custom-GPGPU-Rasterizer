@@ -9,6 +9,7 @@
 #include "Math.h"
 #include "RGBColor.h"
 #include "PrimitiveTopology.h"
+#include "GPUTextures.h"
 
 struct WindowHelper;
 class Camera;
@@ -17,7 +18,6 @@ struct IVertex;
 struct OVertex;
 struct BoundingBox;
 enum class SampleState;
-struct GPUTextures;
 class SceneManager;
 class SceneGraph;
 
@@ -49,6 +49,9 @@ public:
 	CPU_CALLABLE CUDARenderer& operator=(const CUDARenderer&) = delete;
 	CPU_CALLABLE CUDARenderer& operator=(CUDARenderer&&) noexcept = delete;
 
+	//Testing purposes
+	void DrawTexture(char* tp);
+
 	//Preload and store scene in persistent memory
 	//This will eliminate overhead by loading mesh data and accessing global memory
 	CPU_CALLABLE void LoadScene(const SceneGraph* pSceneGraph);
@@ -75,6 +78,7 @@ public:
 		size_t Idx;
 		size_t NumTriangles;
 		const Mesh* pMesh;
+		GPUTextures Textures;
 	};
 private:
 	//-----MEMBER VARIABLES-----
@@ -85,6 +89,7 @@ private:
 	unsigned int* m_h_pFrameBuffer{};
 	cudaEvent_t m_StartEvent{}, m_StopEvent{};
 	std::vector<MeshIdentifier> m_MeshIdentifiers{};
+	std::vector<GPUTextures> m_TextureObjects{};
 
 	//CANNOT DIRECTLY COPY PINNED MEMORY TO CONST DEVICE MEMORY
 	//CameraData* m_pCameraData{};
@@ -96,6 +101,10 @@ private:
 	CPU_CALLABLE void AllocateMeshBuffers(const size_t numVertices, const size_t numIndices, const size_t numTriangles, size_t meshIdx = 0);
 	//function that copies raw input buffers for a mesh (idx)
 	CPU_CALLABLE void CopyMeshBuffers(const std::vector<IVertex>& vertexBuffer, const std::vector<unsigned int>& indexBuffer, size_t meshIdx = 0);
+	//function that preloads GPU textures in device's texture memory
+	CPU_CALLABLE void LoadMeshTextures(const std::string texturePaths[4], size_t meshIdx = 0);
+	//function that frees all texture objects
+	CPU_CALLABLE void FreeTextures();
 	//function that frees all mesh buffers
 	CPU_CALLABLE void FreeMeshBuffers();
 	//function that allocates device buffers
@@ -117,5 +126,5 @@ private:
 	CPU_CALLABLE void VertexShader(const MeshIdentifier& mi, const FPoint3& camPos, const FMatrix4& viewProjectionMatrix, const FMatrix4& worldMatrix);
 	CPU_CALLABLE void TriangleAssembler(const MeshIdentifier& mi);
 	CPU_CALLABLE void Rasterizer(const MeshIdentifier& mi);
-	CPU_CALLABLE void PixelShader(GPUTextures& textures, SampleState sampleState, bool isDepthColour);
+	CPU_CALLABLE void PixelShader(bool isDepthColour);
 };

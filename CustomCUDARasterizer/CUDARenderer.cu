@@ -16,6 +16,7 @@
 #include "GPUTextures.h"
 #include "RGBRaw.h"
 #include "Light.h"
+#include "GPUTextures.h"
 
 #pragma region STRUCT DECLARATIONS
 
@@ -40,13 +41,6 @@ struct RasterTriangle
 	FPoint4 v2;
 };
 
-struct Vertices
-{
-	OVertex v0;
-	OVertex v1;
-	OVertex v2;
-};
-
 struct TriangleIdx
 {
 	unsigned int idx0;
@@ -63,11 +57,14 @@ struct PixelShade
 	FVector3 n;
 	FVector3 tan;
 	FVector3 vd;
+	GPUTextures textures;
 };
 
 #pragma endregion
 
 #pragma region GLOBAL VARIABLES
+
+constexpr int NumTextures = 4;
 
 //CONST DEVICE MEMORY - Does NOT have to be allocated or freed
 GPU_CONST_MEMORY static
@@ -83,6 +80,17 @@ static std::vector<IVertex*> dev_IVertexBuffer{};
 static std::vector<unsigned int*> dev_IndexBuffer{};
 static std::vector<OVertex*> dev_OVertexBuffer{};
 static std::vector<TriangleIdx*> dev_Triangles{};
+static std::vector<unsigned int*> dev_TextureData{};
+/*
+//DEPRECATED
+//Texture references have to be statically declared in global memory and bound to CUDA texture memory
+//They cannot be referenced in functions, nor used in arrays
+typedef texture<unsigned int, cudaTextureType2D, cudaReadModeElementType> CUDA32bTexture2D;
+static CUDA32bTexture2D dev_DiffuseTextureReference{};
+static CUDA32bTexture2D dev_NormalTextureReference{};
+static CUDA32bTexture2D dev_SpecularTextureReference{};
+static CUDA32bTexture2D dev_GlossinessTextureReference{};
+*/
 
 #pragma endregion
 
@@ -96,7 +104,6 @@ CUDARenderer::CUDARenderer(const WindowHelper& windowHelper)
 	, m_MeshIdentifiers{}
 {
 	InitCUDADeviceBuffers();
-
 	CheckErrorCuda(cudaEventCreate(&m_StartEvent));
 	CheckErrorCuda(cudaEventCreate(&m_StopEvent));
 }
@@ -363,6 +370,7 @@ void CUDARenderer::AllocateMeshBuffers(const size_t numVertices, const size_t nu
 	const size_t newSize = meshIdx + 1;
 	if (newSize > dev_IVertexBuffer.size())
 	{
+		//TODO: reserve
 		dev_IVertexBuffer.resize(newSize);
 		dev_IndexBuffer.resize(newSize);
 		dev_OVertexBuffer.resize(newSize);
@@ -392,6 +400,125 @@ void CUDARenderer::CopyMeshBuffers(const std::vector<IVertex>& vertexBuffer, con
 	CheckErrorCuda(cudaMemcpy(dev_IVertexBuffer[meshIdx], &vertexBuffer[0], vertexBuffer.size() * sizeof(IVertex), cudaMemcpyHostToDevice));
 	//Copy Index Buffer
 	CheckErrorCuda(cudaMemcpy(dev_IndexBuffer[meshIdx], &indexBuffer[0], indexBuffer.size() * sizeof(unsigned int), cudaMemcpyHostToDevice));
+}
+
+CPU_CALLABLE
+void CUDARenderer::LoadMeshTextures(const std::string texturePaths[4], size_t meshIdx)
+{
+	const size_t newSize = (meshIdx + 1);
+	if (newSize > m_TextureObjects.size())
+	{
+		m_TextureObjects.resize(newSize);
+	}
+	if (newSize * NumTextures > dev_TextureData.size())
+	{
+		dev_TextureData.resize(newSize * NumTextures);
+	}
+
+	GPUTextures gpuTextures{};
+
+	//0 DIFFUSE > 1 NORMAL > 2 SPECULAR > 3 GLOSSINESS
+	for (int i{}; i < NumTextures; ++i)
+	{
+		GPUTexture* gpuTexture;
+		switch (i)
+		{
+		case 0:
+			gpuTexture = &gpuTextures.Diff;
+			break;
+		case 1:
+			gpuTexture = &gpuTextures.Norm;
+			break;
+		case 2:
+			gpuTexture = &gpuTextures.Spec;
+			break;
+		case 3:
+			gpuTexture = &gpuTextures.Gloss;
+			break;
+		}
+		SDL_Surface* pSurface = IMG_Load(texturePaths[i].c_str());
+		if (pSurface)
+		{
+			const unsigned int width = pSurface->w;
+			const unsigned int height = pSurface->h;
+			const unsigned int* pixels = (unsigned int*)pSurface->pixels;
+			const int bpp = pSurface->format->BytesPerPixel;
+			const size_t sizeInBytes = width * height * bpp;
+			const size_t textureIdx = meshIdx * NumTextures + i;
+
+			//copy texture data to device
+			CheckErrorCuda(cudaFree(dev_TextureData[textureIdx]));
+			CheckErrorCuda(cudaMalloc((void**)&dev_TextureData[textureIdx], sizeInBytes));
+			CheckErrorCuda(cudaMemcpy(dev_TextureData[textureIdx], pixels, sizeInBytes, cudaMemcpyHostToDevice));
+
+			//cudaChannelFormatDesc formatDesc = cudaCreateChannelDesc<unsigned int>();
+
+			cudaResourceDesc resDesc{};
+			resDesc.resType = cudaResourceTypeLinear;
+			resDesc.res.linear.devPtr = dev_TextureData[textureIdx];
+			resDesc.res.linear.desc.f = cudaChannelFormatKindUnsigned;
+			resDesc.res.linear.desc.x = pSurface->format->BitsPerPixel;
+			resDesc.res.linear.sizeInBytes = sizeInBytes;
+
+			cudaTextureDesc texDesc{};
+			texDesc.normalizedCoords = false;
+			texDesc.filterMode = cudaFilterModePoint;
+			texDesc.readMode = cudaReadModeElementType;
+
+			cudaTextureObject_t dev_TextureObject{};
+			CheckErrorCuda(cudaCreateTextureObject(&dev_TextureObject, &resDesc, &texDesc, nullptr));
+
+			gpuTexture->dev_pTex = dev_TextureObject;
+			gpuTexture->w = width;
+			gpuTexture->h = height;
+			gpuTexture->bpp = bpp;
+
+			/*DEPRECATED
+				//bind texture
+				textureReference texRef{};
+				texRef.normalized = false;
+				texRef.channelDesc = cudaCreateChannelDesc<unsigned int>();
+				texRef.channelDesc.x = bpp * 8;
+				texRef.channelDesc.f = cudaChannelFormatKindUnsigned; //unsigned int
+
+				size_t offset{};
+				CUDA32bTexture2D texRef{}; //IN STATIC GLOBAL MEMORY!
+				CheckErrorCuda(cudaBindTexture2D(&offset, &texRef, dev_texData2D, &texRef.channelDesc, width, height, pitch * bpp));
+
+				if (offset != 0)
+				{
+					std::cout << "Texture Offset : " << offset << '\n';
+					return;
+				}
+			*/
+
+			//free data
+			SDL_FreeSurface(pSurface);
+			//!DO NOT FREE TEXTURE DATA, as this will render the texture object invalid!
+		}
+	}
+	//store textures
+	m_TextureObjects[meshIdx] = gpuTextures;
+}
+
+CPU_CALLABLE
+void CUDARenderer::FreeTextures()
+{
+	//destroy all texture objects
+	for (const GPUTextures& textures : m_TextureObjects)
+	{
+		CheckErrorCuda(cudaDestroyTextureObject(textures.Diff.dev_pTex));
+		CheckErrorCuda(cudaDestroyTextureObject(textures.Norm.dev_pTex));
+		CheckErrorCuda(cudaDestroyTextureObject(textures.Spec.dev_pTex));
+		CheckErrorCuda(cudaDestroyTextureObject(textures.Gloss.dev_pTex));
+	}
+	m_TextureObjects.clear();
+	//free texture data
+	for (unsigned int* dev_texData : dev_TextureData)
+	{
+		CheckErrorCuda(cudaFree(dev_texData));
+	}
+	dev_TextureData.clear();
 }
 
 CPU_CALLABLE
@@ -435,6 +562,7 @@ void CUDARenderer::FreeCUDADeviceBuffers()
 	dev_Mutex = nullptr;
 
 	FreeMeshBuffers();
+	FreeTextures();
 }
 
 CPU_CALLABLE
@@ -699,7 +827,7 @@ BoundingBox GetBoundingBox(const RasterTriangle& triangle, const unsigned int wi
 }
 
 GPU_CALLABLE GPU_INLINE static
-RGBColor ShadePixel(const PixelShade& pixelShade, const GPUTextures& textures, SampleState sampleState, bool isDepthColour)
+RGBColor ShadePixel(const PixelShade& pixelShade, bool isDepthColour)
 {
 	RGBColor finalColour{};
 	if (isDepthColour)
@@ -709,48 +837,74 @@ RGBColor ShadePixel(const PixelShade& pixelShade, const GPUTextures& textures, S
 	}
 	else
 	{
-		return GetRGBColor_SDL(pixelShade.colour);
-		
 		//global settings
 		bool isFlipGreenChannel = false;
 		const RGBColor ambientColour{ 0.05f, 0.05f, 0.05f };
-		const FVector3 lightDirection = { .577f, -.577f, -.577f };
+		const FVector3 lightDirection = { 0.577f, -0.577f, -0.577f };
 		const float lightIntensity = 7.0f;
 
 		// texture sampling
-		const RGBColor diffuseSample = GPUTextureSampler::Sample(textures.pDiff, pixelShade.uv, sampleState);
-		const RGBColor normalSample = GPUTextureSampler::Sample(textures.pNorm, pixelShade.uv, sampleState);
-		const RGBColor specularSample = GPUTextureSampler::Sample(textures.pSpec, pixelShade.uv, sampleState);
-		const RGBColor glossSample = GPUTextureSampler::Sample(textures.pGloss, pixelShade.uv, sampleState);
+		//TODO: sample state
+		const GPUTexture& diffTex = pixelShade.textures.Diff;
+		const GPUTexture& normTex = pixelShade.textures.Norm;
+		const GPUTexture& specTex = pixelShade.textures.Spec;
+		const GPUTexture& glossTex = pixelShade.textures.Gloss;
+		if (diffTex.dev_pTex != 0)
+		{
+			const RGBColor diffuseSample = GPUTextureSampler::Sample(diffTex, pixelShade.uv);
 
-		// normal mapping
-		FVector3 binormal = Cross(pixelShade.tan, pixelShade.n);
-		if (isFlipGreenChannel)
-			binormal = -binormal;
-		const FMatrix3 tangentSpaceAxis{ pixelShade.tan, binormal, pixelShade.n };
+			if (normTex.dev_pTex != 0)
+			{
+				const RGBColor normalSample = GPUTextureSampler::Sample(normTex, pixelShade.uv);
 
-		FVector3 finalNormal{ 2.f * normalSample.r - 1.f, 2.f * normalSample.g - 1.f, 2.f * normalSample.b - 1.f };
-		finalNormal = tangentSpaceAxis * finalNormal;
+				// normal mapping
+				FVector3 binormal = Cross(pixelShade.tan, pixelShade.n);
+				if (isFlipGreenChannel)
+					binormal = -binormal;
+				const FMatrix3 tangentSpaceAxis{ pixelShade.tan, binormal, pixelShade.n };
 
-		// light calculations
-		float observedArea{ Dot(-finalNormal, lightDirection) };
-		Clamp(observedArea, 0.f, observedArea);
-		observedArea /= (float)PI;
-		observedArea *= lightIntensity;
-		const RGBColor diffuseColour = diffuseSample * observedArea;
-		
-		// phong specular
-		const FVector3 reflectV{ Reflect(lightDirection, finalNormal) };
-		float angle{ Dot(pixelShade.vd, reflectV) }; //MIGHT SWAP THESE
-		Clamp(angle, 0.f, 1.f);
-		const float shininess = 25.f;
-		angle = powf(angle, glossSample.r * shininess);
-		const RGBColor specularColour = specularSample * angle;
+				FVector3 finalNormal{ 2.f * normalSample.r - 1.f, 2.f * normalSample.g - 1.f, 2.f * normalSample.b - 1.f };
+				finalNormal = tangentSpaceAxis * finalNormal;
 
-		// final
-		finalColour = ambientColour + diffuseColour + specularColour;
+				// light calculations
+				float observedArea{ Dot(-finalNormal, lightDirection) };
+				Clamp(observedArea, 0.f, observedArea);
+				observedArea /= (float)PI;
+				observedArea *= lightIntensity;
+				const RGBColor diffuseColour = diffuseSample * observedArea;
+
+				if (specTex.dev_pTex != 0 && glossTex.dev_pTex != 0)
+				{
+					const RGBColor specularSample = GPUTextureSampler::Sample(specTex, pixelShade.uv);
+					const RGBColor glossSample = GPUTextureSampler::Sample(glossTex, pixelShade.uv);
+
+					// phong specular
+					const FVector3 reflectV{ Reflect(lightDirection, finalNormal) };
+					float angle{ Dot(pixelShade.vd, reflectV) }; //MIGHT SWAP THESE
+					Clamp(angle, 0.f, 1.f);
+					const float shininess = 25.f;
+					angle = powf(angle, glossSample.r * shininess);
+					const RGBColor specularColour = specularSample * angle;
+
+					// final
+					finalColour = ambientColour + diffuseColour + specularColour;
+					finalColour.ClampColor();
+				}
+				else
+				{
+					finalColour = diffuseColour;
+				}
+			}
+			else
+			{
+				finalColour = diffuseSample;
+			}
+		}
+		else
+		{
+			finalColour = GetRGBColor_SDL(pixelShade.colour);
+		}
 	}
-	finalColour.ClampColor();
 	return finalColour;
 }
 
@@ -758,6 +912,29 @@ RGBColor ShadePixel(const PixelShade& pixelShade, const GPUTextures& textures, S
 
 #pragma region KERNELS
 //Kernel launch params:	numBlocks, numThreadsPerBlock, numSharedMemoryBytes, stream
+
+GPU_KERNEL
+void TextureTest(unsigned int* dev_FrameBuffer, GPUTexture texture, const unsigned int width, const unsigned int height)
+{
+	const unsigned int x = (blockIdx.x * blockDim.x) + threadIdx.x;
+	const unsigned int y = (blockIdx.y * blockDim.y) + threadIdx.y;
+	if (x < width && y < height)
+	{
+		const unsigned int pixelIdx = x + y * width;
+		//remap uv's to stretch towards the window's dimensions (broken)
+		//float u{ (float(x) / width) * texture.w };
+		//float v{ (float(y) / height) * texture.h };
+		float u = Clamp(float(x), 0.f, (float)texture.w);
+		float v = Clamp(float(y), 0.f, (float)texture.h);
+		float sampleIdx = u + v * texture.w;
+		unsigned int sample = tex1Dfetch<unsigned int>(texture.dev_pTex, (int)sampleIdx);
+		RGBA rgba = sample;
+		unsigned char b = rgba.values.b;
+		rgba.values.b = rgba.values.r;
+		rgba.values.r = b;
+		dev_FrameBuffer[pixelIdx] = rgba.colour;
+	}
+}
 
 GPU_KERNEL
 void ResetDepthBufferKernel(float* dev_DepthBuffer, const unsigned int width, const unsigned int height)
@@ -838,12 +1015,11 @@ void TriangleAssemblerKernel(TriangleIdx* dev_Triangles, const unsigned int* __r
 	}
 	else //if (pt == PrimitiveTopology::TriangleStrip)
 	{
-		//'talk about naming gore, eh?
 		if (indexIdx < numIndices - 2)
 		{
 			TriangleIdx triangle;
-			const bool isOdd = !(indexIdx % 2);
-			const unsigned int idx0{ dev_IndexBuffer[indexIdx] };
+			const bool isOdd = (indexIdx % 2);
+			const unsigned int idx0 = dev_IndexBuffer[indexIdx];
 			const unsigned int idx1 = isOdd ? dev_IndexBuffer[indexIdx + 2] : dev_IndexBuffer[indexIdx + 1];
 			const unsigned int idx2 = isOdd ? dev_IndexBuffer[indexIdx + 1] : dev_IndexBuffer[indexIdx + 2];
 			triangle.idx0 = dev_IndexBuffer[idx0];
@@ -856,7 +1032,7 @@ void TriangleAssemblerKernel(TriangleIdx* dev_Triangles, const unsigned int* __r
 
 GPU_KERNEL
 void RasterizerKernel(const TriangleIdx* __restrict__ const dev_Triangles, const OVertex* __restrict__ const dev_OVertices, const size_t numTriangles,
-	PixelShade* dev_PixelShadeBuffer, float* dev_DepthBuffer, int* dev_Mutex, const unsigned int width, const unsigned int height)
+	PixelShade* dev_PixelShadeBuffer, float* dev_DepthBuffer, int* dev_Mutex, GPUTextures textures, const unsigned int width, const unsigned int height)
 {
 	//TODO: use shared memory, then coalesced copy
 	//e.g. single bin buffer in single shared memory
@@ -945,7 +1121,9 @@ void RasterizerKernel(const TriangleIdx* __restrict__ const dev_Triangles, const
 							weights[0] * v0.c.b + weights[1] * v1.c.b + weights[2] * v2.c.b };
 						pixelShade.colour = GetRGBA_SDL(interpolatedColour).colour;
 
-						dev_PixelShadeBuffer[pixelIdx] = pixelShade;
+						pixelShade.textures = textures;
+
+						memcpy(&dev_PixelShadeBuffer[pixelIdx], &pixelShade, sizeof(PixelShade));
 					}
 				}
 			}
@@ -953,19 +1131,80 @@ void RasterizerKernel(const TriangleIdx* __restrict__ const dev_Triangles, const
 	}
 }
 
+void CUDARenderer::DrawTexture(char* tP)
+{
+	SDL_Surface* pS = IMG_Load(tP);
+
+	int w = pS->w;
+	int h = pS->h;
+	int N = w * h;
+	unsigned int* buffer;
+	cudaMalloc(&buffer, N * sizeof(unsigned int));
+	cudaMemcpy(buffer, pS->pixels, N * sizeof(unsigned int), cudaMemcpyHostToDevice);
+
+	//create texture object
+	cudaResourceDesc resDesc;
+	memset(&resDesc, 0, sizeof(resDesc));
+	resDesc.resType = cudaResourceTypeLinear;
+	resDesc.res.linear.devPtr = buffer;
+	resDesc.res.linear.desc.f = cudaChannelFormatKindUnsigned;
+	resDesc.res.linear.desc.x = pS->format->BitsPerPixel;
+	resDesc.res.linear.sizeInBytes = N * sizeof(unsigned int);
+
+	cudaTextureDesc texDesc;
+	memset(&texDesc, 0, sizeof(texDesc));
+	texDesc.readMode = cudaReadModeElementType;
+	texDesc.addressMode[0] = cudaAddressModeBorder;
+	texDesc.addressMode[1] = cudaAddressModeBorder;
+	texDesc.addressMode[2] = cudaAddressModeBorder;
+
+	//create texture object
+	cudaTextureObject_t tex = 0;
+	cudaCreateTextureObject(&tex, &resDesc, &texDesc, NULL);
+
+	GPUTexture texture{};
+	texture.dev_pTex = tex;
+	texture.w = w;
+	texture.h = h;
+
+	EnterValidRenderingState();
+
+	const dim3 numThreadsPerBlock{ 16, 16 };
+	const dim3 numBlocks{ m_WindowHelper.Width / numThreadsPerBlock.x, m_WindowHelper.Height / numThreadsPerBlock.y };
+	TextureTest<<<numBlocks, numThreadsPerBlock>>>(dev_FrameBuffer, texture, m_WindowHelper.Width, m_WindowHelper.Height);
+
+	Present();
+
+	//destroy texture object
+	cudaDestroyTextureObject(tex);
+
+	SDL_FreeSurface(pS);
+
+	//do not free buffer if it is meant to be reused
+	cudaFree(buffer);
+}
+
 GPU_KERNEL
 void PixelShaderKernel(unsigned int* dev_FrameBuffer, const PixelShade* __restrict__ const dev_PixelShadeBuffer, 
-	GPUTextures textures, SampleState sampleState, bool isDepthColour, const unsigned int width, const unsigned int height)
+	bool isDepthColour, const unsigned int width, const unsigned int height)
 {
-	const unsigned int x = threadIdx.x + blockIdx.x * blockDim.x;
-	const unsigned int y = threadIdx.y + blockIdx.y * blockDim.y;
+	const unsigned int x = (blockIdx.x * blockDim.x) + threadIdx.x;
+	const unsigned int y = (blockIdx.y * blockDim.y) + threadIdx.y;
 	if (x < width && y < height)
 	{
+		float u = x;
+		if (u > 1024)
+			u = 1024;
+		float v = y;
+		if (v > 1024)
+			v = 1024;
+		unsigned int sample = tex1D<unsigned int>(1, u + v);
+
 		const unsigned int pixelIdx = x + y * width;
-		const PixelShade pixelShade = dev_PixelShadeBuffer[pixelIdx];
-		const RGBColor colour = ShadePixel(pixelShade, textures, sampleState, isDepthColour);
-		RGBA rgba{ colour };
-		dev_FrameBuffer[pixelIdx] = rgba.colour;
+		//PixelShade pixelShade = dev_PixelShadeBuffer[pixelIdx];
+		//const RGBColor colour = ShadePixel(pixelShade, isDepthColour);
+		//RGBA rgba{ colour };
+		dev_FrameBuffer[pixelIdx] = sample;
 	}
 }
 
@@ -1020,22 +1259,20 @@ void CUDARenderer::Rasterizer(const MeshIdentifier& mi)
 {
 	const unsigned int numThreadsPerBlock = 256;
 	const unsigned int numBlocks = ((unsigned int)m_TotalNumTriangles - 1) / numThreadsPerBlock + 1;
-	const size_t numSharedMemoryBytesPerBlock = (sizeof(TriangleIdx) * m_TotalNumTriangles) / numBlocks;
+	//const size_t numSharedMemoryBytesPerBlock = (sizeof(TriangleIdx) * m_TotalNumTriangles) / numBlocks;
 	RasterizerKernel<<<numBlocks, numThreadsPerBlock>>>(
 		dev_Triangles[mi.Idx], dev_OVertexBuffer[mi.Idx], mi.NumTriangles, 
-		dev_PixelShadeBuffer, dev_DepthBuffer, dev_Mutex,
+		dev_PixelShadeBuffer, dev_DepthBuffer, dev_Mutex, mi.Textures,
 		m_WindowHelper.Width, m_WindowHelper.Height);
 }
 
 CPU_CALLABLE
-void CUDARenderer::PixelShader(GPUTextures& textures, SampleState sampleState, bool isDepthColour)
+void CUDARenderer::PixelShader(bool isDepthColour)
 {
-	//TODO: if ever want to reuse again, get OVertex buffer
 	const dim3 numThreadsPerBlock{ 16, 16 };
 	const dim3 numBlocks{ m_WindowHelper.Width / numThreadsPerBlock.x, m_WindowHelper.Height / numThreadsPerBlock.y };
 	PixelShaderKernel<<<numBlocks, numThreadsPerBlock>>>(
-		dev_FrameBuffer, dev_PixelShadeBuffer, textures,
-		sampleState, isDepthColour,
+		dev_FrameBuffer, dev_PixelShadeBuffer, isDepthColour,
 		m_WindowHelper.Width, m_WindowHelper.Height);
 }
 
@@ -1081,10 +1318,13 @@ void CUDARenderer::LoadScene(const SceneGraph* pSceneGraph)
 		}
 		mi.NumTriangles = numTriangles;
 
-		m_MeshIdentifiers.push_back(mi);
 		AllocateMeshBuffers(numVertices, numIndices, numTriangles, mi.Idx);
 		CopyMeshBuffers(vertexBuffer, indexBuffer, mi.Idx);
+		LoadMeshTextures(pMesh->GetTexPaths(), mi.Idx);
+		mi.Textures = m_TextureObjects[mi.Idx];
+
 		m_TotalNumTriangles += numTriangles;
+		m_MeshIdentifiers.push_back(mi);
 	}
 }
 
@@ -1151,9 +1391,7 @@ void CUDARenderer::Render(const SceneManager& sm, const Camera* pCamera)
 		//std::cout << "Rasterizer total time: " << StopTimer() << "ms\n";
 
 		//---STAGE 3---: Peform  Pixel Shading
-		const Textures& textures = pMesh->GetTextures();
-		GPUTextures gpuTextures{};
-		PixelShader(gpuTextures, sampleState, isDepthColour);
+		PixelShader(isDepthColour);
 		CheckErrorCuda(cudaDeviceSynchronize());
 		//---END STAGE 3---
 	}
@@ -1198,8 +1436,8 @@ void CUDARenderer::WarmUp()
 	ClearFrameBufferKernel<<<0, 0>>>(nullptr, m_WindowHelper.Width, m_WindowHelper.Height, 0);
 	VertexShaderKernel<<<0, 0>>>(nullptr, nullptr, 0, {}, {}, {});
 	TriangleAssemblerKernel<<<0, 0>>>(nullptr, nullptr, 0, (PrimitiveTopology)0);
-	RasterizerKernel<<<0, 0>>>(nullptr, nullptr, 0, nullptr, nullptr, nullptr, m_WindowHelper.Width, m_WindowHelper.Height);
-	PixelShaderKernel<<<0, 0>>> (nullptr, nullptr, {}, SampleState{}, false, m_WindowHelper.Width, m_WindowHelper.Height);
+	RasterizerKernel<<<0, 0>>>(nullptr, nullptr, 0, nullptr, nullptr, nullptr, {}, m_WindowHelper.Width, m_WindowHelper.Height);
+	PixelShaderKernel<<<0, 0>>> (nullptr, nullptr, false, m_WindowHelper.Width, m_WindowHelper.Height);
 }
 
 #pragma endregion

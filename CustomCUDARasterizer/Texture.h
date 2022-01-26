@@ -14,12 +14,12 @@ public:
 	explicit Texture(const char* file);
 	~Texture();
 	RGBColor inline Sample(const FVector2& uv, SampleState state = SampleState::Point) const;
+	RGBColor inline SamplePoint(const FVector2& uv) const;
+	RGBColor inline SampleLinear(const FVector2& uv) const;
 
 private:
 	SDL_Surface* m_pSurface;
 
-	RGBColor inline SamplePoint(const FVector2& uv) const;
-	RGBColor inline SampleLinear(const FVector2& uv) const;
 };
 
 RGBColor Texture::Sample(const FVector2& uv, SampleState state) const

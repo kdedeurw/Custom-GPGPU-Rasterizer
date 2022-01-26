@@ -1,17 +1,18 @@
 #pragma once
+#include "GPUHelpers.h"
 
 struct GPUTexture
 {
-	const unsigned int* pixels;
-	const unsigned int w;
-	const unsigned int h;
-	//TODO: format? (SDL_Format)
+	cudaTextureObject_t dev_pTex; //cuda texture pointer address
+	unsigned int w; //height
+	unsigned int h; //width
+	unsigned int bpp = 4; //bytes per pixel
 };
 
 struct GPUTextures
 {
-	GPUTexture* pDiff{};
-	GPUTexture* pNorm{};
-	GPUTexture* pSpec{};
-	GPUTexture* pGloss{};
+	GPUTexture Diff;
+	GPUTexture Norm;
+	GPUTexture Spec;
+	GPUTexture Gloss;
 };
