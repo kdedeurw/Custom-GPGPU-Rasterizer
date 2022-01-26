@@ -16,6 +16,8 @@
 #include "DirectionalLight.h"
 #include "EventManager.h"
 #include "BoundingBox.h"
+#include "PrimitiveTopology.h"
+#include "CullingMode.h"
 
 Elite::Renderer::Renderer(SDL_Window* pWindow)
 {
@@ -47,6 +49,7 @@ void Elite::Renderer::Render(const SceneManager& sm)
 	//SceneGraph
 	SceneGraph* pSceneGraph = sm.GetSceneGraph();
 	const std::vector<Mesh*>& pObjects = pSceneGraph->GetObjects();
+	const FVector3& camFwd{ m_pCamera->GetForward() };
 	const FMatrix4 lookatMatrix = m_pCamera->GetLookAtMatrix();
 	const FMatrix4 viewMatrix{ m_pCamera->GetViewMatrix(lookatMatrix) };
 	const FMatrix4 projectionMatrix{ m_pCamera->GetProjectionMatrix() };
@@ -59,6 +62,7 @@ void Elite::Renderer::Render(const SceneManager& sm)
 		const std::vector<unsigned int>& indices{ pMesh->GetIndexes() };
 		m_pTextures = &pMesh->GetTextures();
 		const PrimitiveTopology pT{ pMesh->GetTopology() };
+		const CullingMode cm{ sm.GetCullingMode() };
 		const size_t size{ indices.size() };
 
 		// Topology
@@ -70,6 +74,22 @@ void Elite::Renderer::Render(const SceneManager& sm)
 				const OVertex& v0 = NDCVertices[indices[idx - 2]];
 				const OVertex& v1 = NDCVertices[indices[idx - 1]];
 				const OVertex& v2 = NDCVertices[indices[idx]];
+
+				const FVector3 faceNormal = GetNormalized(Cross(FVector3{ v1.p - v0.p }, FVector3{ v2.p - v0.p }));
+
+				//is triangle visible according to cullingmode?
+				if (cm == CullingMode::BackFace)
+				{
+					//is back facing triangle?
+					if (Dot(camFwd, faceNormal) <= 0.f)
+						continue;
+				}
+				else if (cm == CullingMode::FrontFace)
+				{
+					//is front facing triangle?
+					if (Dot(camFwd, faceNormal) >= 0.f)
+						continue;
+				}
 
 				// separate triangle representation (array of OVertex*)
 				const OVertex* triangle[3]{ &v0, &v1, &v2 };
@@ -89,12 +109,28 @@ void Elite::Renderer::Render(const SceneManager& sm)
 			for (size_t idx{}; idx < size - 2; ++idx)
 			{
 				const unsigned int idx0 = indices[idx];
-				const unsigned int idx1 = isOdd ? indices[idx + 2] : indices[idx + 1];
-				const unsigned int idx2 = isOdd ? indices[idx + 1] : indices[idx + 2];
+				const unsigned int idx1 = isOdd ? indices[idx + 1] : indices[idx + 2];
+				const unsigned int idx2 = isOdd ? indices[idx + 2] : indices[idx + 1];
 
 				const OVertex& v0 = NDCVertices[idx0];
 				const OVertex& v1 = NDCVertices[idx1];
 				const OVertex& v2 = NDCVertices[idx2];
+
+				const FVector3 faceNormal = GetNormalized(Cross(FVector3{ v1.p - v0.p }, FVector3{ v2.p - v0.p }));
+
+				//is triangle visible according to cullingmode?
+				if (cm == CullingMode::BackFace)
+				{
+					//is back facing triangle?
+					if (Dot(camFwd, faceNormal) <= 0.f)
+						continue;
+				}
+				else if (cm == CullingMode::FrontFace)
+				{
+					//is front facing triangle?
+					if (Dot(camFwd, faceNormal) >= 0.f)
+						continue;
+				}
 
 				// separate triangle representation (array of OVertex*)
 				const OVertex* triangle[3]{ &v0, &v1, &v2 };
@@ -216,6 +252,10 @@ void Elite::Renderer::RenderPixelsInTriangle(const SceneManager& sm, const OVert
 	const OVertex& v1 = *triangle[1];
 	const OVertex& v2 = *triangle[2];
 
+	const float v0InvDepth = 1.f / rasterCoords[0].w;
+	const float v1InvDepth = 1.f / rasterCoords[1].w;
+	const float v2InvDepth = 1.f / rasterCoords[2].w;
+
 	//Loop over all pixels in bounding box
 	for (uint32_t r = bb.yMin; r < bb.yMax; ++r)
 	{
@@ -230,9 +270,6 @@ void Elite::Renderer::RenderPixelsInTriangle(const SceneManager& sm, const OVert
 				const size_t pixelId = c + r * m_Width;
 				if (DepthTest(rasterCoords, m_pDepthBuffer[pixelId], weights, zInterpolated))
 				{
-					const float v0InvDepth = 1.f / rasterCoords[0].w;
-					const float v1InvDepth = 1.f / rasterCoords[1].w;
-					const float v2InvDepth = 1.f / rasterCoords[2].w;
 					const float wInterpolated = 1.f / (v0InvDepth * weights[0] + v1InvDepth * weights[1] + v2InvDepth * weights[2]);
 
 					FVector2 interpolatedUV{
@@ -446,7 +483,7 @@ bool Elite::Renderer::IsPixelInTriangle(FPoint4 rasterCoords[3], const FPoint2& 
 	const FVector2 edgeC{ v2 - v0 };
 	// counter-clockwise
 
-	const float totalArea = Cross(edgeA, edgeC);
+	const float totalArea = abs(Cross(edgeA, edgeC));
 
 	// edgeA
 	FVector2 vertexToPixel{ pixel - v0 };

@@ -193,6 +193,9 @@
     <ClInclude Include="RGBRaw.h">
       <Filter>Helpers</Filter>
     </ClInclude>
+    <ClInclude Include="CullingMode.h">
+      <Filter>Renderer</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <None Include="CustomCUDARasterizer.props" />

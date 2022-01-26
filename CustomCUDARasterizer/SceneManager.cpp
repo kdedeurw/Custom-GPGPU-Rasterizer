@@ -4,12 +4,15 @@
 #include "SceneGraph.h"
 #include "Mesh.h"
 #include "EventManager.h"
+#include "PrimitiveTopology.h"
+#include "CullingMode.h"
 
 SceneManager::SceneManager()
-	: m_IsDepthColour{}
+	: m_IsDepthColour{ false }
 	, m_pSceneGraphs{}
-	, m_Index{}
+	, m_Index{ 0 }
 	, m_SampleState{ SampleState::Point }
+	, m_CullingMode{ CullingMode::BackFace }
 {}
 
 SceneManager::~SceneManager()
@@ -40,11 +43,6 @@ SceneGraph* SceneManager::GetSceneGraph() const
 	return m_pSceneGraphs.at(m_Index);
 }
 
-SampleState SceneManager::GetSampleState() const
-{
-	return m_SampleState;
-}
-
 void SceneManager::ChangeSceneGraph()
 {
 	++m_Index;
@@ -66,9 +64,13 @@ void SceneManager::Update(float elapsedSec)
 	}
 
 	//Handle Input Events
-	if (EventManager::IsKeyPressed(SDLK_TAB) || EventManager::IsKeyPressed(SDLK_MINUS))
+	if (EventManager::IsKeyPressed(SDLK_TAB))
 	{
 		ChangeSceneGraph();
+	}
+	else if (EventManager::IsKeyPressed(SDLK_MINUS))
+	{
+		ChangeSceneGraph(m_Index - 1);
 	}
 	if (EventManager::IsKeyPressed(SDLK_r))
 	{
@@ -77,6 +79,10 @@ void SceneManager::Update(float elapsedSec)
 	if (EventManager::IsKeyPressed(SDLK_f))
 	{
 		ToggleSampleState();
+	}
+	if (EventManager::IsKeyPressed(SDLK_c))
+	{
+		ToggleCullingMode();
 	}
 }
 
@@ -91,13 +97,32 @@ void SceneManager::ToggleSampleState()
 	if ((int)m_SampleState > 1)
 		m_SampleState = SampleState::Point;
 
-	if (m_SampleState == SampleState::Point)
+	switch (m_SampleState)
+	{
+	case SampleState::Point:
 		std::cout << "\nDefaultTechnique (Point)\n";
-	else
+		break;
+	case SampleState::Linear:
 		std::cout << "\nLinearTechnique\n";
+		break;
+	}
 }
 
-bool SceneManager::IsDepthColour() const
+void SceneManager::ToggleCullingMode()
 {
-	return m_IsDepthColour;
+	m_CullingMode = CullingMode((int)m_CullingMode + 1);
+	if ((int)m_CullingMode > 2)
+		m_CullingMode = CullingMode::BackFace;
+	switch (m_CullingMode)
+	{
+	case CullingMode::BackFace:
+		std::cout << "\nBackFace Culling\n";
+		break;
+	case CullingMode::FrontFace:
+		std::cout << "\nFrontFace Culling\n";
+		break;
+	case CullingMode::NoCulling:
+		std::cout << "\nNo Culling\n";
+		break;
+	}
 }

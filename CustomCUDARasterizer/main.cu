@@ -75,27 +75,27 @@ void CreateScenes(SceneManager& sm)
 	//		IVertex{FPoint3{-3, -3, -2}, FVector2{0, 1}}, IVertex{FPoint3{0, -3, -2}, FVector2{0.5f, 1}}, IVertex{FPoint3{3, -3, -2}, FVector2{1, 1}} };
 	//	// shared vertices among both quads (duh they're the same quad)
 	//	const std::string texPaths[4]{ "Resources/uv_grid_2.png", "", "", "" };
-	//	{
-	//		// Mesh 1 // TriangleList Quad
-	//		std::vector<unsigned int> indices{ 0, 3, 1,
-	//									3, 4, 1,
-	//									1, 4, 2,
-	//									4, 5, 2,
-	//									3, 6, 4,
-	//									6, 7, 4,
-	//									4, 7, 5,
-	//									7, 8, 5, }; // obviously a list
-	//		Mesh* pTriangleListQuad = new Mesh{ vertices, indices, PrimitiveTopology::TriangleList };
-	//		pTriangleListQuad->LoadTextures(texPaths);
-	//		pSceneGraph->AddMesh(pTriangleListQuad);
-	//	}
 	//	//{
-	//	//	// Mesh 2 // TriangleStrip Quad
-	//	//	std::vector<unsigned int> indices{ 0, 3, 1, 4, 2, 5, 5, 3, 3, 6, 4, 7, 5, 8 }; // strip
-	//	//	Mesh* pTriangleStripQuad = new Mesh{ vertices, indices, PrimitiveTopology::TriangleStrip };
-	//	//	pTriangleStripQuad->LoadTextures(texPaths);
-	//	//	pSceneGraph->AddMesh(pTriangleStripQuad);
+	//	//	// Mesh 1 // TriangleList Quad
+	//	//	std::vector<unsigned int> indices{ 0, 3, 1,
+	//	//								3, 4, 1,
+	//	//								1, 4, 2,
+	//	//								4, 5, 2,
+	//	//								3, 6, 4,
+	//	//								6, 7, 4,
+	//	//								4, 7, 5,
+	//	//								7, 8, 5, }; // obviously a list
+	//	//	Mesh* pTriangleListQuad = new Mesh{ vertices, indices, PrimitiveTopology::TriangleList };
+	//	//	pTriangleListQuad->LoadTextures(texPaths);
+	//	//	pSceneGraph->AddMesh(pTriangleListQuad);
 	//	//}
+	//	{
+	//		// Mesh 2 // TriangleStrip Quad
+	//		std::vector<unsigned int> indices{ 0, 3, 1, 4, 2, 5, 5, 3, 3, 6, 4, 7, 5, 8 }; // strip
+	//		Mesh* pTriangleStripQuad = new Mesh{ vertices, indices, PrimitiveTopology::TriangleStrip };
+	//		pTriangleStripQuad->LoadTextures(texPaths);
+	//		pSceneGraph->AddMesh(pTriangleStripQuad);
+	//	}
 	//	pSceneGraph->AddLight(new DirectionalLight{ RGBColor{1.f, 1.f, 1.f}, 2.f, FVector3{ 0.577f, -0.577f, -0.577f } });
 	//	pSceneGraphs.push_back(pSceneGraph);
 	//}
@@ -117,6 +117,7 @@ void CreateScenes(SceneManager& sm)
 	//	pSceneGraphs.push_back(pSceneGraph);
 	//
 	//}
+
 	//{
 	//	// SceneGraph 4 // Bunny
 	//	SceneGraph* pSceneGraph = new SceneGraph{};
@@ -130,7 +131,7 @@ void CreateScenes(SceneManager& sm)
 	//	pSceneGraph->AddLight(new DirectionalLight{ RGBColor{1.f, 1.f, 1.f}, 2.f, FVector3{ 0.577f, -0.577f, -0.577f } });
 	//	pSceneGraphs.push_back(pSceneGraph);
 	//}
-	//
+	
 	{
 		// SceneGraph 5 // Vehicle
 		SceneGraph* pSceneGraph = new SceneGraph{};
@@ -266,7 +267,7 @@ int main(int argc, char* args[])
 #endif
 
 		//--------- Update Meshes ---------
-		sm.Update(elapsedSec);
+		sm.Update(0.f);
 
 		//Save screenshot after full render
 		//if (takeScreenshot)

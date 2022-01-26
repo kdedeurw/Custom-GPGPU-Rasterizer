@@ -10,6 +10,7 @@
 #include "RGBColor.h"
 #include "PrimitiveTopology.h"
 #include "GPUTextures.h"
+#include "CullingMode.h"
 
 struct WindowHelper;
 class Camera;
@@ -77,9 +78,11 @@ public:
 
 	struct MeshIdentifier
 	{
-		size_t Idx; //<READ ONLY>
-		size_t NumTriangles; //<READ ONLY>
+		unsigned int Idx; //<READ ONLY>
+		unsigned int TotalNumTriangles; //<READ ONLY>
+		unsigned int VisibleNumTriangles; //<READ/WRITE>
 		const Mesh* pMesh; //<READ ONLY>
+		CullingMode CullMode; //<READ ONLY>
 		GPUTextures Textures; //<READ ONLY>
 	};
 private:
@@ -87,6 +90,7 @@ private:
 
 	const WindowHelper& m_WindowHelper;
 	size_t m_TotalNumTriangles{};
+	size_t m_TotalVisibleNumTriangles{};
 	float m_TimerMs{};
 	unsigned int* m_h_pFrameBuffer{};
 	cudaEvent_t m_StartEvent{}, m_StopEvent{};
@@ -126,7 +130,7 @@ private:
 	//Reset depth buffer, mutex buffer and pixelshadebuffer
 	CPU_CALLABLE void Clear(const RGBColor& colour = { 0.25f, 0.25f, 0.25f });
 	CPU_CALLABLE void VertexShader(const MeshIdentifier& mi, const FPoint3& camPos, const FMatrix4& viewProjectionMatrix, const FMatrix4& worldMatrix);
-	CPU_CALLABLE void TriangleAssembler(const MeshIdentifier& mi);
+	CPU_CALLABLE void TriangleAssembler(MeshIdentifier& mi, const FVector3& camFwd, const CullingMode cm = CullingMode::BackFace);
 	CPU_CALLABLE void Rasterizer(const MeshIdentifier& mi);
 	CPU_CALLABLE void PixelShader(bool isDepthColour);
 };

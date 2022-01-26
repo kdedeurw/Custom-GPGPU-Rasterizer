@@ -149,6 +149,7 @@ xcopy "$(SolutionDir)3rdParty\lib\vld\x64\Microsoft.DTfW.DHL.manifest" "$(OutDir
   <ItemGroup>
     <ClInclude Include="BoundingBox.h" />
     <ClInclude Include="Camera.h" />
+    <ClInclude Include="CullingMode.h" />
     <ClInclude Include="DirectionalLight.h" />
     <ClInclude Include="ERenderer.h" />
     <ClInclude Include="ETimer.h" />
