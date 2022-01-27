@@ -1024,9 +1024,9 @@ void TriangleAssemblerKernel(TriangleIdx* dev_Triangles, const unsigned int* __r
 		const unsigned int correctedIdx = (indexIdx * 3);
 		if (correctedIdx < numIndices)
 		{
-			triangle.idx0 = dev_IndexBuffer[correctedIdx];
+			triangle.idx2 = dev_IndexBuffer[correctedIdx];
 			triangle.idx1 = dev_IndexBuffer[correctedIdx + 1];
-			triangle.idx2 = dev_IndexBuffer[correctedIdx + 2];
+			triangle.idx0 = dev_IndexBuffer[correctedIdx + 2];
 			triangle.isCulled = false;
 		}
 		else
@@ -1046,33 +1046,39 @@ void TriangleAssemblerKernel(TriangleIdx* dev_Triangles, const unsigned int* __r
 			return; // 'out of triangles'
 	}
 
-	//is triangle visible according to cullingmode?
-	if (cm == CullingMode::BackFace)
+	//TODO: perhaps place in rasterizer stage to eliminate extra copying of these vertices
+	RasterTriangle rasterTriangle;
+	rasterTriangle.v0 = dev_OVertices[triangle.idx0].p;
+	rasterTriangle.v1 = dev_OVertices[triangle.idx1].p;
+	rasterTriangle.v2 = dev_OVertices[triangle.idx2].p;
+	if (!IsTriangleVisible(rasterTriangle))
 	{
-		const FPoint4 v0 = dev_OVertices[triangle.idx0].p;
-		const FPoint4 v1 = dev_OVertices[triangle.idx1].p;
-		const FPoint4 v2 = dev_OVertices[triangle.idx2].p;
-		const FVector3 faceNormal = GetNormalized(Cross(FVector3{ v1 - v0 }, FVector3{ v2 - v0 }));
-		//is back facing triangle?
-		if (Dot(camFwd, faceNormal) <= 0.f)
-		{
-			triangle.isCulled = true;
-		}
+		triangle.isCulled = true;
 	}
-	else if (cm == CullingMode::FrontFace)
+	else //check for actual culling modes
 	{
-		const FPoint4 v0 = dev_OVertices[triangle.idx0].p;
-		const FPoint4 v1 = dev_OVertices[triangle.idx1].p;
-		const FPoint4 v2 = dev_OVertices[triangle.idx2].p;
-		const FVector3 faceNormal = GetNormalized(Cross(FVector3{ v1 - v0 }, FVector3{ v2 - v0 }));
-		//is front facing triangle?
-		if (Dot(camFwd, faceNormal) >= 0.f)
+		//is triangle visible according to cullingmode?
+		if (cm == CullingMode::BackFace)
 		{
-			triangle.isCulled = true;
+			const FVector3 faceNormal = GetNormalized(Cross(FVector3{ rasterTriangle.v1 - rasterTriangle.v0 }, FVector3{ rasterTriangle.v2 - rasterTriangle.v0 }));
+			//is back facing triangle?
+			if (Dot(camFwd, faceNormal) <= 0.f)
+			{
+				triangle.isCulled = true;
+			}
 		}
+		else if (cm == CullingMode::FrontFace)
+		{
+			const FVector3 faceNormal = GetNormalized(Cross(FVector3{ rasterTriangle.v1 - rasterTriangle.v0 }, FVector3{ rasterTriangle.v2 - rasterTriangle.v0 }));
+			//is front facing triangle?
+			if (Dot(camFwd, faceNormal) >= 0.f)
+			{
+				triangle.isCulled = true;
+			}
+		}
+		//else //if (cm == CullingMode::NoCulling)
+		//{}
 	}
-	//else //if (cm == CullingMode::NoCulling)
-	//{}
 
 	//visible triangle
 	dev_Triangles[indexIdx] = triangle;
@@ -1113,11 +1119,6 @@ void RasterizerKernel(const TriangleIdx* __restrict__ const dev_Triangles, const
 		rasterTriangle.v0 = v0.p;
 		rasterTriangle.v1 = v1.p;
 		rasterTriangle.v2 = v2.p;
-
-		//TODO: add early out in triangle assembler?
-		//Or clip
-		if (!IsTriangleVisible(rasterTriangle))
-			return;
 
 		NDCToScreenSpace(rasterTriangle, width, height);
 		const BoundingBox bb = GetBoundingBox(rasterTriangle, width, height);
@@ -1202,7 +1203,7 @@ void RasterizerKernel(const TriangleIdx* __restrict__ const dev_Triangles, const
 						if (isDone)
 						{
 							//critical section
-							if (zInterpolated > dev_DepthBuffer[pixelIdx])
+							if (zInterpolated < dev_DepthBuffer[pixelIdx])
 							{
 								//update depthbuffer
 								dev_DepthBuffer[pixelIdx] = zInterpolated;
