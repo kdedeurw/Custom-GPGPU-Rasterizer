@@ -27,7 +27,7 @@
     </Filter>
   </ItemGroup>
   <ItemGroup>
-    <CudaCompile Include="main.cu" />
+    <CudaCompile Include="main.cpp" />
     <CudaCompile Include="CUDARenderer.cu">
       <Filter>Helpers\CUDA</Filter>
     </CudaCompile>
@@ -195,6 +195,9 @@
     </ClInclude>
     <ClInclude Include="CullingMode.h">
       <Filter>Renderer</Filter>
+    </ClInclude>
+    <ClInclude Include="DEFINES.h">
+      <Filter>Helpers</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>

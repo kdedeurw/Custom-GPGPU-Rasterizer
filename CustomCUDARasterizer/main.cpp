@@ -6,6 +6,8 @@
 #include "SDL_surface.h"
 #undef main
 
+#include "DEFINES.h"
+
 //Standard includes
 #include <iostream>
 #include <algorithm>
@@ -75,27 +77,27 @@ void CreateScenes(SceneManager& sm)
 	//		IVertex{FPoint3{-3, -3, -2}, FVector2{0, 1}}, IVertex{FPoint3{0, -3, -2}, FVector2{0.5f, 1}}, IVertex{FPoint3{3, -3, -2}, FVector2{1, 1}} };
 	//	// shared vertices among both quads (duh they're the same quad)
 	//	const std::string texPaths[4]{ "Resources/uv_grid_2.png", "", "", "" };
-	//	//{
-	//	//	// Mesh 1 // TriangleList Quad
-	//	//	std::vector<unsigned int> indices{ 0, 3, 1,
-	//	//								3, 4, 1,
-	//	//								1, 4, 2,
-	//	//								4, 5, 2,
-	//	//								3, 6, 4,
-	//	//								6, 7, 4,
-	//	//								4, 7, 5,
-	//	//								7, 8, 5, }; // obviously a list
-	//	//	Mesh* pTriangleListQuad = new Mesh{ vertices, indices, PrimitiveTopology::TriangleList };
-	//	//	pTriangleListQuad->LoadTextures(texPaths);
-	//	//	pSceneGraph->AddMesh(pTriangleListQuad);
-	//	//}
 	//	{
-	//		// Mesh 2 // TriangleStrip Quad
-	//		std::vector<unsigned int> indices{ 0, 3, 1, 4, 2, 5, 5, 3, 3, 6, 4, 7, 5, 8 }; // strip
-	//		Mesh* pTriangleStripQuad = new Mesh{ vertices, indices, PrimitiveTopology::TriangleStrip };
-	//		pTriangleStripQuad->LoadTextures(texPaths);
-	//		pSceneGraph->AddMesh(pTriangleStripQuad);
+	//		// Mesh 1 // TriangleList Quad
+	//		std::vector<unsigned int> indices{ 0, 3, 1,
+	//									3, 4, 1,
+	//									1, 4, 2,
+	//									4, 5, 2,
+	//									3, 6, 4,
+	//									6, 7, 4,
+	//									4, 7, 5,
+	//									7, 8, 5, }; // obviously a list
+	//		Mesh* pTriangleListQuad = new Mesh{ vertices, indices, PrimitiveTopology::TriangleList };
+	//		pTriangleListQuad->LoadTextures(texPaths);
+	//		pSceneGraph->AddMesh(pTriangleListQuad);
 	//	}
+	//	//{
+	//	//	// Mesh 2 // TriangleStrip Quad
+	//	//	std::vector<unsigned int> indices{ 0, 3, 1, 4, 2, 5, 5, 3, 3, 6, 4, 7, 5, 8 }; // strip
+	//	//	Mesh* pTriangleStripQuad = new Mesh{ vertices, indices, PrimitiveTopology::TriangleStrip };
+	//	//	pTriangleStripQuad->LoadTextures(texPaths);
+	//	//	pSceneGraph->AddMesh(pTriangleStripQuad);
+	//	//}
 	//	pSceneGraph->AddLight(new DirectionalLight{ RGBColor{1.f, 1.f, 1.f}, 2.f, FVector3{ 0.577f, -0.577f, -0.577f } });
 	//	pSceneGraphs.push_back(pSceneGraph);
 	//}
@@ -166,17 +168,6 @@ int GetFPSImmediate(float ms)
 	return int(1 / ms * 1000);
 }
 
-#pragma region GLOBAL DEFINES
-
-#ifndef HARDWARE_ACCELERATION
-#define HARDWARE_ACCELERATION
-	//#ifndef FPS_REALTIME
-	//#define FPS_REALTIME
-	//#endif
-#endif
-
-#pragma endregion
-
 int main(int argc, char* args[])
 {
 	//Single-GPU setup
@@ -225,6 +216,17 @@ int main(int argc, char* args[])
 	pRenderer->SetCamera(&camera);
 #endif
 
+	std::cout << "------------------------------\n";
+	std::cout << "Custom CUDA Rasterizer v1.0\n";
+	std::cout << "WASD to move camera\n";
+	std::cout << "RMB + drag to rotate camera\n";
+	std::cout << "LMB + drag to move camera along its forward vector\n";
+	std::cout << "LMB & RMB to move camera upwards\n";
+	std::cout << "Press R to toggle depth colour visualisation\n";
+	std::cout << "Press F to toggle texture sample state\n";
+	std::cout << "Press C to toggle culling mode\n";
+	std::cout << "------------------------------\n";
+
 	//Start loop
 	pTimer->Start();
 	bool isLooping = true;
@@ -262,7 +264,11 @@ int main(int argc, char* args[])
 		if (printTimer >= 1.f)
 		{
 			printTimer = 0.f;
+#ifndef BENCHMARK
 			std::cout << "FPS: " << pTimer->GetFPS() << std::endl;
+#else
+			std::cout << std::endl;
+#endif
 		}
 #endif
 

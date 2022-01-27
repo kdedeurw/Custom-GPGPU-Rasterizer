@@ -2,6 +2,8 @@
 #include "CUDARenderer.cuh"
 #include <vector>
 
+#include "DEFINES.h"
+
 //Project CUDA includes
 #include "GPUTextureSampler.cuh"
 
@@ -19,10 +21,6 @@
 #include "GPUTextures.h"
 #include "PrimitiveTopology.h"
 #include "CullingMode.h"
-
-#ifndef BENCHMARK
-//#define BENCHMARK
-#endif
 
 #pragma region STRUCT DECLARATIONS
 
@@ -289,9 +287,7 @@ void CUDARenderer::DisplayGPUSpecs(int deviceId)
 CPU_CALLABLE
 void CUDARenderer::InitCUDADeviceBuffers()
 {
-#ifdef _DEBUG
 	DisplayGPUSpecs(0);
-#endif
 
 	size_t size{};
 	const unsigned int width = m_WindowHelper.Width;
@@ -1578,7 +1574,7 @@ void CUDARenderer::Render(const SceneManager& sm, const Camera* pCamera)
 		//---END STAGE 3---
 #ifdef BENCHMARK
 		float PixelShadingMs = StopTimer();
-		std::cout << "	  VS: " << vertexShadingMs << "ms | TA: " << TriangleAssemblingMs << "ms | Raster: " << RasterizationMs << "ms | PS: " << PixelShadingMs << "ms\r";
+		std::cout << "VS: " << vertexShadingMs << "ms | TA: " << TriangleAssemblingMs << "ms | Raster: " << RasterizationMs << "ms | PS: " << PixelShadingMs << "ms\r";
 #endif
 	}
 }
