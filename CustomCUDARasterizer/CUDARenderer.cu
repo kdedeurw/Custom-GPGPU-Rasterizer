@@ -869,7 +869,7 @@ BoundingBox GetBoundingBox(const RasterTriangle& triangle, const unsigned int wi
 }
 
 GPU_CALLABLE GPU_INLINE static
-RGBColor ShadePixel(const PixelShade& pixelShade, bool isDepthColour)
+RGBColor ShadePixel(const PixelShade& pixelShade, SampleState sampleState, bool isDepthColour)
 {
 	RGBColor finalColour{};
 	if (isDepthColour)
@@ -886,18 +886,17 @@ RGBColor ShadePixel(const PixelShade& pixelShade, bool isDepthColour)
 		const float lightIntensity = 7.0f;
 
 		// texture sampling
-		//TODO: sample state
 		const GPUTexture& diffTex = pixelShade.textures.Diff;
 		const GPUTexture& normTex = pixelShade.textures.Norm;
 		const GPUTexture& specTex = pixelShade.textures.Spec;
 		const GPUTexture& glossTex = pixelShade.textures.Gloss;
 		if (diffTex.dev_pTex != 0)
 		{
-			const RGBColor diffuseSample = GPUTextureSampler::Sample(diffTex, pixelShade.uv);
+			const RGBColor diffuseSample = GPUTextureSampler::Sample(diffTex, pixelShade.uv, sampleState);
 
 			if (normTex.dev_pTex != 0)
 			{
-				const RGBColor normalSample = GPUTextureSampler::Sample(normTex, pixelShade.uv);
+				const RGBColor normalSample = GPUTextureSampler::Sample(normTex, pixelShade.uv, sampleState);
 
 				// normal mapping
 				FVector3 binormal = Cross(pixelShade.tan, pixelShade.n);
@@ -917,12 +916,12 @@ RGBColor ShadePixel(const PixelShade& pixelShade, bool isDepthColour)
 
 				if (specTex.dev_pTex != 0 && glossTex.dev_pTex != 0)
 				{
-					const RGBColor specularSample = GPUTextureSampler::Sample(specTex, pixelShade.uv);
-					const RGBColor glossSample = GPUTextureSampler::Sample(glossTex, pixelShade.uv);
+					const RGBColor specularSample = GPUTextureSampler::Sample(specTex, pixelShade.uv, sampleState);
+					const RGBColor glossSample = GPUTextureSampler::Sample(glossTex, pixelShade.uv, sampleState);
 
 					// phong specular
 					const FVector3 reflectV{ Reflect(lightDirection, finalNormal) };
-					float angle{ Dot(pixelShade.vd, reflectV) }; //MIGHT SWAP THESE
+					float angle{ Dot(reflectV, pixelShade.vd) };
 					Clamp(angle, 0.f, 1.f);
 					const float shininess = 25.f;
 					angle = powf(angle, glossSample.r * shininess);
@@ -1012,84 +1011,46 @@ void VertexShaderKernel(const IVertex* __restrict__ dev_IVertices, OVertex* dev_
 
 GPU_KERNEL
 void TriangleAssemblerKernel(TriangleIdx* dev_Triangles, const unsigned int* __restrict__ const dev_IndexBuffer, const size_t numIndices, 
-	OVertex* dev_OVertices, const FVector3 camFwd, const PrimitiveTopology pt, const CullingMode cm)
+	OVertex* dev_OVertices, const PrimitiveTopology pt)
 {
 	//'talk about naming gore, eh?
 	const unsigned int indexIdx = (blockIdx.x * blockDim.x) + threadIdx.x;
-
-	TriangleIdx triangle;
-
 	if (pt == PrimitiveTopology::TriangleList)
 	{
 		const unsigned int correctedIdx = (indexIdx * 3);
 		if (correctedIdx < numIndices)
 		{
+			TriangleIdx triangle;
 			triangle.idx0 = dev_IndexBuffer[correctedIdx];
 			triangle.idx1 = dev_IndexBuffer[correctedIdx + 1];
 			triangle.idx2 = dev_IndexBuffer[correctedIdx + 2];
 			triangle.isCulled = false;
+			dev_Triangles[indexIdx] = triangle;
+			//atomically increment visible triangle count
+			//atomicAdd(dev_VisibleNumTriangles, 1);
 		}
-		else
-			return; // 'out of triangles'
 	}
 	else //if (pt == PrimitiveTopology::TriangleStrip)
 	{
 		if (indexIdx < numIndices - 2)
 		{
+			TriangleIdx triangle;
 			const bool isOdd = (indexIdx % 2);
 			triangle.idx0 = dev_IndexBuffer[indexIdx];
 			triangle.idx1 = isOdd ? dev_IndexBuffer[indexIdx + 2] : dev_IndexBuffer[indexIdx + 1];
 			triangle.idx2 = isOdd ? dev_IndexBuffer[indexIdx + 1] : dev_IndexBuffer[indexIdx + 2];
 			triangle.isCulled = false;
+			dev_Triangles[indexIdx] = triangle;
+			//atomically increment visible triangle count
+			//atomicAdd(dev_VisibleNumTriangles, 1);
 		}
-		else
-			return; // 'out of triangles'
 	}
-
-	//TODO: perhaps place in rasterizer stage to eliminate extra copying of these vertices
-	RasterTriangle rasterTriangle;
-	rasterTriangle.v0 = dev_OVertices[triangle.idx0].p;
-	rasterTriangle.v1 = dev_OVertices[triangle.idx1].p;
-	rasterTriangle.v2 = dev_OVertices[triangle.idx2].p;
-	if (!IsTriangleVisible(rasterTriangle))
-	{
-		triangle.isCulled = true;
-	}
-	else //check for actual culling modes
-	{
-		//is triangle visible according to cullingmode?
-		if (cm == CullingMode::BackFace)
-		{
-			const FVector3 faceNormal = GetNormalized(Cross(FVector3{ rasterTriangle.v1 - rasterTriangle.v0 }, FVector3{ rasterTriangle.v2 - rasterTriangle.v0 }));
-			//is back facing triangle?
-			if (Dot(camFwd, faceNormal) <= 0.f)
-			{
-				triangle.isCulled = true;
-			}
-		}
-		else if (cm == CullingMode::FrontFace)
-		{
-			const FVector3 faceNormal = GetNormalized(Cross(FVector3{ rasterTriangle.v1 - rasterTriangle.v0 }, FVector3{ rasterTriangle.v2 - rasterTriangle.v0 }));
-			//is front facing triangle?
-			if (Dot(camFwd, faceNormal) >= 0.f)
-			{
-				triangle.isCulled = true;
-			}
-		}
-		//else //if (cm == CullingMode::NoCulling)
-		//{}
-	}
-
-	//visible triangle
-	dev_Triangles[indexIdx] = triangle;
-
-	//atomically increment visible triangle count
-	//atomicAdd(dev_VisibleNumTriangles, 1);
 }
 
 GPU_KERNEL
 void RasterizerKernel(const TriangleIdx* __restrict__ const dev_Triangles, const OVertex* __restrict__ const dev_OVertices, const size_t numTriangles,
-	PixelShade* dev_PixelShadeBuffer, int* dev_DepthBuffer, int* dev_Mutex, GPUTextures textures, const unsigned int width, const unsigned int height)
+	PixelShade* dev_PixelShadeBuffer, int* dev_DepthBuffer, int* dev_Mutex, GPUTextures textures, 
+	const FVector3 camFwd, const CullingMode cm, const unsigned int width, const unsigned int height)
 {
 	//TODO: use shared memory, then coalesced copy
 	//e.g. single bin buffer in single shared memory
@@ -1109,17 +1070,44 @@ void RasterizerKernel(const TriangleIdx* __restrict__ const dev_Triangles, const
 	{
 		TriangleIdx triangleIdx = dev_Triangles[triangleIndex];
 
-		if (triangleIdx.isCulled)
-			return;
+		//if (triangleIdx.isCulled)
+		//	return;
 
 		const OVertex v0 = dev_OVertices[triangleIdx.idx0];
 		const OVertex v1 = dev_OVertices[triangleIdx.idx1];
 		const OVertex v2 = dev_OVertices[triangleIdx.idx2];
 
+		//is triangle visible according to cullingmode?
+		if (cm == CullingMode::BackFace)
+		{
+			const FVector3 faceNormal = GetNormalized(Cross(FVector3{ v1.p - v0.p }, FVector3{ v2.p - v0.p }));
+			//is back facing triangle?
+			if (Dot(camFwd, faceNormal) <= 0.f)
+			{
+				return; //cull triangle
+			}
+		}
+		else if (cm == CullingMode::FrontFace)
+		{
+			const FVector3 faceNormal = GetNormalized(Cross(FVector3{ v1.p - v0.p }, FVector3{ v2.p - v0.p }));
+			//is front facing triangle?
+			if (Dot(camFwd, faceNormal) >= 0.f)
+			{
+				return; //cull triangle
+			}
+		}
+		//else //if (cm == CullingMode::NoCulling)
+		//{}
+
 		RasterTriangle rasterTriangle;
 		rasterTriangle.v0 = v0.p;
 		rasterTriangle.v1 = v1.p;
 		rasterTriangle.v2 = v2.p;
+
+		if (!IsTriangleVisible(rasterTriangle))
+		{
+			return;
+		}
 
 		NDCToScreenSpace(rasterTriangle, width, height);
 		const BoundingBox bb = GetBoundingBox(rasterTriangle, width, height);
@@ -1226,7 +1214,7 @@ void RasterizerKernel(const TriangleIdx* __restrict__ const dev_Triangles, const
 
 GPU_KERNEL
 void PixelShaderKernel(unsigned int* dev_FrameBuffer, const PixelShade* __restrict__ const dev_PixelShadeBuffer,
-	bool isDepthColour, const unsigned int width, const unsigned int height)
+	SampleState sampleState, bool isDepthColour, const unsigned int width, const unsigned int height)
 {
 	const unsigned int x = (blockIdx.x * blockDim.x) + threadIdx.x;
 	const unsigned int y = (blockIdx.y * blockDim.y) + threadIdx.y;
@@ -1234,7 +1222,7 @@ void PixelShaderKernel(unsigned int* dev_FrameBuffer, const PixelShade* __restri
 	{
 		const unsigned int pixelIdx = x + y * width;
 		PixelShade pixelShade = dev_PixelShadeBuffer[pixelIdx];
-		const RGBColor colour = ShadePixel(pixelShade, isDepthColour);
+		const RGBColor colour = ShadePixel(pixelShade, sampleState, isDepthColour);
 		RGBA rgba{ colour };
 		dev_FrameBuffer[pixelIdx] = rgba.colour;
 	}
@@ -1268,7 +1256,7 @@ void TextureTestKernel(unsigned int* dev_FrameBuffer, GPUTexture texture, const 
 
 GPU_KERNEL
 void DrawTextureGlobalKernel(unsigned int* dev_FrameBuffer, GPUTexture texture, bool isStretchedToWindow,
-	const unsigned int width, const unsigned int height)
+	SampleState sampleState, const unsigned int width, const unsigned int height)
 {
 	const unsigned int x = (blockIdx.x * blockDim.x) + threadIdx.x;
 	const unsigned int y = (blockIdx.y * blockDim.y) + threadIdx.y;
@@ -1289,7 +1277,7 @@ void DrawTextureGlobalKernel(unsigned int* dev_FrameBuffer, GPUTexture texture, 
 			uv.x /= texture.w;
 			uv.y /= texture.h;
 		}
-		RGBColor sample = GPUTextureSampler::Sample(texture, uv);
+		RGBColor sample = GPUTextureSampler::Sample(texture, uv, sampleState);
 		RGBA rgba = sample;
 		dev_FrameBuffer[pixelIdx] = rgba.colour;
 	}
@@ -1329,7 +1317,7 @@ void CUDARenderer::VertexShader(const MeshIdentifier& mi, const FPoint3& camPos,
 }
 
 CPU_CALLABLE
-void CUDARenderer::TriangleAssembler(MeshIdentifier& mi, const FVector3& camFwd, const CullingMode cm)
+void CUDARenderer::TriangleAssembler(MeshIdentifier& mi)
 {
 	//unsigned int* dev_VisibleNumTriangles;
 	//CheckErrorCuda(cudaMalloc((void**)&dev_VisibleNumTriangles, sizeof(unsigned int)));
@@ -1341,7 +1329,7 @@ void CUDARenderer::TriangleAssembler(MeshIdentifier& mi, const FVector3& camFwd,
 	const unsigned int numBlocks = ((unsigned int)numIndices + numThreadsPerBlock - 1) / numThreadsPerBlock;
 	TriangleAssemblerKernel<<<numBlocks, numThreadsPerBlock>>>(
 		dev_Triangles[mi.Idx], dev_IndexBuffer[mi.Idx], numIndices, 
-		dev_OVertexBuffer[mi.Idx], camFwd, topology, cm);
+		dev_OVertexBuffer[mi.Idx], topology);
 
 	//CheckErrorCuda(cudaDeviceSynchronize());
 	//CheckErrorCuda(cudaMemcpy(&mi.VisibleNumTriangles, dev_VisibleNumTriangles, sizeof(unsigned int), cudaMemcpyDeviceToHost));
@@ -1351,7 +1339,7 @@ void CUDARenderer::TriangleAssembler(MeshIdentifier& mi, const FVector3& camFwd,
 }
 
 CPU_CALLABLE
-void CUDARenderer::Rasterizer(const MeshIdentifier& mi)
+void CUDARenderer::Rasterizer(const MeshIdentifier& mi, const FVector3& camFwd, const CullingMode cm)
 {
 	const unsigned int numThreadsPerBlock = 256;
 	const unsigned int numBlocks = ((unsigned int)m_TotalNumTriangles - 1) / numThreadsPerBlock + 1;
@@ -1359,16 +1347,16 @@ void CUDARenderer::Rasterizer(const MeshIdentifier& mi)
 	RasterizerKernel<<<numBlocks, numThreadsPerBlock>>>(
 		dev_Triangles[mi.Idx], dev_OVertexBuffer[mi.Idx], mi.TotalNumTriangles,
 		dev_PixelShadeBuffer, dev_DepthBuffer, dev_Mutex, mi.Textures,
-		m_WindowHelper.Width, m_WindowHelper.Height);
+		camFwd, cm, m_WindowHelper.Width, m_WindowHelper.Height);
 }
 
 CPU_CALLABLE
-void CUDARenderer::PixelShader(bool isDepthColour)
+void CUDARenderer::PixelShader(SampleState sampleState, bool isDepthColour)
 {
 	const dim3 numThreadsPerBlock{ 16, 16 };
 	const dim3 numBlocks{ m_WindowHelper.Width / numThreadsPerBlock.x, m_WindowHelper.Height / numThreadsPerBlock.y };
 	PixelShaderKernel<<<numBlocks, numThreadsPerBlock>>>(
-		dev_FrameBuffer, dev_PixelShadeBuffer, isDepthColour,
+		dev_FrameBuffer, dev_PixelShadeBuffer, sampleState, isDepthColour,
 		m_WindowHelper.Width, m_WindowHelper.Height);
 }
 
@@ -1428,7 +1416,7 @@ void CUDARenderer::DrawTexture(char* tP)
 }
 
 CPU_CALLABLE
-void CUDARenderer::DrawTextureGlobal(char* tp, bool isStretchedToWindow)
+void CUDARenderer::DrawTextureGlobal(char* tp, bool isStretchedToWindow, SampleState sampleState)
 {
 	SDL_Surface* pS = IMG_Load(tp);
 
@@ -1449,7 +1437,9 @@ void CUDARenderer::DrawTextureGlobal(char* tp, bool isStretchedToWindow)
 
 	const dim3 numThreadsPerBlock{ 16, 16 };
 	const dim3 numBlocks{ m_WindowHelper.Width / numThreadsPerBlock.x, m_WindowHelper.Height / numThreadsPerBlock.y };
-	DrawTextureGlobalKernel<<<numBlocks, numThreadsPerBlock>>>(dev_FrameBuffer, gpuTexture, isStretchedToWindow, m_WindowHelper.Width, m_WindowHelper.Height);
+	DrawTextureGlobalKernel<<<numBlocks, numThreadsPerBlock>>>(
+		dev_FrameBuffer, gpuTexture, isStretchedToWindow, 
+		sampleState, m_WindowHelper.Width, m_WindowHelper.Height);
 
 	Present();
 
@@ -1560,7 +1550,7 @@ void CUDARenderer::Render(const SceneManager& sm, const Camera* pCamera)
 		StartTimer();
 #endif
 		//---STAGE 2---:  Perform Triangle Assembling
-		TriangleAssembler(mi, camFwd, cm);
+		TriangleAssembler(mi);
 		CheckErrorCuda(cudaDeviceSynchronize());
 		//---END STAGE 2---
 #ifdef BENCHMARK
@@ -1568,7 +1558,7 @@ void CUDARenderer::Render(const SceneManager& sm, const Camera* pCamera)
 		StartTimer();
 #endif
 		//---STAGE 3---: Peform Triangle Rasterization & Pixel Shading
-		Rasterizer(mi);
+		Rasterizer(mi, camFwd, cm);
 		CheckErrorCuda(cudaDeviceSynchronize());
 		//---END STAGE 3---
 #ifdef BENCHMARK
@@ -1576,7 +1566,7 @@ void CUDARenderer::Render(const SceneManager& sm, const Camera* pCamera)
 		StartTimer();
 #endif
 		//---STAGE 3---: Peform  Pixel Shading
-		PixelShader(isDepthColour);
+		PixelShader(sampleState, isDepthColour);
 		CheckErrorCuda(cudaDeviceSynchronize());
 		//---END STAGE 3---
 #ifdef BENCHMARK
@@ -1624,9 +1614,9 @@ void CUDARenderer::WarmUp()
 	ResetDepthBufferKernel<<<0, 0>>>(nullptr, m_WindowHelper.Width, m_WindowHelper.Height);
 	ClearFrameBufferKernel<<<0, 0>>>(nullptr, m_WindowHelper.Width, m_WindowHelper.Height, 0);
 	VertexShaderKernel<<<0, 0>>>(nullptr, nullptr, 0, {}, {}, {});
-	TriangleAssemblerKernel<<<0, 0>>>(nullptr, nullptr, 0, nullptr, {}, (PrimitiveTopology)0, (CullingMode)0);
-	RasterizerKernel<<<0, 0>>>(nullptr, nullptr, 0, nullptr, nullptr, nullptr, {}, m_WindowHelper.Width, m_WindowHelper.Height);
-	PixelShaderKernel<<<0, 0>>> (nullptr, nullptr, false, m_WindowHelper.Width, m_WindowHelper.Height);
+	TriangleAssemblerKernel<<<0, 0>>>(nullptr, nullptr, 0, nullptr, (PrimitiveTopology)0);
+	RasterizerKernel<<<0, 0>>>(nullptr, nullptr, 0, nullptr, nullptr, nullptr, {}, {}, (CullingMode)0, m_WindowHelper.Width, m_WindowHelper.Height);
+	PixelShaderKernel<<<0, 0>>> (nullptr, nullptr, SampleState(0), false, m_WindowHelper.Width, m_WindowHelper.Height);
 }
 
 #pragma endregion

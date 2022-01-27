@@ -34,7 +34,7 @@ RGBColor Texture::SamplePoint(const FVector2& uv) const
 {
 	const int x = int(uv.x * m_pSurface->w + 0.5f);
 	const int y = int(uv.y * m_pSurface->h + 0.5f);
-	if (x < 0 || y < 0 || x > m_pSurface->w || y > m_pSurface->h)
+	if (x < 0 || y < 0 || x >= m_pSurface->w || y >= m_pSurface->h)
 		return RGBColor{ 1.f, 0.f, 1.f };
 	Uint8 r, g, b;
 	const uint32_t pixel = x + y * m_pSurface->w;
@@ -46,33 +46,33 @@ RGBColor Texture::SamplePoint(const FVector2& uv) const
 RGBColor Texture::SampleLinear(const FVector2& uv) const
 {
 	//Step 1: find pixel to sample from
-	const int x = int(uv.x * m_pSurface->w);
-	const int y = int(uv.y * m_pSurface->h);
+	const int x = int(uv.x * m_pSurface->w + 0.5f);
+	const int y = int(uv.y * m_pSurface->h + 0.5f);
 	if (x < 0 || y < 0 || x > m_pSurface->w || y > m_pSurface->h)
 		return RGBColor{ 1.f, 0.f, 1.f };
 
 	//Step 2: find 4 neighbours
 	const uint32_t* pixels = (uint32_t*)m_pSurface->pixels;
 	const int texSize = m_pSurface->w * m_pSurface->h;
-	const int originalPixel = uint32_t(x + (y * m_pSurface->w));
+	const int originalPixel = x + y * m_pSurface->w;
 
 	const unsigned short numNeighbours = 4;
 	int neighbours[numNeighbours];
 	//sample 4 adjacent neighbours
-	neighbours[0] = x - 1 + (y * m_pSurface->w); //original pixel - 1x
+	neighbours[0] = originalPixel - 1; //original pixel - 1x
 	if (neighbours[0] < 0)
-		neighbours[0] = 0;
+		neighbours[0] = originalPixel;
 	//possible issue: x might shove back from left to right - 1y
-	neighbours[1] = x + 1 + (y * m_pSurface->w); //original pixel + 1x
-	if (neighbours[1] < texSize)
-		neighbours[1] = texSize;
+	neighbours[1] = originalPixel + 1; //original pixel + 1x
+	if (neighbours[1] >= texSize)
+		neighbours[1] = originalPixel;
 	//possible issue: x might shove back from right to left + 1y
-	neighbours[2] = x + ((y + 1) * m_pSurface->w); //original pixel + 1y
-	if (neighbours[2] < texSize)
-		neighbours[2] = texSize;
-	neighbours[3] = x + ((y - 1) * m_pSurface->w); //original pixel - 1y
+	neighbours[2] = originalPixel + m_pSurface->w; //original pixel + 1y
+	if (neighbours[2] >= texSize)
+		neighbours[2] = originalPixel;
+	neighbours[3] = originalPixel - m_pSurface->w; //original pixel - 1y
 	if (neighbours[3] < 0)
-		neighbours[3] = 0;
+		neighbours[3] = originalPixel;
 
 	//get other 4 corner neighbours
 	//pixels[4] = float(x - 1 + ((y - 1) * m_pSurface->w)); //original pixel - 1x -1y
@@ -89,7 +89,7 @@ RGBColor Texture::SampleLinear(const FVector2& uv) const
 	//	pixels[7] = 0;
 
 	//Step 3: define weights
-	const float weight = 1.f / numNeighbours * 2; //# pixels, equally divided
+	const float weight = 1.f / (numNeighbours * 2); //# pixels, equally divided
 	//weights might not always give a correct result, since I'm sharing finalSampleColour with all samples
 
 	//Step 4: Sample 4 neighbours and take average
@@ -97,7 +97,7 @@ RGBColor Texture::SampleLinear(const FVector2& uv) const
 	RGBColor finalSampleColour{};
 	for (int i{}; i < numNeighbours; ++i)
 	{
-		SDL_GetRGB(pixels[(uint32_t)neighbours[i]], m_pSurface->format, &r, &g, &b);
+		SDL_GetRGB(pixels[neighbours[i]], m_pSurface->format, &r, &g, &b);
 		finalSampleColour.r += r * weight;
 		finalSampleColour.g += g * weight;
 		finalSampleColour.b += b * weight;
@@ -115,10 +115,9 @@ RGBColor Texture::SampleLinear(const FVector2& uv) const
 
 	//Step 5: add original pixel sample and divide by 2 to not oversample colour
 	SDL_GetRGB(pixels[originalPixel], m_pSurface->format, &r, &g, &b);
-	finalSampleColour.r += r;
-	finalSampleColour.g += g;
-	finalSampleColour.b += b;
-	finalSampleColour /= 2.f;
+	finalSampleColour.r += r / 2.f;
+	finalSampleColour.g += g / 2.f;
+	finalSampleColour.b += b / 2.f;
 
 	//Step 6: return finalSampleColour / 255
 	return finalSampleColour / 255.f;

@@ -71,24 +71,31 @@ void Elite::Renderer::Render(const SceneManager& sm)
 		{
 			for (size_t idx{ 2 }; idx < size; idx += 3)
 			{
-				const OVertex& v0 = NDCVertices[indices[idx - 2]];
-				const OVertex& v1 = NDCVertices[indices[idx - 1]];
-				const OVertex& v2 = NDCVertices[indices[idx]];
-
-				const FVector3 faceNormal = GetNormalized(Cross(FVector3{ v1.p - v0.p }, FVector3{ v2.p - v0.p }));
+				OVertex& v0 = NDCVertices[indices[idx - 2]];
+				OVertex& v1 = NDCVertices[indices[idx - 1]];
+				OVertex& v2 = NDCVertices[indices[idx]];
 
 				//is triangle visible according to cullingmode?
 				if (cm == CullingMode::BackFace)
 				{
+					const FVector3 faceNormal = GetNormalized(Cross(FVector3{ v1.p - v0.p }, FVector3{ v2.p - v0.p }));
+					const float cullingValue = Dot(camFwd, faceNormal);
 					//is back facing triangle?
-					if (Dot(camFwd, faceNormal) <= 0.f)
+					if (cullingValue <= 0.f)
 						continue;
 				}
 				else if (cm == CullingMode::FrontFace)
 				{
+					//AND DOUBLE SIDED RENDERING
+					v0 = NDCVertices[indices[idx - 1]];
+					v1 = NDCVertices[indices[idx - 2]];
+					v2 = NDCVertices[indices[idx]];
+
+					const FVector3 faceNormal = GetNormalized(Cross(FVector3{ v1.p - v0.p }, FVector3{ v2.p - v0.p }));
+					const float cullingValue = Dot(camFwd, faceNormal);
 					//is front facing triangle?
-					if (Dot(camFwd, faceNormal) >= 0.f)
-						continue;
+					//if (cullingValue >= 0.f)
+					//	continue;
 				}
 
 				// separate triangle representation (array of OVertex*)
@@ -96,8 +103,8 @@ void Elite::Renderer::Render(const SceneManager& sm)
 				FPoint4 rasterCoords[3]{ v0.p, v1.p, v2.p }; //painful, but unavoidable copy
 				//Otherwise any mesh that uses a vertex twice will literally get shredded due to same values being used for frustum tests etc.
 
-				if (!IsTriangleVisible(rasterCoords))
-					continue;
+				//if (!IsTriangleVisible(rasterCoords))
+				//	continue;
 
 				RenderTriangle(sm, triangle, rasterCoords);
 			}
@@ -116,17 +123,17 @@ void Elite::Renderer::Render(const SceneManager& sm)
 				const OVertex& v1 = NDCVertices[idx1];
 				const OVertex& v2 = NDCVertices[idx2];
 
-				const FVector3 faceNormal = GetNormalized(Cross(FVector3{ v1.p - v0.p }, FVector3{ v2.p - v0.p }));
-
 				//is triangle visible according to cullingmode?
 				if (cm == CullingMode::BackFace)
 				{
+					const FVector3 faceNormal = GetNormalized(Cross(FVector3{ v1.p - v0.p }, FVector3{ v2.p - v0.p }));
 					//is back facing triangle?
 					if (Dot(camFwd, faceNormal) <= 0.f)
 						continue;
 				}
 				else if (cm == CullingMode::FrontFace)
 				{
+					const FVector3 faceNormal = GetNormalized(Cross(FVector3{ v1.p - v0.p }, FVector3{ v2.p - v0.p }));
 					//is front facing triangle?
 					if (Dot(camFwd, faceNormal) >= 0.f)
 						continue;

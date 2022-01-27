@@ -53,7 +53,7 @@ public:
 	//Testing purposes
 	void DrawTexture(char* tp);
 	//Testing purposes
-	void DrawTextureGlobal(char* tp, bool isStretchedToWindow = true);
+	void DrawTextureGlobal(char* tp, bool isStretchedToWindow = true, SampleState sampleState = (SampleState)0);
 
 	//Preload and store scene in persistent memory
 	//This will eliminate overhead by loading mesh data and accessing global memory
@@ -130,7 +130,7 @@ private:
 	//Reset depth buffer, mutex buffer and pixelshadebuffer
 	CPU_CALLABLE void Clear(const RGBColor& colour = { 0.25f, 0.25f, 0.25f });
 	CPU_CALLABLE void VertexShader(const MeshIdentifier& mi, const FPoint3& camPos, const FMatrix4& viewProjectionMatrix, const FMatrix4& worldMatrix);
-	CPU_CALLABLE void TriangleAssembler(MeshIdentifier& mi, const FVector3& camFwd, const CullingMode cm = CullingMode::BackFace);
-	CPU_CALLABLE void Rasterizer(const MeshIdentifier& mi);
-	CPU_CALLABLE void PixelShader(bool isDepthColour);
+	CPU_CALLABLE void TriangleAssembler(MeshIdentifier& mi);
+	CPU_CALLABLE void Rasterizer(const MeshIdentifier& mi, const FVector3& camFwd, const CullingMode cm = CullingMode::BackFace);
+	CPU_CALLABLE void PixelShader(SampleState sampleState, bool isDepthColour);
 };
