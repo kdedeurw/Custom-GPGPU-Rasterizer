@@ -71,9 +71,9 @@ void Elite::Renderer::Render(const SceneManager& sm)
 		{
 			for (size_t idx{ 2 }; idx < size; idx += 3)
 			{
-				OVertex& v0 = NDCVertices[indices[idx - 2]];
-				OVertex& v1 = NDCVertices[indices[idx - 1]];
-				OVertex& v2 = NDCVertices[indices[idx]];
+				const OVertex& v0 = NDCVertices[indices[idx - 2]];
+				const OVertex& v1 = NDCVertices[indices[idx - 1]];
+				const OVertex& v2 = NDCVertices[indices[idx]];
 
 				//is triangle visible according to cullingmode?
 				if (cm == CullingMode::BackFace)
@@ -86,16 +86,16 @@ void Elite::Renderer::Render(const SceneManager& sm)
 				}
 				else if (cm == CullingMode::FrontFace)
 				{
-					//AND DOUBLE SIDED RENDERING
-					v0 = NDCVertices[indices[idx - 1]];
-					v1 = NDCVertices[indices[idx - 2]];
-					v2 = NDCVertices[indices[idx]];
+					//TODO: render entire object but invert all triangles
+					//const OVertex& v0Inv = NDCVertices[indices[idx]];
+					//const OVertex& v1Inv = NDCVertices[indices[idx - 1]];
+					//const OVertex& v2Inv = NDCVertices[indices[idx - 2]];
 
 					const FVector3 faceNormal = GetNormalized(Cross(FVector3{ v1.p - v0.p }, FVector3{ v2.p - v0.p }));
 					const float cullingValue = Dot(camFwd, faceNormal);
-					//is front facing triangle?
-					//if (cullingValue >= 0.f)
-					//	continue;
+					////is front facing triangle?
+					if (cullingValue >= 0.f)
+						continue;
 				}
 
 				// separate triangle representation (array of OVertex*)
@@ -103,8 +103,8 @@ void Elite::Renderer::Render(const SceneManager& sm)
 				FPoint4 rasterCoords[3]{ v0.p, v1.p, v2.p }; //painful, but unavoidable copy
 				//Otherwise any mesh that uses a vertex twice will literally get shredded due to same values being used for frustum tests etc.
 
-				//if (!IsTriangleVisible(rasterCoords))
-				//	continue;
+				if (!IsTriangleVisible(rasterCoords))
+					continue;
 
 				RenderTriangle(sm, triangle, rasterCoords);
 			}

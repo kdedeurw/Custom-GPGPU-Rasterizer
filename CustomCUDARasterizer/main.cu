@@ -168,12 +168,12 @@ int GetFPSImmediate(float ms)
 
 #pragma region GLOBAL DEFINES
 
-//#ifndef HARDWARE_ACCELERATION
-//#define HARDWARE_ACCELERATION
-//	//#ifndef FPS_REALTIME
-//	//#define FPS_REALTIME
-//	//#endif
-//#endif
+#ifndef HARDWARE_ACCELERATION
+#define HARDWARE_ACCELERATION
+	//#ifndef FPS_REALTIME
+	//#define FPS_REALTIME
+	//#endif
+#endif
 
 #pragma endregion
 

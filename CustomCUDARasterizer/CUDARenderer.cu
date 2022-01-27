@@ -1081,19 +1081,26 @@ void RasterizerKernel(const TriangleIdx* __restrict__ const dev_Triangles, const
 		if (cm == CullingMode::BackFace)
 		{
 			const FVector3 faceNormal = GetNormalized(Cross(FVector3{ v1.p - v0.p }, FVector3{ v2.p - v0.p }));
+			const float cullingValue = Dot(camFwd, faceNormal);
 			//is back facing triangle?
-			if (Dot(camFwd, faceNormal) <= 0.f)
+			if (cullingValue <= 0.f)
 			{
 				return; //cull triangle
 			}
 		}
 		else if (cm == CullingMode::FrontFace)
 		{
+			//TODO: render entire object but invert all triangles
+			//const OVertex& v0Inv = NDCVertices[indices[idx]];
+			//const OVertex& v1Inv = NDCVertices[indices[idx - 1]];
+			//const OVertex& v2Inv = NDCVertices[indices[idx - 2]];
+
 			const FVector3 faceNormal = GetNormalized(Cross(FVector3{ v1.p - v0.p }, FVector3{ v2.p - v0.p }));
-			//is front facing triangle?
-			if (Dot(camFwd, faceNormal) >= 0.f)
+			const float cullingValue = Dot(camFwd, faceNormal);
+			////is front facing triangle?
+			if (cullingValue >= 0.f)
 			{
-				return; //cull triangle
+				return; // cull triangle
 			}
 		}
 		//else //if (cm == CullingMode::NoCulling)
