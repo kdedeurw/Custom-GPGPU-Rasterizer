@@ -81,7 +81,7 @@ float dev_RenderData_const[sizeof(RenderData) / sizeof(float)]{};
 
 //DEVICE MEMORY - Does have to be allocated and freed
 static unsigned int* dev_FrameBuffer{};
-static float* dev_DepthBuffer{};
+static int* dev_DepthBuffer{}; //defined as INTEGER type for atomicCAS to work properly
 static int* dev_Mutex{};
 static PixelShade* dev_PixelShadeBuffer{}; //(== fragmentbuffer)
 static std::vector<IVertex*> dev_IVertexBuffer{};
@@ -348,7 +348,7 @@ void CUDARenderer::InitCUDADeviceBuffers()
 	CheckErrorCuda(cudaMalloc((void**)&dev_FrameBuffer, width * height * size));
 	CheckErrorCuda(cudaMemset(dev_FrameBuffer, 0, width * height * size));
 
-	size = sizeof(float);
+	size = sizeof(int);
 	CheckErrorCuda(cudaFree(dev_DepthBuffer));
 	CheckErrorCuda(cudaMalloc((void**)&dev_DepthBuffer, width * height * size));
 	CheckErrorCuda(cudaMemset(dev_DepthBuffer, 0, width * height * size));
@@ -956,7 +956,7 @@ RGBColor ShadePixel(const PixelShade& pixelShade, bool isDepthColour)
 //Kernel launch params:	numBlocks, numThreadsPerBlock, numSharedMemoryBytes, stream
 
 GPU_KERNEL
-void ResetDepthBufferKernel(float* dev_DepthBuffer, const unsigned int width, const unsigned int height)
+void ResetDepthBufferKernel(int* dev_DepthBuffer, const unsigned int width, const unsigned int height)
 {
 	//TODO: too many global accesses
 	const unsigned int x = threadIdx.x + blockIdx.x * blockDim.x;
@@ -964,7 +964,7 @@ void ResetDepthBufferKernel(float* dev_DepthBuffer, const unsigned int width, co
 	if (x < width && y < height)
 	{
 		const unsigned int pixelIdx = x + y * width;
-		dev_DepthBuffer[pixelIdx] = 0.f; //FLT_MAX DEPTHBUFFER INVERTED INTERPRETATION
+		dev_DepthBuffer[pixelIdx] = INT_MAX;
 	}
 }
 
@@ -977,7 +977,7 @@ void ClearFrameBufferKernel(unsigned int* dev_FrameBuffer, const unsigned int wi
 	if (x < width && y < height)
 	{
 		const unsigned int pixelIdx = x + y * width;
-		dev_FrameBuffer[pixelIdx] = colour;
+		memcpy(&dev_FrameBuffer[pixelIdx], &colour, sizeof(unsigned int));
 	}
 }
 
@@ -989,7 +989,7 @@ void ClearPixelShadeBufferKernel(PixelShade* dev_PixelShadeBuffer, const unsigne
 	if (x < width && y < height)
 	{
 		const unsigned int pixelIdx = x + y * width;
-		dev_PixelShadeBuffer[pixelIdx] = PixelShade{};
+		memset(&dev_PixelShadeBuffer[pixelIdx], 0, sizeof(PixelShade));
 	}
 }
 
@@ -1024,9 +1024,9 @@ void TriangleAssemblerKernel(TriangleIdx* dev_Triangles, const unsigned int* __r
 		const unsigned int correctedIdx = (indexIdx * 3);
 		if (correctedIdx < numIndices)
 		{
-			triangle.idx2 = dev_IndexBuffer[correctedIdx];
+			triangle.idx0 = dev_IndexBuffer[correctedIdx];
 			triangle.idx1 = dev_IndexBuffer[correctedIdx + 1];
-			triangle.idx0 = dev_IndexBuffer[correctedIdx + 2];
+			triangle.idx2 = dev_IndexBuffer[correctedIdx + 2];
 			triangle.isCulled = false;
 		}
 		else
@@ -1082,13 +1082,14 @@ void TriangleAssemblerKernel(TriangleIdx* dev_Triangles, const unsigned int* __r
 
 	//visible triangle
 	dev_Triangles[indexIdx] = triangle;
+
 	//atomically increment visible triangle count
 	//atomicAdd(dev_VisibleNumTriangles, 1);
 }
 
 GPU_KERNEL
 void RasterizerKernel(const TriangleIdx* __restrict__ const dev_Triangles, const OVertex* __restrict__ const dev_OVertices, const size_t numTriangles,
-	PixelShade* dev_PixelShadeBuffer, float* dev_DepthBuffer, int* dev_Mutex, GPUTextures textures, const unsigned int width, const unsigned int height)
+	PixelShade* dev_PixelShadeBuffer, int* dev_DepthBuffer, int* dev_Mutex, GPUTextures textures, const unsigned int width, const unsigned int height)
 {
 	//TODO: use shared memory, then coalesced copy
 	//e.g. single bin buffer in single shared memory
@@ -1195,6 +1196,9 @@ void RasterizerKernel(const TriangleIdx* __restrict__ const dev_Triangles, const
 					//store textures
 					pixelShade.textures = textures;
 
+					//multiplying z value by a INT_MAX because atomicCAS only accepts ints
+					const int scaledZ = zInterpolated * INT_MAX;
+
 					//Perform atomic depth test
 					bool isDone = false;
 					do
@@ -1203,10 +1207,10 @@ void RasterizerKernel(const TriangleIdx* __restrict__ const dev_Triangles, const
 						if (isDone)
 						{
 							//critical section
-							if (zInterpolated < dev_DepthBuffer[pixelIdx])
+							if (scaledZ < dev_DepthBuffer[pixelIdx])
 							{
 								//update depthbuffer
-								dev_DepthBuffer[pixelIdx] = zInterpolated;
+								dev_DepthBuffer[pixelIdx] = scaledZ;
 								//modify pixelshadebuffer
 								dev_PixelShadeBuffer[pixelIdx] = pixelShade;
 							}
@@ -1302,17 +1306,15 @@ void CUDARenderer::Clear(const RGBColor& colour)
 	const dim3 numBlocks{ m_WindowHelper.Width / numThreadsPerBlock.x, m_WindowHelper.Height / numThreadsPerBlock.y };
 	const RGBA rgba{ colour };
 
-	//ResetDepthBufferKernel<<<numBlocks, numThreadsPerBlock>>>
-	//	(dev_DepthBuffer, m_WindowHelper.Width, m_WindowHelper.Height);
+	ResetDepthBufferKernel<<<numBlocks, numThreadsPerBlock>>>
+		(dev_DepthBuffer, m_WindowHelper.Width, m_WindowHelper.Height);
 	//ClearFrameBufferKernel<<<numBlocks, numThreadsPerBlock>>>
 	//	(dev_FrameBuffer, m_WindowHelper.Width, m_WindowHelper.Height, rgba.colour);
 	//ClearPixelShadeBufferKernel<<<numBlocks, numThreadsPerBlock>>>
 	//	(dev_PixelShadeBuffer, m_WindowHelper.Width, m_WindowHelper.Height);
 
-	//FrameBuffer gets overwritten every frame
-	cudaMemset(dev_Mutex, 0, m_WindowHelper.Width * m_WindowHelper.Height * sizeof(int));
-	cudaMemset(dev_DepthBuffer, FLT_MAX, m_WindowHelper.Width * m_WindowHelper.Height * sizeof(float));
-	cudaMemset(dev_PixelShadeBuffer, 0, m_WindowHelper.Width * m_WindowHelper.Height * sizeof(PixelShade));
+	CheckErrorCuda(cudaMemset(dev_Mutex, 0, m_WindowHelper.Width * m_WindowHelper.Height * sizeof(int)));
+	CheckErrorCuda(cudaMemset(dev_PixelShadeBuffer, 0, m_WindowHelper.Width * m_WindowHelper.Height * sizeof(PixelShade)));
 }
 
 CPU_CALLABLE
