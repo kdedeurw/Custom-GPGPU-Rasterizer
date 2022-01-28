@@ -1527,6 +1527,12 @@ void CUDARenderer::Render(const SceneManager& sm, const Camera* pCamera)
 	const SceneGraph* pSceneGraph = sm.GetSceneGraph();
 	const std::vector<Mesh*>& pObjects = pSceneGraph->GetObjects();
 
+#ifdef BENCHMARK
+	float vertexShadingMs{};
+	float TriangleAssemblingMs{};
+	float RasterizationMs{};
+#endif
+
 	m_TotalVisibleNumTriangles = 0;
 	for (MeshIdentifier& mi : m_MeshIdentifiers)
 	{
@@ -1549,7 +1555,7 @@ void CUDARenderer::Render(const SceneManager& sm, const Camera* pCamera)
 		CheckErrorCuda(cudaDeviceSynchronize());
 		//---END STAGE 1---
 #ifdef BENCHMARK
-		float vertexShadingMs = StopTimer();
+		vertexShadingMs += StopTimer();
 		StartTimer();
 #endif
 		//---STAGE 2---:  Perform Triangle Assembling
@@ -1557,7 +1563,7 @@ void CUDARenderer::Render(const SceneManager& sm, const Camera* pCamera)
 		CheckErrorCuda(cudaDeviceSynchronize());
 		//---END STAGE 2---
 #ifdef BENCHMARK
-		float TriangleAssemblingMs = StopTimer();
+		TriangleAssemblingMs += StopTimer();
 		StartTimer();
 #endif
 		//---STAGE 3---: Peform Triangle Rasterization & Pixel Shading
@@ -1565,7 +1571,11 @@ void CUDARenderer::Render(const SceneManager& sm, const Camera* pCamera)
 		CheckErrorCuda(cudaDeviceSynchronize());
 		//---END STAGE 3---
 #ifdef BENCHMARK
-		float RasterizationMs = StopTimer();
+		RasterizationMs += StopTimer();
+#endif
+	}
+
+#ifdef BENCHMARK
 		StartTimer();
 #endif
 		//---STAGE 3---: Peform  Pixel Shading
@@ -1576,7 +1586,6 @@ void CUDARenderer::Render(const SceneManager& sm, const Camera* pCamera)
 		float PixelShadingMs = StopTimer();
 		std::cout << "VS: " << vertexShadingMs << "ms | TA: " << TriangleAssemblingMs << "ms | Raster: " << RasterizationMs << "ms | PS: " << PixelShadingMs << "ms\r";
 #endif
-	}
 }
 
 CPU_CALLABLE
