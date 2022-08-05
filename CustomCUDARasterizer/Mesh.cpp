@@ -3,14 +3,14 @@
 #include "Texture.h"
 
 Mesh::Mesh(const std::vector<IVertex>& vertices, const std::vector<unsigned int>& indexes, 
-	PrimitiveTopology pT, float rotSpeed, const FPoint3& position)
-	: m_VertexBuffer{vertices}
-	, m_IndexBuffer{indexes}
+	short vType, PrimitiveTopology pT, const FPoint3& position)
+	: m_VertexBuffer{ vertices }
+	, m_IndexBuffer{ indexes }
 	, m_TexturePaths{}
-	, m_Topology{pT}
+	, m_Topology{ pT }
+	, m_VertexType{ vType }
 	, m_pTextures{}
 	, m_WorldSpace{ FMatrix4::Identity() }
-	, m_RotateSpeed{ rotSpeed }
 {
 	m_WorldSpace.data[0][0] += position.x;
 	m_WorldSpace.data[1][1] += position.y;
@@ -43,7 +43,8 @@ Mesh::~Mesh()
 
 void Mesh::Update(float elapsedSec)
 {
-	m_WorldSpace *= (FMatrix4)MakeRotationY(m_RotateSpeed * elapsedSec);
+	constexpr float rotateSpeed = 0.f;
+	m_WorldSpace *= (FMatrix4)MakeRotationY(rotateSpeed * elapsedSec);
 }
 
 void Mesh::LoadTextures(const std::string texPaths[4])

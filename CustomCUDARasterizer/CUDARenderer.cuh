@@ -8,7 +8,6 @@
 
 #include "Math.h"
 #include "RGBColor.h"
-#include "PrimitiveTopology.h"
 #include "GPUTextures.h"
 #include "CullingMode.h"
 
@@ -51,9 +50,9 @@ public:
 	CPU_CALLABLE CUDARenderer& operator=(CUDARenderer&&) noexcept = delete;
 
 	//Testing purposes
-	void DrawTexture(char* tp);
+	CPU_CALLABLE void DrawTexture(char* tp);
 	//Testing purposes
-	void DrawTextureGlobal(char* tp, bool isStretchedToWindow = true, SampleState sampleState = (SampleState)0);
+	CPU_CALLABLE void DrawTextureGlobal(char* tp, bool isStretchedToWindow = true, SampleState sampleState = (SampleState)0);
 
 	//Preload and store scene in persistent memory
 	//This will eliminate overhead by loading mesh data and accessing global memory

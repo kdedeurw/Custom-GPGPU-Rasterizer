@@ -1,7 +1,7 @@
 #pragma once
 
-enum class PrimitiveTopology
+enum class PrimitiveTopology : short
 {
 	TriangleList,
-	TriangleStrip
+	TriangleStrip,
 };

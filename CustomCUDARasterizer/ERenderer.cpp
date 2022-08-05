@@ -48,7 +48,7 @@ void Elite::Renderer::Render(const SceneManager& sm)
 
 	//SceneGraph
 	SceneGraph* pSceneGraph = sm.GetSceneGraph();
-	const std::vector<Mesh*>& pObjects = pSceneGraph->GetObjects();
+	const std::vector<Mesh*>& pObjects = pSceneGraph->GetMeshes();
 	const FVector3& camFwd{ m_pCamera->GetForward() };
 	const FMatrix4 lookatMatrix = m_pCamera->GetLookAtMatrix();
 	const FMatrix4 viewMatrix{ m_pCamera->GetViewMatrix(lookatMatrix) };

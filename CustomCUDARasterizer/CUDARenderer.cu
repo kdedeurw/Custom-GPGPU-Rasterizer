@@ -14,13 +14,14 @@
 #include "Mesh.h"
 #include "Camera.h"
 #include "Vertex.h"
+#include "PrimitiveTopology.h"
 #include "BoundingBox.h"
 #include "GPUTextures.h"
 #include "RGBRaw.h"
 #include "Light.h"
 #include "GPUTextures.h"
-#include "PrimitiveTopology.h"
 #include "CullingMode.h"
+#include "CUDABenchMarker.h"
 
 #pragma region STRUCT DECLARATIONS
 
@@ -50,7 +51,7 @@ struct TriangleIdx
 	unsigned int idx0;
 	unsigned int idx1;
 	unsigned int idx2;
-	bool isCulled;
+	//bool isCulled;
 	//padded
 };
 
@@ -73,8 +74,7 @@ struct PixelShade
 constexpr int NumTextures = 4;
 
 //CONST DEVICE MEMORY - Does NOT have to be allocated or freed
-GPU_CONST_MEMORY static
-float dev_RenderData_const[sizeof(RenderData) / sizeof(float)]{};
+GPU_CONST_MEMORY static float dev_RenderData_const[sizeof(RenderData) / sizeof(float)]{};
 //NOTE: cannot contain anything else besides primitive variables (int, float, etc.)
 
 //DEVICE MEMORY - Does have to be allocated and freed
@@ -645,8 +645,8 @@ void CUDARenderer::Present()
 	CheckErrorCuda(cudaMemcpy(m_WindowHelper.pBackBufferPixels, dev_FrameBuffer, size, cudaMemcpyDeviceToHost)); //We can directly read/write from pixelbuffer
 	//memcpy(m_WindowHelper.pBackBufferPixels, m_WindowHelper.h_BackBufferPixels, size);
 	SDL_UnlockSurface(m_WindowHelper.pBackBuffer); //Release a surface after directly accessing the pixels.
-	SDL_BlitSurface(m_WindowHelper.pBackBuffer, 0, m_WindowHelper.pFrontBuffer, 0);
-	SDL_UpdateWindowSurface(m_WindowHelper.pWindow); //Copy the window surface to the screen.
+	SDL_BlitSurface(m_WindowHelper.pBackBuffer, 0, m_WindowHelper.pFrontBuffer, 0); //Copy the window surface to the screen.
+	SDL_UpdateWindowSurface(m_WindowHelper.pWindow); //Update Window's surface
 }
 
 #pragma endregion
@@ -661,16 +661,16 @@ OVertex GetNDCVertex(const IVertex& __restrict__ iVertex, const FPoint3& camPos,
 
 	const FPoint3 worldPosition{ worldMatrix * FPoint4{ iVertex.p } };
 	const FMatrix4 worldViewProjectionMatrix = viewProjectionMatrix * worldMatrix;
-	//const FMatrix3 rotationMatrix = (FMatrix3)worldMatrix;
+	const FMatrix3 rotationMatrix = (FMatrix3)worldMatrix;
 
-	new (&oVertex.p) FPoint4{ worldViewProjectionMatrix * FPoint4{ iVertex.p } };
+	oVertex.p = worldViewProjectionMatrix * FPoint4{ iVertex.p };
 	oVertex.p.x /= oVertex.p.w;
 	oVertex.p.y /= oVertex.p.w;
 	oVertex.p.z /= oVertex.p.w;
 
-	new (&oVertex.vd) const FVector3{ GetNormalized(worldPosition - camPos) };
-	new (&oVertex.n) const FVector3{ (FMatrix3)worldMatrix * iVertex.n };
-	new (&oVertex.tan) const FVector3{ (FMatrix3)worldMatrix * iVertex.tan };
+	oVertex.vd = FVector3{ GetNormalized(worldPosition - camPos) };
+	oVertex.n = FVector3{ rotationMatrix * iVertex.n };
+	oVertex.tan = FVector3{ rotationMatrix * iVertex.tan };
 
 	oVertex.uv = iVertex.uv;
 	oVertex.c = iVertex.c;
@@ -687,15 +687,11 @@ float EdgeFunction(const FPoint2& v, const FVector2& edge, const FPoint2& pixel)
 }
 
 GPU_CALLABLE static
-bool IsPixelInTriangle(const RasterTriangle& triangle, const FPoint2& pixel, float weights[3])
+bool IsPixelInTriangle(const FPoint4& v0, const FPoint4& v1, const FPoint4& v2, const FPoint2& pixel, float weights[3])
 {
-	const FPoint2& v0 = triangle.v0.xy;
-	const FPoint2& v1 = triangle.v1.xy;
-	const FPoint2& v2 = triangle.v2.xy;
-
-	const FVector2 edgeA{ v1 - v0 };
-	const FVector2 edgeB{ v2 - v1 };
-	const FVector2 edgeC{ v0 - v2 };
+	const FVector2 edgeA{ v1.xy - v0.xy };
+	const FVector2 edgeB{ v2.xy - v1.xy };
+	const FVector2 edgeC{ v0.xy - v2.xy };
 	// clockwise
 	//const FVector2 edgeA{ v0 - v1 };
 	//const FVector2 edgeB{ v1 - v2 };
@@ -732,11 +728,17 @@ bool IsPixelInTriangle(const RasterTriangle& triangle, const FPoint2& pixel, flo
 		//const float total = weights[0] + weights[1] + weights[2]; // total result equals 1
 	}
 
-	weights[2] = EdgeFunction(v0, edgeA, pixel);
-	weights[0] = EdgeFunction(v1, edgeB, pixel);
-	weights[1] = EdgeFunction(v2, edgeC, pixel);
+	weights[2] = EdgeFunction(v0.xy, edgeA, pixel);
+	weights[0] = EdgeFunction(v1.xy, edgeB, pixel);
+	weights[1] = EdgeFunction(v2.xy, edgeC, pixel);
 
 	return weights[0] >= 0.f && weights[1] >= 0.f && weights[2] >= 0.f;
+}
+
+GPU_CALLABLE static
+bool IsPixelInTriangle(const RasterTriangle& triangle, const FPoint2& pixel, float weights[3])
+{
+	return IsPixelInTriangle(triangle.v0, triangle.v1, triangle.v2, pixel, weights);
 }
 
 GPU_CALLABLE static
@@ -787,36 +789,36 @@ bool IsDepthTestSucceeded(float dev_DepthBuffer[], int dev_Mutex[], const size_t
 }
 
 GPU_CALLABLE static
-bool IsAllXOutsideFrustum(const RasterTriangle& triangle)
+bool IsAllXOutsideFrustum(const FPoint4& v0, const FPoint4& v1, const FPoint4& v2)
 {
-	return	(triangle.v0.x < -1.f && triangle.v1.x < -1.f && triangle.v2.x < -1.f) ||
-			(triangle.v0.x > 1.f && triangle.v1.x > 1.f && triangle.v2.x > 1.f);
+	return	(v0.x < -1.f && v1.x < -1.f && v2.x < -1.f) ||
+		(v0.x > 1.f && v1.x > 1.f && v2.x > 1.f);
 }
 
 GPU_CALLABLE static
-bool IsAllYOutsideFrustum(const RasterTriangle& triangle)
+bool IsAllYOutsideFrustum(const FPoint4& v0, const FPoint4& v1, const FPoint4& v2)
 {
-	return	(triangle.v0.y < -1.f && triangle.v1.y < -1.f && triangle.v2.y < -1.f) ||
-			(triangle.v0.y > 1.f && triangle.v1.y > 1.f && triangle.v2.y > 1.f);
+	return	(v0.y < -1.f && v1.y < -1.f && v2.y < -1.f) ||
+		(v0.y > 1.f && v1.y > 1.f && v2.y > 1.f);
 }
 
 GPU_CALLABLE static
-bool IsAllZOutsideFrustum(const RasterTriangle& triangle)
+bool IsAllZOutsideFrustum(const FPoint4& v0, const FPoint4& v1, const FPoint4& v2)
 {
-	return	(triangle.v0.z < 0.f && triangle.v1.z < 0.f && triangle.v2.z < 0.f) ||
-			(triangle.v0.z > 1.f && triangle.v1.z > 1.f && triangle.v2.z > 1.f);
+	return	(v0.z < 0.f && v1.z < 0.f && v2.z < 0.f) ||
+		(v0.z > 1.f && v1.z > 1.f && v2.z > 1.f);
 }
 
 GPU_CALLABLE static
-bool IsTriangleVisible(const RasterTriangle& triangle)
+bool IsTriangleVisible(const FPoint4& v0, const FPoint4& v1, const FPoint4& v2)
 {
 	// Solution to FrustumCulling bug
 	//	   if (all x values are < -1.f or > 1.f) AT ONCE, cull
 	//	|| if (all y values are < -1.f or > 1.f) AT ONCE, cull
 	//	|| if (all z values are < 0.f or > 1.f) AT ONCE, cull
-	return(!IsAllXOutsideFrustum(triangle) 
-		&& !IsAllYOutsideFrustum(triangle) 
-		&& !IsAllZOutsideFrustum(triangle));
+	return(!IsAllXOutsideFrustum(v0, v1, v0)
+		&& !IsAllYOutsideFrustum(v0, v1, v0)
+		&& !IsAllZOutsideFrustum(v0, v1, v0));
 }
 
 GPU_CALLABLE static
@@ -828,33 +830,33 @@ bool IsVertexInFrustum(const FPoint4& NDC)
 }
 
 GPU_CALLABLE static
-bool IsTriangleInFrustum(const RasterTriangle& triangle)
+bool IsTriangleInFrustum(const FPoint4& v0, const FPoint4& v1, const FPoint4& v2)
 {
-	return(IsVertexInFrustum(triangle.v0)
-		|| IsVertexInFrustum(triangle.v1)
-		|| IsVertexInFrustum(triangle.v2));
+	return(IsVertexInFrustum(v0)
+		|| IsVertexInFrustum(v1)
+		|| IsVertexInFrustum(v2));
 	//TODO: bug, triangles gets culled when zoomed in, aka all 3 vertices are outside of frustum
 }
 
 GPU_CALLABLE static
-void NDCToScreenSpace(RasterTriangle& triangle, const unsigned int width, const unsigned int height)
+void NDCToScreenSpace(FPoint4& v0, FPoint4& v1, FPoint4& v2, const unsigned int width, const unsigned int height)
 {
-	triangle.v0.x = ((triangle.v0.x + 1) / 2) * width;
-	triangle.v0.y = ((1 - triangle.v0.y) / 2) * height;
-	triangle.v1.x = ((triangle.v1.x + 1) / 2) * width;
-	triangle.v1.y = ((1 - triangle.v1.y) / 2) * height;
-	triangle.v2.x = ((triangle.v2.x + 1) / 2) * width;
-	triangle.v2.y = ((1 - triangle.v2.y) / 2) * height;
+	v0.x = ((v0.x + 1) / 2) * width;
+	v0.y = ((1 - v0.y) / 2) * height;
+	v1.x = ((v1.x + 1) / 2) * width;
+	v1.y = ((1 - v1.y) / 2) * height;
+	v2.x = ((v2.x + 1) / 2) * width;
+	v2.y = ((1 - v2.y) / 2) * height;
 }
 
 GPU_CALLABLE static
-BoundingBox GetBoundingBox(const RasterTriangle& triangle, const unsigned int width, const unsigned int height)
+BoundingBox GetBoundingBox(const FPoint4& v0, const FPoint4& v1, const FPoint4& v2, const unsigned int width, const unsigned int height)
 {
 	BoundingBox bb;
-	bb.xMin = (short)GetMinElement(triangle.v0.x, triangle.v1.x, triangle.v2.x) - 1; // xMin
-	bb.yMin = (short)GetMinElement(triangle.v0.y, triangle.v1.y, triangle.v2.y) - 1; // yMin
-	bb.xMax = (short)GetMaxElement(triangle.v0.x, triangle.v1.x, triangle.v2.x) + 1; // xMax
-	bb.yMax = (short)GetMaxElement(triangle.v0.y, triangle.v1.y, triangle.v2.y) + 1; // yMax
+	bb.xMin = (short)GetMinElement(v0.x, v1.x, v2.x) - 1; // xMin
+	bb.yMin = (short)GetMinElement(v0.y, v1.y, v2.y) - 1; // yMin
+	bb.xMax = (short)GetMaxElement(v0.x, v1.x, v2.x) + 1; // xMax
+	bb.yMax = (short)GetMaxElement(v0.y, v1.y, v2.y) + 1; // yMax
 
 	if (bb.xMin < 0) bb.xMin = 0; //clamp minX to Left of screen
 	if (bb.yMin < 0) bb.yMin = 0; //clamp minY to Bottom of screen
@@ -862,6 +864,48 @@ BoundingBox GetBoundingBox(const RasterTriangle& triangle, const unsigned int wi
 	if (bb.yMax > height) bb.yMax = height; //clamp maxY to Top of screen
 
 	return bb;
+}
+
+GPU_CALLABLE static
+bool IsAllXOutsideFrustum(const RasterTriangle& triangle)
+{
+	return IsAllXOutsideFrustum(triangle.v0, triangle.v1, triangle.v2);
+}
+
+GPU_CALLABLE static
+bool IsAllYOutsideFrustum(const RasterTriangle& triangle)
+{
+	return IsAllYOutsideFrustum(triangle.v0, triangle.v1, triangle.v2);
+}
+
+GPU_CALLABLE static
+bool IsAllZOutsideFrustum(const RasterTriangle& triangle)
+{
+	return IsAllZOutsideFrustum(triangle.v0, triangle.v1, triangle.v2);
+}
+
+GPU_CALLABLE static
+bool IsTriangleVisible(const RasterTriangle& triangle)
+{
+	return IsTriangleVisible(triangle.v0, triangle.v1, triangle.v2);
+}
+
+GPU_CALLABLE static
+bool IsTriangleInFrustum(const RasterTriangle& triangle)
+{
+	return IsTriangleInFrustum(triangle.v0, triangle.v1, triangle.v2);
+}
+
+GPU_CALLABLE static
+void NDCToScreenSpace(RasterTriangle& triangle, const unsigned int width, const unsigned int height)
+{
+	NDCToScreenSpace(triangle.v0, triangle.v1, triangle.v2, width, height);
+}
+
+GPU_CALLABLE static
+BoundingBox GetBoundingBox(const RasterTriangle& triangle, const unsigned int width, const unsigned int height)
+{
+	return GetBoundingBox(triangle.v0, triangle.v1, triangle.v2, width, height);
 }
 
 GPU_CALLABLE GPU_INLINE static
@@ -951,41 +995,44 @@ RGBColor ShadePixel(const PixelShade& pixelShade, SampleState sampleState, bool 
 //Kernel launch params:	numBlocks, numThreadsPerBlock, numSharedMemoryBytes, stream
 
 GPU_KERNEL
-void ResetDepthBufferKernel(int* dev_DepthBuffer, const unsigned int width, const unsigned int height)
+void ResetDepthBufferKernel(int* dev_DepthBuffer, int value, const unsigned int width, const unsigned int height)
 {
-	//TODO: too many global accesses
 	const unsigned int x = threadIdx.x + blockIdx.x * blockDim.x;
 	const unsigned int y = threadIdx.y + blockIdx.y * blockDim.y;
 	if (x < width && y < height)
 	{
 		const unsigned int pixelIdx = x + y * width;
-		dev_DepthBuffer[pixelIdx] = INT_MAX;
+		dev_DepthBuffer[pixelIdx] = value;
 	}
 }
 
 GPU_KERNEL
 void ClearFrameBufferKernel(unsigned int* dev_FrameBuffer, const unsigned int width, const unsigned int height, unsigned int colour)
 {
-	//TODO: too many global accesses
 	const unsigned int x = threadIdx.x + blockIdx.x * blockDim.x;
 	const unsigned int y = threadIdx.y + blockIdx.y * blockDim.y;
 	if (x < width && y < height)
 	{
 		const unsigned int pixelIdx = x + y * width;
-		memcpy(&dev_FrameBuffer[pixelIdx], &colour, sizeof(unsigned int));
+		dev_FrameBuffer[pixelIdx] = colour;
 	}
 }
 
 GPU_KERNEL
-void ClearPixelShadeBufferKernel(PixelShade* dev_PixelShadeBuffer, const unsigned int width, const unsigned int height)
+void ClearPixelShadeBufferKernel(PixelShade* dev_PixelShadeBuffer, const unsigned int size)
 {
-	const unsigned int x = threadIdx.x + blockIdx.x * blockDim.x;
-	const unsigned int y = threadIdx.y + blockIdx.y * blockDim.y;
-	if (x < width && y < height)
+	//every thread sets 1 WORD of data
+	const unsigned int idx = threadIdx.x + blockIdx.x * blockDim.x;
+	if (idx < size)
 	{
-		const unsigned int pixelIdx = x + y * width;
-		memset(&dev_PixelShadeBuffer[pixelIdx], 0, sizeof(PixelShade));
+		reinterpret_cast<unsigned int*>(dev_PixelShadeBuffer)[idx] = 0;
 	}
+}
+
+GPU_KERNEL
+void Clear()
+{
+	//TODO: clear depthbuffer, framebuffer and pixelshadebuffer
 }
 
 GPU_KERNEL
@@ -997,10 +1044,17 @@ void VertexShaderKernel(const IVertex* __restrict__ dev_IVertices, OVertex* dev_
 	//(e.g., same index in an array variable, same member in a structure variable)
 
 	const unsigned int vertexIdx = (blockIdx.x * blockDim.x) + threadIdx.x;
+
+	//const int nThreads = 1;
+	//const size_t sizeOfIVertex = sizeof(IVertex); //56
+	//__shared__ int iVertexBuffer[nThread * sizeOfIVertex];
+	//memcpy(iVertexBuffer, dev_IVertexBuffer[vertexIdx], sizeOfIVertex);
+
 	if (vertexIdx < numVertices)
 	{
-		const IVertex& iV = dev_IVertices[vertexIdx];
+		const IVertex iV = dev_IVertices[vertexIdx];
 		const OVertex oV = GetNDCVertex(iV, camPos, viewProjectionMatrix, worldMatrix);
+		//const OVertex oV = GetNDCVertex(reinterpret_cast<const IVertex&>(iVertexBuffer[nThreads * sizeOfIVertex]), camPos, viewProjectionMatrix, worldMatrix);
 		dev_OVertices[vertexIdx] = std::move(oV);
 	}
 }
@@ -1016,12 +1070,15 @@ void TriangleAssemblerKernel(TriangleIdx* dev_Triangles, const unsigned int* __r
 		const unsigned int correctedIdx = (indexIdx * 3);
 		if (correctedIdx < numIndices)
 		{
-			TriangleIdx triangle;
-			triangle.idx0 = dev_IndexBuffer[correctedIdx];
-			triangle.idx1 = dev_IndexBuffer[correctedIdx + 1];
-			triangle.idx2 = dev_IndexBuffer[correctedIdx + 2];
-			triangle.isCulled = false;
-			dev_Triangles[indexIdx] = triangle;
+			//Unnecessary for TriangleLists
+			//TriangleIdx triangle;
+			//triangle.idx0 = dev_IndexBuffer[correctedIdx];
+			//triangle.idx1 = dev_IndexBuffer[correctedIdx + 1];
+			//triangle.idx2 = dev_IndexBuffer[correctedIdx + 2];
+			//triangle.isCulled = false;
+			//dev_Triangles[indexIdx] = triangle;
+
+			memcpy(&dev_Triangles[indexIdx], &dev_IndexBuffer[correctedIdx], sizeof(TriangleIdx));
 			//atomically increment visible triangle count
 			//atomicAdd(dev_VisibleNumTriangles, 1);
 		}
@@ -1030,22 +1087,157 @@ void TriangleAssemblerKernel(TriangleIdx* dev_Triangles, const unsigned int* __r
 	{
 		if (indexIdx < numIndices - 2)
 		{
+			//Necessary for TriangleStrips
 			TriangleIdx triangle;
 			const bool isOdd = (indexIdx % 2);
-			triangle.idx0 = dev_IndexBuffer[indexIdx];
-			triangle.idx1 = isOdd ? dev_IndexBuffer[indexIdx + 2] : dev_IndexBuffer[indexIdx + 1];
-			triangle.idx2 = isOdd ? dev_IndexBuffer[indexIdx + 1] : dev_IndexBuffer[indexIdx + 2];
-			triangle.isCulled = false;
+			//triangle.idx0 = dev_IndexBuffer[indexIdx];
+			//if (isOdd)
+			//{
+			//	triangle.idx1 = dev_IndexBuffer[indexIdx + 2];
+			//	triangle.idx2 = dev_IndexBuffer[indexIdx + 1];
+			//}
+			//else
+			//{
+			//	triangle.idx1 = dev_IndexBuffer[indexIdx + 1];
+			//	triangle.idx2 = dev_IndexBuffer[indexIdx + 2];
+			//}
+			//triangle.isCulled = false;
+
+			memcpy(&triangle, &dev_IndexBuffer[indexIdx], sizeof(TriangleIdx));
+			if (isOdd)
+			{
+				const unsigned int origIdx1 = triangle.idx1;
+				triangle.idx1 = triangle.idx2;
+				triangle.idx2 = origIdx1;
+			}
 			dev_Triangles[indexIdx] = triangle;
+
 			//atomically increment visible triangle count
 			//atomicAdd(dev_VisibleNumTriangles, 1);
 		}
 	}
 }
 
+/*
+GPU_CALLABLE
+void RasterizeTriangle()
+{
+	RasterTriangle rasterTriangle;
+	rasterTriangle.v0 = v0.p;
+	rasterTriangle.v1 = v1.p;
+	rasterTriangle.v2 = v2.p;
+
+	if (!IsTriangleVisible(rasterTriangle))
+	{
+		return;
+	}
+
+	NDCToScreenSpace(rasterTriangle, width, height);
+	const BoundingBox bb = GetBoundingBox(rasterTriangle, width, height);
+	//Rasterize Screenspace triangle
+
+	const float v0InvDepth = 1.f / rasterTriangle.v0.w;
+	const float v1InvDepth = 1.f / rasterTriangle.v1.w;
+	const float v2InvDepth = 1.f / rasterTriangle.v2.w;
+
+	//TODO: 1 thread per triangle is bad for performance, use binning
+	//Loop over all pixels in bounding box
+	for (unsigned short y = bb.yMin; y < bb.yMax; ++y)
+	{
+		for (unsigned short x = bb.xMin; x < bb.xMax; ++x)
+		{
+			const FPoint2 pixel{ float(x), float(y) };
+			float weights[3];
+			if (IsPixelInTriangle(rasterTriangle, pixel, weights))
+			{
+				const float totalArea = abs(Cross(rasterTriangle.v0.xy - rasterTriangle.v1.xy, rasterTriangle.v0.xy - rasterTriangle.v2.xy));
+				weights[0] /= totalArea;
+				weights[1] /= totalArea;
+				weights[2] /= totalArea;
+
+				const size_t pixelIdx = x + y * width;
+				const float zInterpolated = (weights[0] * v0.p.z) + (weights[1] * v1.p.z) + (weights[2] * v2.p.z);
+
+				//peform early depth test
+				if (zInterpolated < 0 || zInterpolated > 1.f)
+					continue;
+
+				const float wInterpolated = 1.f / (v0InvDepth * weights[0] + v1InvDepth * weights[1] + v2InvDepth * weights[2]);
+
+				//create pixelshade object (== fragment)
+				PixelShade pixelShade;
+
+				//depthbuffer visualisation
+				pixelShade.zInterpolated = zInterpolated;
+				pixelShade.wInterpolated = wInterpolated;
+
+				//uv
+				new (&pixelShade.uv) FVector2{
+					weights[0] * (v0.uv.x * v0InvDepth) + weights[1] * (v1.uv.x * v1InvDepth) + weights[2] * (v2.uv.x * v2InvDepth),
+					weights[0] * (v0.uv.y * v0InvDepth) + weights[1] * (v1.uv.y * v1InvDepth) + weights[2] * (v2.uv.y * v2InvDepth) };
+				pixelShade.uv *= wInterpolated;
+
+				//normal
+				new (&pixelShade.n) FVector3{
+						weights[0] * (v0.n.x * v0InvDepth) + weights[1] * (v1.n.x * v1InvDepth) + weights[2] * (v2.n.x * v2InvDepth),
+						weights[0] * (v0.n.y * v0InvDepth) + weights[1] * (v1.n.y * v1InvDepth) + weights[2] * (v2.n.y * v2InvDepth),
+						weights[0] * (v0.n.z * v0InvDepth) + weights[1] * (v1.n.z * v1InvDepth) + weights[2] * (v2.n.z * v2InvDepth) };
+				pixelShade.n *= wInterpolated;
+
+				//tangent
+				new (&pixelShade.tan) FVector3{
+					weights[0] * (v0.tan.x * v0InvDepth) + weights[1] * (v1.tan.x * v1InvDepth) + weights[2] * (v2.tan.x * v2InvDepth),
+					weights[0] * (v0.tan.y * v0InvDepth) + weights[1] * (v1.tan.y * v1InvDepth) + weights[2] * (v2.tan.y * v2InvDepth),
+					weights[0] * (v0.tan.z * v0InvDepth) + weights[1] * (v1.tan.z * v1InvDepth) + weights[2] * (v2.tan.z * v2InvDepth) };
+
+				//view direction
+				new (&pixelShade.vd) FVector3{
+					weights[0] * (v0.vd.x * v0InvDepth) + weights[1] * (v1.vd.x * v1InvDepth) + weights[2] * (v2.vd.x * v2InvDepth),
+					weights[0] * (v0.vd.y * v0InvDepth) + weights[1] * (v1.vd.y * v1InvDepth) + weights[2] * (v2.vd.y * v2InvDepth),
+					weights[0] * (v0.vd.z * v0InvDepth) + weights[1] * (v1.vd.z * v1InvDepth) + weights[2] * (v2.vd.z * v2InvDepth) };
+				Normalize(pixelShade.vd);
+
+				//colour
+				const RGBColor interpolatedColour{
+					weights[0] * v0.c.r + weights[1] * v1.c.r + weights[2] * v2.c.r,
+					weights[0] * v0.c.g + weights[1] * v1.c.g + weights[2] * v2.c.g,
+					weights[0] * v0.c.b + weights[1] * v1.c.b + weights[2] * v2.c.b };
+				pixelShade.colour = GetRGBA_SDL(interpolatedColour).colour;
+
+				//store textures
+				pixelShade.textures = textures;
+
+				//multiplying z value by a INT_MAX because atomicCAS only accepts ints
+				const int scaledZ = zInterpolated * INT_MAX;
+
+				//Perform atomic depth test
+				bool isDone = false;
+				do
+				{
+					isDone = (atomicCAS(&dev_Mutex[pixelIdx], 0, 1) == 0);
+					if (isDone)
+					{
+						//critical section
+						if (scaledZ < dev_DepthBuffer[pixelIdx])
+						{
+							//update depthbuffer
+							dev_DepthBuffer[pixelIdx] = scaledZ;
+							//modify pixelshadebuffer
+							dev_PixelShadeBuffer[pixelIdx] = pixelShade;
+						}
+						dev_Mutex[pixelIdx] = 0;
+						//end of critical section
+					}
+				} while (!isDone);
+			}
+		}
+	}
+}
+*/
+
 GPU_KERNEL
 void RasterizerKernel(const TriangleIdx* __restrict__ const dev_Triangles, const OVertex* __restrict__ const dev_OVertices, const size_t numTriangles,
-	PixelShade* dev_PixelShadeBuffer, int* dev_DepthBuffer, int* dev_Mutex, GPUTextures textures, 
+	PixelShade* dev_PixelShadeBuffer, int* dev_DepthBuffer, int* dev_Mutex, GPUTextures textures,
 	const FVector3 camFwd, const CullingMode cm, const unsigned int width, const unsigned int height)
 {
 	//TODO: use shared memory, then coalesced copy
@@ -1062,154 +1254,167 @@ void RasterizerKernel(const TriangleIdx* __restrict__ const dev_Triangles, const
 	//https://stackoverflow.com/questions/6563261/how-to-use-coalesced-memory-access
 
 	//Every thread processes 1 single triangle for now
-	if (triangleIndex < numTriangles)
+	if (!(triangleIndex < numTriangles))
+		return;
+
+	const TriangleIdx triangleIdx = dev_Triangles[triangleIndex];
+
+	//if (triangleIdx.isCulled)
+	//	return;
+
+	//constexpr size_t a = sizeof(OVertex) * 3;
+	//constexpr size_t b = sizeof(FPoint4) * 3;
+
+	OVertex v0 = dev_OVertices[triangleIdx.idx0];
+	OVertex v1 = dev_OVertices[triangleIdx.idx1];
+	OVertex v2 = dev_OVertices[triangleIdx.idx2];
+
+	bool isDoubleSidedRendering = false;
+
+	//is triangle visible according to cullingmode?
+	if (cm == CullingMode::BackFace)
 	{
-		TriangleIdx triangleIdx = dev_Triangles[triangleIndex];
-
-		//if (triangleIdx.isCulled)
-		//	return;
-
-		const OVertex v0 = dev_OVertices[triangleIdx.idx0];
-		const OVertex v1 = dev_OVertices[triangleIdx.idx1];
-		const OVertex v2 = dev_OVertices[triangleIdx.idx2];
-
-		//is triangle visible according to cullingmode?
-		if (cm == CullingMode::BackFace)
+		const FVector3 faceNormal = GetNormalized(Cross(FVector3{ v1.p - v0.p }, FVector3{ v2.p - v0.p }));
+		const float cullingValue = Dot(camFwd, faceNormal);
+		if (cullingValue <= 0.f)
 		{
-			const FVector3 faceNormal = GetNormalized(Cross(FVector3{ v1.p - v0.p }, FVector3{ v2.p - v0.p }));
-			const float cullingValue = Dot(camFwd, faceNormal);
-			//is back facing triangle?
-			if (cullingValue <= 0.f)
+			if (isDoubleSidedRendering)
+			{
+				OVertex origV1 = v1;
+				v1 = v2;
+				v2 = origV1;
+			}
+			else
 			{
 				return; //cull triangle
 			}
 		}
-		else if (cm == CullingMode::FrontFace)
+	}
+	else if (cm == CullingMode::FrontFace)
+	{
+		const FVector3 faceNormal = GetNormalized(Cross(FVector3{ v1.p - v0.p }, FVector3{ v2.p - v0.p }));
+		const float cullingValue = Dot(camFwd, faceNormal);
+		if (cullingValue >= 0.f)
 		{
-			//TODO: render entire object but invert all triangles
-			//const OVertex& v0Inv = NDCVertices[indices[idx]];
-			//const OVertex& v1Inv = NDCVertices[indices[idx - 1]];
-			//const OVertex& v2Inv = NDCVertices[indices[idx - 2]];
-
-			const FVector3 faceNormal = GetNormalized(Cross(FVector3{ v1.p - v0.p }, FVector3{ v2.p - v0.p }));
-			const float cullingValue = Dot(camFwd, faceNormal);
-			////is front facing triangle?
-			if (cullingValue >= 0.f)
+			if (isDoubleSidedRendering)
 			{
-				return; // cull triangle
+				OVertex origV1 = v1;
+				v1 = v2;
+				v2 = origV1;
+			}
+			else
+			{
+				return; //cull triangle
 			}
 		}
-		//else //if (cm == CullingMode::NoCulling)
-		//{}
+	}
+	//else if (cm == CullingMode::NoCulling)
+	//{
+	//}
 
-		RasterTriangle rasterTriangle;
-		rasterTriangle.v0 = v0.p;
-		rasterTriangle.v1 = v1.p;
-		rasterTriangle.v2 = v2.p;
+	//RasterTriangle rasterTriangle;
+	//rasterTriangle.v0 = v0.p;
+	//rasterTriangle.v1 = v1.p;
+	//rasterTriangle.v2 = v2.p;
 
-		if (!IsTriangleVisible(rasterTriangle))
+	if (!IsTriangleVisible(v0.p, v1.p, v2.p))
+	{
+		return;
+	}
+
+	NDCToScreenSpace(v0.p, v1.p, v2.p, width, height);
+	const BoundingBox bb = GetBoundingBox(v0.p, v1.p, v2.p, width, height);
+	//Rasterize Screenspace triangle
+
+	const float v0InvDepth = 1.f / v0.p.w;
+	const float v1InvDepth = 1.f / v1.p.w;
+	const float v2InvDepth = 1.f / v2.p.w;
+
+	//TODO: 1 thread per triangle is bad for performance, use binning
+	//Loop over all pixels in bounding box
+	for (unsigned short y = bb.yMin; y < bb.yMax; ++y)
+	{
+		for (unsigned short x = bb.xMin; x < bb.xMax; ++x)
 		{
-			return;
-		}
-
-		NDCToScreenSpace(rasterTriangle, width, height);
-		const BoundingBox bb = GetBoundingBox(rasterTriangle, width, height);
-		//Rasterize Screenspace triangle
-
-		const float v0InvDepth = 1.f / rasterTriangle.v0.w;
-		const float v1InvDepth = 1.f / rasterTriangle.v1.w;
-		const float v2InvDepth = 1.f / rasterTriangle.v2.w;
-		
-		//TODO: 1 thread per triangle is bad for performance, use binning
-		//Loop over all pixels in bounding box
-		for (unsigned short y = bb.yMin; y < bb.yMax; ++y)
-		{
-			for (unsigned short x = bb.xMin; x < bb.xMax; ++x)
+			const FPoint2 pixel{ float(x), float(y) };
+			float weights[3];
+			if (IsPixelInTriangle(v0.p, v1.p, v2.p, pixel, weights))
 			{
-				const FPoint2 pixel{ float(x), float(y) };
-				float weights[3];
-				if (IsPixelInTriangle(rasterTriangle, pixel, weights))
+				const float totalArea = abs(Cross(v0.p.xy - v1.p.xy, v0.p.xy - v2.p.xy));
+				weights[0] /= totalArea;
+				weights[1] /= totalArea;
+				weights[2] /= totalArea;
+
+				const size_t pixelIdx = x + y * width;
+				const float zInterpolated = (weights[0] * v0.p.z) + (weights[1] * v1.p.z) + (weights[2] * v2.p.z);
+
+				//peform early depth test
+				if (zInterpolated < 0 || zInterpolated > 1.f)
+					continue;
+
+				const float wInterpolated = 1.f / (v0InvDepth * weights[0] + v1InvDepth * weights[1] + v2InvDepth * weights[2]);
+
+				//create pixelshade object (== fragment)
+				PixelShade pixelShade;
+
+				//depthbuffer visualisation
+				pixelShade.zInterpolated = zInterpolated;
+				pixelShade.wInterpolated = wInterpolated;
+
+				//uv
+				pixelShade.uv.x = weights[0] * (v0.uv.x * v0InvDepth) + weights[1] * (v1.uv.x * v1InvDepth) + weights[2] * (v2.uv.x * v2InvDepth);
+				pixelShade.uv.y = weights[0] * (v0.uv.y * v0InvDepth) + weights[1] * (v1.uv.y * v1InvDepth) + weights[2] * (v2.uv.y * v2InvDepth);
+				pixelShade.uv *= wInterpolated;
+
+				//normal
+				pixelShade.n.x = weights[0] * (v0.n.x * v0InvDepth) + weights[1] * (v1.n.x * v1InvDepth) + weights[2] * (v2.n.x * v2InvDepth);
+				pixelShade.n.y = weights[0] * (v0.n.y * v0InvDepth) + weights[1] * (v1.n.y * v1InvDepth) + weights[2] * (v2.n.y * v2InvDepth);
+				pixelShade.n.z = weights[0] * (v0.n.z * v0InvDepth) + weights[1] * (v1.n.z * v1InvDepth) + weights[2] * (v2.n.z * v2InvDepth);
+				pixelShade.n *= wInterpolated;
+
+				//tangent
+				pixelShade.tan.x = weights[0] * (v0.tan.x * v0InvDepth) + weights[1] * (v1.tan.x * v1InvDepth) + weights[2] * (v2.tan.x * v2InvDepth);
+				pixelShade.tan.y = weights[0] * (v0.tan.y * v0InvDepth) + weights[1] * (v1.tan.y * v1InvDepth) + weights[2] * (v2.tan.y * v2InvDepth);
+				pixelShade.tan.z = weights[0] * (v0.tan.z * v0InvDepth) + weights[1] * (v1.tan.z * v1InvDepth) + weights[2] * (v2.tan.z * v2InvDepth);
+
+				//view direction
+				pixelShade.vd.x = weights[0] * (v0.vd.x * v0InvDepth) + weights[1] * (v1.vd.x * v1InvDepth) + weights[2] * (v2.vd.x * v2InvDepth);
+				pixelShade.vd.y = weights[0] * (v0.vd.y * v0InvDepth) + weights[1] * (v1.vd.y * v1InvDepth) + weights[2] * (v2.vd.y * v2InvDepth);
+				pixelShade.vd.z = weights[0] * (v0.vd.z * v0InvDepth) + weights[1] * (v1.vd.z * v1InvDepth) + weights[2] * (v2.vd.z * v2InvDepth);
+				Normalize(pixelShade.vd);
+
+				//colour
+				const RGBColor interpolatedColour{
+					weights[0] * v0.c.r + weights[1] * v1.c.r + weights[2] * v2.c.r,
+					weights[0] * v0.c.g + weights[1] * v1.c.g + weights[2] * v2.c.g,
+					weights[0] * v0.c.b + weights[1] * v1.c.b + weights[2] * v2.c.b };
+				pixelShade.colour = GetRGBA_SDL(interpolatedColour).colour;
+
+				//store textures
+				pixelShade.textures = textures;
+
+				//multiplying z value by a INT_MAX because atomicCAS only accepts ints
+				const int scaledZ = zInterpolated * INT_MAX;
+				
+				//Perform atomic depth test
+				bool isDone = false;
+				do
 				{
-					const float totalArea = abs(Cross(rasterTriangle.v0.xy - rasterTriangle.v1.xy, rasterTriangle.v0.xy - rasterTriangle.v2.xy));
-					weights[0] /= totalArea;
-					weights[1] /= totalArea;
-					weights[2] /= totalArea;
-
-					const size_t pixelIdx = x + y * width;
-					const float zInterpolated = (weights[0] * v0.p.z) + (weights[1] * v1.p.z) + (weights[2] * v2.p.z);
-
-					//peform early depth test
-					if (zInterpolated < 0 || zInterpolated > 1.f)
-						continue;
-
-					const float wInterpolated = 1.f / (v0InvDepth * weights[0] + v1InvDepth * weights[1] + v2InvDepth * weights[2]);
-
-					//create pixelshade object (== fragment)
-					PixelShade pixelShade;
-
-					//depthbuffer visualisation
-					pixelShade.zInterpolated = zInterpolated;
-					pixelShade.wInterpolated = wInterpolated;
-
-					//uv
-					new (&pixelShade.uv) FVector2{
-						weights[0] * (v0.uv.x * v0InvDepth) + weights[1] * (v1.uv.x * v1InvDepth) + weights[2] * (v2.uv.x * v2InvDepth),
-						weights[0] * (v0.uv.y * v0InvDepth) + weights[1] * (v1.uv.y * v1InvDepth) + weights[2] * (v2.uv.y * v2InvDepth) };
-					pixelShade.uv *= wInterpolated;
-
-					//normal
-					new (&pixelShade.n) FVector3{
-							weights[0] * (v0.n.x * v0InvDepth) + weights[1] * (v1.n.x * v1InvDepth) + weights[2] * (v2.n.x * v2InvDepth),
-							weights[0] * (v0.n.y * v0InvDepth) + weights[1] * (v1.n.y * v1InvDepth) + weights[2] * (v2.n.y * v2InvDepth),
-							weights[0] * (v0.n.z * v0InvDepth) + weights[1] * (v1.n.z * v1InvDepth) + weights[2] * (v2.n.z * v2InvDepth) };
-					pixelShade.n *= wInterpolated;
-
-					//tangent
-					new (&pixelShade.tan) FVector3{
-						weights[0] * (v0.tan.x * v0InvDepth) + weights[1] * (v1.tan.x * v1InvDepth) + weights[2] * (v2.tan.x * v2InvDepth),
-						weights[0] * (v0.tan.y * v0InvDepth) + weights[1] * (v1.tan.y * v1InvDepth) + weights[2] * (v2.tan.y * v2InvDepth),
-						weights[0] * (v0.tan.z * v0InvDepth) + weights[1] * (v1.tan.z * v1InvDepth) + weights[2] * (v2.tan.z * v2InvDepth) };
-
-					//view direction
-					new (&pixelShade.vd) FVector3{
-						weights[0] * (v0.vd.x * v0InvDepth) + weights[1] * (v1.vd.x * v1InvDepth) + weights[2] * (v2.vd.x * v2InvDepth),
-						weights[0] * (v0.vd.y * v0InvDepth) + weights[1] * (v1.vd.y * v1InvDepth) + weights[2] * (v2.vd.y * v2InvDepth),
-						weights[0] * (v0.vd.z * v0InvDepth) + weights[1] * (v1.vd.z * v1InvDepth) + weights[2] * (v2.vd.z * v2InvDepth) };
-					Normalize(pixelShade.vd);
-
-					//colour
-					const RGBColor interpolatedColour{
-						weights[0] * v0.c.r + weights[1] * v1.c.r + weights[2] * v2.c.r,
-						weights[0] * v0.c.g + weights[1] * v1.c.g + weights[2] * v2.c.g,
-						weights[0] * v0.c.b + weights[1] * v1.c.b + weights[2] * v2.c.b };
-					pixelShade.colour = GetRGBA_SDL(interpolatedColour).colour;
-
-					//store textures
-					pixelShade.textures = textures;
-
-					//multiplying z value by a INT_MAX because atomicCAS only accepts ints
-					const int scaledZ = zInterpolated * INT_MAX;
-
-					//Perform atomic depth test
-					bool isDone = false;
-					do
+					isDone = (atomicCAS(&dev_Mutex[pixelIdx], 0, 1) == 0);
+					if (isDone)
 					{
-						isDone = (atomicCAS(&dev_Mutex[pixelIdx], 0, 1) == 0);
-						if (isDone)
+						//critical section
+						if (scaledZ < dev_DepthBuffer[pixelIdx])
 						{
-							//critical section
-							if (scaledZ < dev_DepthBuffer[pixelIdx])
-							{
-								//update depthbuffer
-								dev_DepthBuffer[pixelIdx] = scaledZ;
-								//modify pixelshadebuffer
-								dev_PixelShadeBuffer[pixelIdx] = pixelShade;
-							}
-							dev_Mutex[pixelIdx] = 0;
-							//end of critical section
+							//update depthbuffer
+							dev_DepthBuffer[pixelIdx] = scaledZ;
+							//modify pixelshadebuffer
+							dev_PixelShadeBuffer[pixelIdx] = pixelShade;
 						}
-					} while (!isDone);
-				}
+						dev_Mutex[pixelIdx] = 0;
+						//end of critical section
+					}
+				} while (!isDone);
 			}
 		}
 	}
@@ -1293,19 +1498,34 @@ void DrawTextureGlobalKernel(unsigned int* dev_FrameBuffer, GPUTexture texture, 
 CPU_CALLABLE
 void CUDARenderer::Clear(const RGBColor& colour)
 {
-	const dim3 numThreadsPerBlock{ 16, 16 };
-	const dim3 numBlocks{ m_WindowHelper.Width / numThreadsPerBlock.x, m_WindowHelper.Height / numThreadsPerBlock.y };
-	const RGBA rgba{ colour };
+	{
+		const dim3 numThreadsPerBlock{ 16, 16 };
+		const dim3 numBlocks{ m_WindowHelper.Width / numThreadsPerBlock.x, m_WindowHelper.Height / numThreadsPerBlock.y };
+		const int depthBufferResetValue = INT_MAX;
+		ResetDepthBufferKernel << <numBlocks, numThreadsPerBlock >> >
+			(dev_DepthBuffer, depthBufferResetValue, m_WindowHelper.Width, m_WindowHelper.Height);
+	}
 
-	ResetDepthBufferKernel<<<numBlocks, numThreadsPerBlock>>>
-		(dev_DepthBuffer, m_WindowHelper.Width, m_WindowHelper.Height);
-	//ClearFrameBufferKernel<<<numBlocks, numThreadsPerBlock>>>
-	//	(dev_FrameBuffer, m_WindowHelper.Width, m_WindowHelper.Height, rgba.colour);
-	//ClearPixelShadeBufferKernel<<<numBlocks, numThreadsPerBlock>>>
-	//	(dev_PixelShadeBuffer, m_WindowHelper.Width, m_WindowHelper.Height);
+	{
+		//const RGBA rgba{ colour };
+		//ClearFrameBufferKernel<<<numBlocks, numThreadsPerBlock>>>
+		//	(dev_FrameBuffer, m_WindowHelper.Width, m_WindowHelper.Height, rgba.colour);
+	}
 
-	CheckErrorCuda(cudaMemset(dev_Mutex, 0, m_WindowHelper.Width * m_WindowHelper.Height * sizeof(int)));
-	CheckErrorCuda(cudaMemset(dev_PixelShadeBuffer, 0, m_WindowHelper.Width * m_WindowHelper.Height * sizeof(PixelShade)));
+	{
+		const size_t sizeInWords = m_WindowHelper.Width * m_WindowHelper.Height * (sizeof(PixelShade) / 4);
+		const unsigned int numThreadsPerBlock = 1024;
+		const unsigned int numBlocks = (unsigned int)(sizeInWords + numThreadsPerBlock - 1) / numThreadsPerBlock;
+		ClearPixelShadeBufferKernel<<<numBlocks, numThreadsPerBlock>>>
+			(dev_PixelShadeBuffer, sizeInWords);
+	}
+
+	{
+		const unsigned int size = m_WindowHelper.Width * m_WindowHelper.Height * sizeof(int);
+		//CheckErrorCuda(cudaMemset(dev_FrameBuffer, UCHAR_MAX, size));
+		CheckErrorCuda(cudaMemsetAsync(dev_Mutex, 0, size));
+		//CheckErrorCuda(cudaMemsetAsync(dev_PixelShadeBuffer, 0, m_WindowHelper.Width * m_WindowHelper.Height * sizeof(PixelShade)));
+	}
 }
 
 CPU_CALLABLE
@@ -1329,7 +1549,13 @@ void CUDARenderer::TriangleAssembler(MeshIdentifier& mi)
 	const PrimitiveTopology topology = mi.pMesh->GetTopology();
 
 	const unsigned int numThreadsPerBlock = 256;
-	const unsigned int numBlocks = ((unsigned int)numIndices + numThreadsPerBlock - 1) / numThreadsPerBlock;
+	unsigned int numBlocks = ((unsigned int)numIndices + numThreadsPerBlock - 1) / numThreadsPerBlock;;
+	if (topology == PrimitiveTopology::TriangleList)
+		numBlocks = ((unsigned int)numIndices / 3 + numThreadsPerBlock - 1) / numThreadsPerBlock;
+	//OCCUPANCY does strange things (tiny performance loss on current setup)
+	//For TriangleStrips it would waste 2 threads at max, not too big of an issue here
+	//else if (topology == PrimitiveTopology::TriangleStrip)
+		//numBlocks = ((unsigned int)numIndices - 2 + numThreadsPerBlock - 1) / numThreadsPerBlock;
 	TriangleAssemblerKernel<<<numBlocks, numThreadsPerBlock>>>(
 		dev_Triangles[mi.Idx], dev_IndexBuffer[mi.Idx], numIndices, 
 		dev_OVertexBuffer[mi.Idx], topology);
@@ -1465,7 +1691,7 @@ void CUDARenderer::LoadScene(const SceneGraph* pSceneGraph)
 	}
 	m_TotalNumTriangles = 0;
 	FreeMeshBuffers();
-	const std::vector<Mesh*>& pMeshes = pSceneGraph->GetObjects();
+	const std::vector<Mesh*>& pMeshes = pSceneGraph->GetMeshes();
 	for (const Mesh* pMesh : pMeshes)
 	{
 		MeshIdentifier mi{};
@@ -1478,6 +1704,7 @@ void CUDARenderer::LoadScene(const SceneGraph* pSceneGraph)
 		const size_t numVertices = vertexBuffer.size();
 		const size_t numIndices = indexBuffer.size();
 		const PrimitiveTopology topology = pMesh->GetTopology();
+		const short vertexType = pMesh->GetVertexType();
 		const FMatrix4& worldMat = pMesh->GetWorldMatrix();
 
 		switch (topology)
@@ -1525,7 +1752,7 @@ void CUDARenderer::Render(const SceneManager& sm, const Camera* pCamera)
 
 	//SceneGraph Data
 	const SceneGraph* pSceneGraph = sm.GetSceneGraph();
-	const std::vector<Mesh*>& pObjects = pSceneGraph->GetObjects();
+	const std::vector<Mesh*>& pObjects = pSceneGraph->GetMeshes();
 
 #ifdef BENCHMARK
 	float vertexShadingMs{};
@@ -1544,6 +1771,8 @@ void CUDARenderer::Render(const SceneManager& sm, const Camera* pCamera)
 		//Update global memory for mesh's worldmatrix
 		//UpdateWorldMatrixDataAsync(worldMat);
 		//cudaDeviceSynchronize();
+
+		//TODO: can async copy (parts of) mesh buffers H2D
 
 #ifdef BENCHMARK
 		StartTimer();
@@ -1578,10 +1807,10 @@ void CUDARenderer::Render(const SceneManager& sm, const Camera* pCamera)
 #ifdef BENCHMARK
 		StartTimer();
 #endif
-		//---STAGE 3---: Peform  Pixel Shading
+		//---STAGE 4---: Peform  Pixel Shading
 		PixelShader(sampleState, isDepthColour);
 		CheckErrorCuda(cudaDeviceSynchronize());
-		//---END STAGE 3---
+		//---END STAGE 4---
 #ifdef BENCHMARK
 		float PixelShadingMs = StopTimer();
 		std::cout << "VS: " << vertexShadingMs << "ms | TA: " << TriangleAssemblingMs << "ms | Raster: " << RasterizationMs << "ms | PS: " << PixelShadingMs << "ms\r";
@@ -1623,8 +1852,9 @@ float CUDARenderer::StopTimer()
 CPU_CALLABLE
 void CUDARenderer::WarmUp()
 {
-	ResetDepthBufferKernel<<<0, 0>>>(nullptr, m_WindowHelper.Width, m_WindowHelper.Height);
+	ResetDepthBufferKernel<<<0, 0>>>(nullptr, 0, m_WindowHelper.Width, m_WindowHelper.Height);
 	ClearFrameBufferKernel<<<0, 0>>>(nullptr, m_WindowHelper.Width, m_WindowHelper.Height, 0);
+	ClearPixelShadeBufferKernel<<<0, 0>>>(nullptr, 0);
 	VertexShaderKernel<<<0, 0>>>(nullptr, nullptr, 0, {}, {}, {});
 	TriangleAssemblerKernel<<<0, 0>>>(nullptr, nullptr, 0, nullptr, (PrimitiveTopology)0);
 	RasterizerKernel<<<0, 0>>>(nullptr, nullptr, 0, nullptr, nullptr, nullptr, {}, {}, (CullingMode)0, m_WindowHelper.Width, m_WindowHelper.Height);

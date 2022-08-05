@@ -1,5 +1,6 @@
 #include "PCH.h"
 #include "ObjParser.h"
+#include "VertexType.h"
 #include <iostream>
 #include <sstream>
 
@@ -19,7 +20,7 @@ ObjParser::~ObjParser()
 	CloseFile();
 }
 
-void ObjParser::ReadFromObjFile(std::vector<IVertex>& vertexBuffer, std::vector<unsigned int>& indexBuffer)
+void ObjParser::ReadFromObjFile(std::vector<IVertex>& vertexBuffer, std::vector<unsigned int>& indexBuffer, short& vertexType)
 {
 	//Clear all buffers
 	ClearData();
@@ -70,7 +71,7 @@ void ObjParser::ReadFromObjFile(std::vector<IVertex>& vertexBuffer, std::vector<
 		// create vertices, filled with positions, normals, UV coords (and colours?) all at once (store them all in vertex)
 		vertexBuffer.clear();
 		indexBuffer.clear();
-		AssignVertices(vertexBuffer, indexBuffer);
+		AssignVertices(vertexBuffer, indexBuffer, vertexType);
 
 		std::cout << "\n!All done!\n";
 	}
@@ -176,14 +177,17 @@ void ObjParser::GetFirstSecondThird(std::stringstream& fst, std::string& first, 
 	// third now contains 3.000
 }
 
-void ObjParser::AssignVertices(std::vector<IVertex>& vertexBuffer, std::vector<unsigned int>& indexBuffer)
+void ObjParser::AssignVertices(std::vector<IVertex>& vertexBuffer, std::vector<unsigned int>& indexBuffer, short& vertexType)
 {
 	vertexBuffer.clear();
 	indexBuffer.clear();
 	vertexBuffer.reserve(m_Positions.size());
 
-	bool isUVs{ static_cast<bool>(m_UVs.size()) };
-	bool isNormals{ static_cast<bool>(m_Normals.size()) };
+	const bool isUVs{ static_cast<bool>(m_UVs.size()) };
+	const bool isNormals{ static_cast<bool>(m_Normals.size()) };
+
+	vertexType |= isUVs * (int)VertexType::Uv;
+	vertexType |= isNormals * (int)VertexType::Norm;
 
 	unsigned int indexCounter{};
 	std::vector<Indexed> blackList{};
@@ -218,8 +222,15 @@ void ObjParser::AssignVertices(std::vector<IVertex>& vertexBuffer, std::vector<u
 
 			if (isUnique)
 			{
-				vertexBuffer.push_back(IVertex{ m_Positions[m_PositionIndices[i]], m_UVs[m_UVIndices[i]], m_Normals[m_NormalIndices[i]] });
-				index.v = m_PositionIndices[i]; index.vt = m_UVIndices[i]; index.vn = m_NormalIndices[i]; index.idx = indexCounter;
+				IVertex v;
+				v.p = m_Positions[m_PositionIndices[i]];
+				v.uv = m_UVs[m_UVIndices[i]];
+				v.n = m_Normals[m_NormalIndices[i]];
+				vertexBuffer.push_back(v);
+				index.v = m_PositionIndices[i];
+				index.vt = m_UVIndices[i];
+				index.vn = m_NormalIndices[i];
+				index.idx = indexCounter;
 				blackList.push_back(index);
 				++indexCounter;
 			}
@@ -254,6 +265,7 @@ void ObjParser::AssignVertices(std::vector<IVertex>& vertexBuffer, std::vector<u
 		{
 			vertex.tan = GetNormalized(Reject(vertex.tan, vertex.n));
 		}
+		vertexType |= (int)VertexType::Tan;
 	}
 	else if (isUVs && !isNormals)
 	{
@@ -281,8 +293,15 @@ void ObjParser::AssignVertices(std::vector<IVertex>& vertexBuffer, std::vector<u
 
 			if (isUnique)
 			{
-				vertexBuffer.push_back(IVertex{ m_Positions[m_PositionIndices[i]], m_UVs[m_UVIndices[i]], m_Normals[m_NormalIndices[i]] });
-				index.v = m_PositionIndices[i]; index.vt = m_UVIndices[i]; index.vn = m_NormalIndices[i]; index.idx = indexCounter;
+				IVertex v;
+				v.p = m_Positions[m_PositionIndices[i]];
+				v.uv = m_UVs[m_UVIndices[i]];
+				v.n = m_Normals[m_NormalIndices[i]];
+				vertexBuffer.push_back(v);
+				index.v = m_PositionIndices[i];
+				index.vt = m_UVIndices[i];
+				index.vn = m_NormalIndices[i];
+				index.idx = indexCounter;
 				blackList.push_back(index);
 				++indexCounter;
 			}
@@ -309,8 +328,12 @@ void ObjParser::AssignVertices(std::vector<IVertex>& vertexBuffer, std::vector<u
 
 			if (isUnique)
 			{
-				vertexBuffer.push_back(IVertex{ m_Positions[m_PositionIndices[i]], FVector2{} });
-				index.v = m_PositionIndices[i]; index.idx = indexCounter;
+				IVertex v;
+				v.p = m_Positions[m_PositionIndices[i]];
+				v.uv = FVector2{};
+				vertexBuffer.push_back(v);
+				index.v = m_PositionIndices[i];
+				index.idx = indexCounter;
 				blackList.push_back(index);
 				++indexCounter;
 			}

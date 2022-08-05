@@ -6,19 +6,18 @@ class Light;
 class SceneGraph
 {
 public:
-	SceneGraph();
-	explicit SceneGraph(const std::vector<Mesh*>& pMeshes);
-	~SceneGraph();
+	SceneGraph() = default;
+	virtual ~SceneGraph();
 
-	Mesh* AddMesh(Mesh* pMesh);
+	void AddMesh(Mesh* pMesh);
 	Light* AddLight(Light* pLight);
 
-	const std::vector<Mesh*>& GetObjects() const;
-	const std::vector<Light*>& GetLights() const;
+	const std::vector<Mesh*>& GetMeshes() const { return m_pMeshes; }
+	const std::vector<Light*>& GetLights() const { return m_pLights; }
 
 	void Update(float elapsedSec);
 
-private:
+protected:
 	std::vector<Mesh*> m_pMeshes;
 	std::vector<Light*> m_pLights;
 };

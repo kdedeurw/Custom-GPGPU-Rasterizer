@@ -73,6 +73,9 @@
     <ClCompile Include="ERenderer.cpp">
       <Filter>Renderer</Filter>
     </ClCompile>
+    <ClCompile Include="CUDABenchMarker.cpp">
+      <Filter>Helpers\CUDA</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="PCH.h" />
@@ -184,9 +187,6 @@
     <ClInclude Include="GPUTextureSampler.cuh">
       <Filter>Helpers\CUDA</Filter>
     </ClInclude>
-    <ClInclude Include="PrimitiveTopology.h">
-      <Filter>Renderer</Filter>
-    </ClInclude>
     <ClInclude Include="Textures.h">
       <Filter>Renderer\Shading</Filter>
     </ClInclude>
@@ -199,8 +199,18 @@
     <ClInclude Include="DEFINES.h">
       <Filter>Helpers</Filter>
     </ClInclude>
+    <ClInclude Include="CUDABenchMarker.h">
+      <Filter>Helpers\CUDA</Filter>
+    </ClInclude>
+    <ClInclude Include="PrimitiveTopology.h">
+      <Filter>Renderer</Filter>
+    </ClInclude>
+    <ClInclude Include="VertexType.h">
+      <Filter>Renderer</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <None Include="CustomCUDARasterizer.props" />
+    <None Include="cpp.hint" />
   </ItemGroup>
 </Project>
