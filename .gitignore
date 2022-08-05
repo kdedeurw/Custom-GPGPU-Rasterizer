@@ -14,3 +14,4 @@
 #Build Output Folder
 bin
 TempFiles
+*.obj
