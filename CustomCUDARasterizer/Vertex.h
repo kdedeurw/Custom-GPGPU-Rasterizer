@@ -138,10 +138,48 @@ struct IVertex : public IVertex_Base
 		: IVertex{ other.p, other.uv, other.n, other.c }
 	{}
 
-	RGBColor c; // colour
 	FVector2 uv; // uv coordinate
 	FVector3 n; // normal
 	FVector3 tan; // tangent
+	RGBColor c; // colour
+};
+
+struct IVertex_Point4
+{
+	BOTH_CALLABLE IVertex_Point4() //Purposely uninitialized
+	{}
+	BOTH_CALLABLE IVertex_Point4(const FPoint4& position,
+		const RGBColor& colour = RGBColor{ 1.f,1.f,1.f })
+		: p{ position }
+		, c{ colour }
+	{}
+	BOTH_CALLABLE IVertex_Point4(const FPoint3& position,
+		const RGBColor& colour = RGBColor{ 1.f,1.f,1.f })
+		: IVertex_Point4{ FPoint4{ position }, colour }
+	{}
+	BOTH_CALLABLE IVertex_Point4(const FPoint4& position,
+		const FVector2& uvcoordinates,
+		const FVector3& normal = FVector3{ 1.f,1.f,1.f },
+		const RGBColor& colour = RGBColor{ 1.f,1.f,1.f })
+		: p{ position }
+		, uv{ uvcoordinates }
+		, c{ colour }
+		, n{ normal }
+	{}
+	BOTH_CALLABLE IVertex_Point4(const FPoint3& position,
+		const FVector2& uvcoordinates,
+		const FVector3& normal = FVector3{ 1.f,1.f,1.f },
+		const RGBColor& colour = RGBColor{ 1.f,1.f,1.f })
+		: IVertex_Point4{ FPoint4{ position }, uvcoordinates, normal, colour }
+	{}
+	BOTH_CALLABLE IVertex_Point4(const IVertex& other) // copy constructor => basically shallow copy
+		: IVertex_Point4{ other.p, other.uv, other.n, other.c }
+	{}
+	FPoint4 p; // position
+	FVector2 uv; // uv coordinate
+	FVector3 n; // normal
+	FVector3 tan; // tangent
+	RGBColor c; // colour
 };
 
 struct OVertex_Base
@@ -281,9 +319,9 @@ struct OVertex : public OVertex_Base
 		: OVertex{ other.p, other.uv, other.n, other.tan, other.c, other.vd }
 	{}
 
-	RGBColor c; // colour
 	FVector2 uv; // uv coordinate
 	FVector3 n; // normal
 	FVector3 tan; // tangent
 	FVector3 vd;  // view direction
+	RGBColor c; // colour
 };

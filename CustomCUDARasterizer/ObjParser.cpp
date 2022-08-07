@@ -20,13 +20,15 @@ ObjParser::~ObjParser()
 	CloseFile();
 }
 
-void ObjParser::ReadFromObjFile(std::vector<IVertex>& vertexBuffer, std::vector<unsigned int>& indexBuffer, short& vertexType)
+void ObjParser::ParseData()
 {
 	//Clear all buffers
 	ClearData();
 
 	if (m_ReadFile.is_open())
 	{
+		std::cout << "\n!Parsing .obj file!\n";
+
 		std::string line{};
 		size_t lineCount{};
 		while (std::getline(m_ReadFile, line))
@@ -66,16 +68,191 @@ void ObjParser::ReadFromObjFile(std::vector<IVertex>& vertexBuffer, std::vector<
 		//AssignUVs(); // create std::vector<FVector3> filled with UV coords (no need to store these separately)
 		//AssignNormals(); // create std::vector<FVector3> filled with normals (no need to store these separately)
 
-		std::cout << "\n!Done parsing, creating vertices based on parsed info now!\n";
-
-		// create vertices, filled with positions, normals, UV coords (and colours?) all at once (store them all in vertex)
-		vertexBuffer.clear();
-		indexBuffer.clear();
-		AssignVertices(vertexBuffer, indexBuffer, vertexType);
-
-		std::cout << "\n!All done!\n";
+		std::cout << "\n!Done parsing!\n";
 	}
-	else std::cout << "\n!Unable to open file!\n";
+	else
+	{
+		std::cout << "\n!Unable to open file!\n";
+	}
+}
+
+void ObjParser::ReadFromObjFile(std::vector<IVertex>& vertexBuffer, std::vector<unsigned int>& indexBuffer, short& vertexType)
+{
+	ParseData();
+
+	std::cout << "\n!Creating vertices based on parsed info!\n";
+	// create vertices, filled with positions, normals, UV coords (and colours?) all at once (store them all in vertex)
+	AssignVertices(vertexBuffer, indexBuffer, vertexType);
+
+	std::cout << "\n!All done!\n";
+}
+
+void ObjParser::ReadFromObjFile(std::vector<IVertex_Point4>& vertexBuffer, std::vector<unsigned int>& indexBuffer, short& vertexType)
+{
+	ParseData();
+
+	std::cout << "\n!Creating vertices based on parsed info!\n";
+
+	vertexBuffer.clear();
+	indexBuffer.clear();
+	vertexBuffer.reserve(m_Positions.size());
+
+	const bool isUVs{ (bool)m_UVs.size() };
+	const bool isNormals{ (bool)m_Normals.size() };
+
+	vertexType |= isUVs * (int)VertexType::Uv;
+	vertexType |= isNormals * (int)VertexType::Norm;
+
+	unsigned int indexCounter{};
+	std::vector<Indexed> blackList{};
+
+	if (isUVs && isNormals)
+	{
+		vertexType |= (int)VertexType::Tan;
+		for (size_t i{}; i < m_PositionIndices.size(); ++i) // every possible face
+		{
+			bool isUnique{ true };
+			Indexed index{};
+			//unsigned int changes{};
+
+			for (Indexed& bl : blackList) // check for blacklisted vertices
+			{
+				if (bl.v == m_PositionIndices[i]) // v[?] == v[i]
+				{
+					// same vertex
+					if (bl.vt == m_UVIndices[i]) // vt[?] == vt[i]
+					{
+						// same uv
+						if (m_Normals[bl.vn] == m_Normals[m_NormalIndices[i]]) // vn[?] == vn[i]
+						{
+							// same normal
+							index.idx = bl.idx; // save indexCounter
+							isUnique = false;
+							//++changes;
+						}
+					}
+				}
+			}
+
+			if (isUnique)
+			{
+				IVertex_Point4 v{};
+				v.p = m_Positions[m_PositionIndices[i]];
+				v.uv = m_UVs[m_UVIndices[i]];
+				v.n = m_Normals[m_NormalIndices[i]];
+				vertexBuffer.push_back(v);
+				index.v = m_PositionIndices[i];
+				index.vt = m_UVIndices[i];
+				index.vn = m_NormalIndices[i];
+				index.idx = indexCounter;
+				blackList.push_back(index);
+				++indexCounter;
+			}
+			indexBuffer.push_back(index.idx);
+		}
+
+		for (uint32_t i{}; i < indexBuffer.size(); i += 3)
+		{
+			const uint32_t idx0{ uint32_t(indexBuffer[i]) };
+			const uint32_t idx1{ uint32_t(indexBuffer[i + 1]) };
+			const uint32_t idx2{ uint32_t(indexBuffer[i + 2]) };
+
+			const FPoint4& p0{ vertexBuffer[idx0].p };
+			const FPoint4& p1{ vertexBuffer[idx1].p };
+			const FPoint4& p2{ vertexBuffer[idx2].p };
+			const FVector3& uv0{ vertexBuffer[idx0].uv };
+			const FVector3& uv1{ vertexBuffer[idx1].uv };
+			const FVector3& uv2{ vertexBuffer[idx2].uv };
+
+			const FVector3 edge0{ p1 - p0 };
+			const FVector3 edge1{ p2 - p0 };
+			const FVector2 diffX{ uv1.x - uv0.x, uv2.x - uv0.x };
+			const FVector2 diffY{ uv1.y - uv0.y, uv2.y - uv0.y };
+			const float r{ 1.f / Cross(diffX, diffY) };
+
+			const FVector3 tangent{ (edge0 * diffY.y - edge1 * diffY.x) * r };
+			vertexBuffer[idx0].tan += tangent;
+			vertexBuffer[idx1].tan += tangent;
+			vertexBuffer[idx2].tan += tangent;
+		}
+		for (IVertex_Point4& vertex : vertexBuffer)
+		{
+			vertex.tan = GetNormalized(Reject(vertex.tan, vertex.n));
+		}
+	}
+	else if (isUVs && !isNormals)
+	{
+		for (size_t i{}; i < m_PositionIndices.size(); ++i) // every possible face
+		{
+			bool isUnique{ true };
+			Indexed index{};
+			//int changes{};
+
+			for (Indexed& bl : blackList) // check for blacklisted vertices
+			{
+				if (bl.v == m_PositionIndices[i]) // v[?] == v[i]
+				{
+					// same vertex
+					if (bl.vt == m_UVIndices[i]) // vt[?] == vt[i]
+					{
+						// same uv
+						index.idx = bl.idx; // save indexCounter
+						isUnique = false;
+						//++changes;
+					}
+				}
+			}
+
+			if (isUnique)
+			{
+				IVertex_Point4 v{};
+				v.p = m_Positions[m_PositionIndices[i]];
+				v.uv = m_UVs[m_UVIndices[i]];
+				v.n = m_Normals[m_NormalIndices[i]];
+				vertexBuffer.push_back(v);
+				index.v = m_PositionIndices[i];
+				index.vt = m_UVIndices[i];
+				index.vn = m_NormalIndices[i];
+				index.idx = indexCounter;
+				blackList.push_back(index);
+				++indexCounter;
+			}
+			indexBuffer.push_back(index.idx);
+		}
+	}
+	else if (!isUVs && !isNormals)
+	{
+		for (size_t i{}; i < m_PositionIndices.size(); ++i) // every possible face
+		{
+			bool isUnique{ true };
+			Indexed index{};
+
+			for (Indexed& bl : blackList) // check for blacklisted vertices
+			{
+				if (bl.v == m_PositionIndices[i]) // v[?] == v[i]
+				{
+					// same vertex
+					index.idx = bl.idx; // save indexCounter
+					isUnique = false;
+					break;
+				}
+			}
+
+			if (isUnique)
+			{
+				IVertex_Point4 v{};
+				v.p = m_Positions[m_PositionIndices[i]];
+				vertexBuffer.push_back(v);
+				index.v = m_PositionIndices[i];
+				index.idx = indexCounter;
+				blackList.push_back(index);
+				++indexCounter;
+			}
+			indexBuffer.push_back(index.idx);
+		}
+	}
+
+	std::cout << "\n!All done!\n";
 }
 
 void ObjParser::StorePosition(std::stringstream& position)
@@ -183,8 +360,8 @@ void ObjParser::AssignVertices(std::vector<IVertex>& vertexBuffer, std::vector<u
 	indexBuffer.clear();
 	vertexBuffer.reserve(m_Positions.size());
 
-	const bool isUVs{ static_cast<bool>(m_UVs.size()) };
-	const bool isNormals{ static_cast<bool>(m_Normals.size()) };
+	const bool isUVs{ (bool)m_UVs.size() };
+	const bool isNormals{ (bool)m_Normals.size() };
 
 	vertexType |= isUVs * (int)VertexType::Uv;
 	vertexType |= isNormals * (int)VertexType::Norm;
@@ -194,6 +371,7 @@ void ObjParser::AssignVertices(std::vector<IVertex>& vertexBuffer, std::vector<u
 
 	if (isUVs && isNormals)
 	{
+		vertexType |= (int)VertexType::Tan;
 		for (size_t i{}; i < m_PositionIndices.size(); ++i) // every possible face
 		{
 			bool isUnique{ true };
@@ -265,7 +443,6 @@ void ObjParser::AssignVertices(std::vector<IVertex>& vertexBuffer, std::vector<u
 		{
 			vertex.tan = GetNormalized(Reject(vertex.tan, vertex.n));
 		}
-		vertexType |= (int)VertexType::Tan;
 	}
 	else if (isUVs && !isNormals)
 	{

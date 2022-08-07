@@ -51,11 +51,10 @@ struct TriangleIdx
 	unsigned int idx0;
 	unsigned int idx1;
 	unsigned int idx2;
-	//bool isCulled;
-	//padded
+	//bool isCulled; //padded anyway
 };
 
-struct PixelShade
+struct PixelShade // size == 38
 {
 	unsigned int colour;
 	float zInterpolated;
@@ -64,7 +63,16 @@ struct PixelShade
 	FVector3 n;
 	FVector3 tan;
 	FVector3 vd;
-	GPUTextures textures;
+	GPUTexturesCompact textures;
+};
+
+struct CUDAMesh
+{
+	FPoint4* pPositions;
+	FVector2* pUVs;
+	FVector3* pNormals;
+	FVector3* pTangents;
+	RGBColor* pColours;
 };
 
 #pragma endregion
@@ -75,6 +83,10 @@ constexpr int NumTextures = 4;
 
 //CONST DEVICE MEMORY - Does NOT have to be allocated or freed
 GPU_CONST_MEMORY static float dev_RenderData_const[sizeof(RenderData) / sizeof(float)]{};
+GPU_CONST_MEMORY float dev_CameraPos_const[sizeof(FPoint3) / sizeof(float)]{};
+GPU_CONST_MEMORY float dev_WVPMatrix_const[sizeof(FMatrix4) / sizeof(float)]{};
+GPU_CONST_MEMORY float dev_WorldMatrix_const[sizeof(FMatrix4) / sizeof(float)]{};
+GPU_CONST_MEMORY float dev_RotationMatrix_const[sizeof(FMatrix3) / sizeof(float)]{};
 //NOTE: cannot contain anything else besides primitive variables (int, float, etc.)
 
 //DEVICE MEMORY - Does have to be allocated and freed
@@ -82,7 +94,11 @@ static unsigned int* dev_FrameBuffer{};
 static int* dev_DepthBuffer{}; //defined as INTEGER type for atomicCAS to work properly
 static int* dev_Mutex{};
 static PixelShade* dev_PixelShadeBuffer{}; //(== fragmentbuffer)
-static std::vector<IVertex*> dev_IVertexBuffer{};
+//static std::vector<FPoint4*> dev_IPositions{};
+//static std::vector<float*> dev_IVertexDatas{};
+//static std::vector<FPoint4*> dev_OPositions{};
+//static std::vector<float*> dev_OVertexDatas{};
+static std::vector<IVertex_Point4*> dev_IVertexBuffer{};
 static std::vector<unsigned int*> dev_IndexBuffer{};
 static std::vector<OVertex*> dev_OVertexBuffer{};
 static std::vector<TriangleIdx*> dev_Triangles{};
@@ -391,7 +407,7 @@ void CUDARenderer::AllocateMeshBuffers(const size_t numVertices, const size_t nu
 	CheckErrorCuda(cudaFree(dev_Triangles[meshIdx]));
 
 	//Allocate Input Vertex Buffer
-	CheckErrorCuda(cudaMalloc((void**)&dev_IVertexBuffer[meshIdx], numVertices * sizeof(IVertex)));
+	CheckErrorCuda(cudaMalloc((void**)&dev_IVertexBuffer[meshIdx], numVertices * sizeof(IVertex_Point4)));
 	//Allocate Index Buffer
 	CheckErrorCuda(cudaMalloc((void**)&dev_IndexBuffer[meshIdx], numIndices * sizeof(unsigned int)));
 	//Allocate Ouput Vertex Buffer
@@ -401,12 +417,12 @@ void CUDARenderer::AllocateMeshBuffers(const size_t numVertices, const size_t nu
 }
 
 CPU_CALLABLE
-void CUDARenderer::CopyMeshBuffers(const std::vector<IVertex>& vertexBuffer, const std::vector<unsigned int>& indexBuffer, size_t meshIdx)
+void CUDARenderer::CopyMeshBuffers(float* vertexBuffer, unsigned int numVertices, short stride, unsigned int* indexBuffer, unsigned int numIndices, size_t meshIdx)
 {
 	//Copy Input Vertex Buffer
-	CheckErrorCuda(cudaMemcpy(dev_IVertexBuffer[meshIdx], &vertexBuffer[0], vertexBuffer.size() * sizeof(IVertex), cudaMemcpyHostToDevice));
+	CheckErrorCuda(cudaMemcpy(dev_IVertexBuffer[meshIdx], vertexBuffer, numVertices * stride, cudaMemcpyHostToDevice));
 	//Copy Index Buffer
-	CheckErrorCuda(cudaMemcpy(dev_IndexBuffer[meshIdx], &indexBuffer[0], indexBuffer.size() * sizeof(unsigned int), cudaMemcpyHostToDevice));
+	CheckErrorCuda(cudaMemcpy(dev_IndexBuffer[meshIdx], indexBuffer, numIndices * sizeof(unsigned int), cudaMemcpyHostToDevice));
 }
 
 CPU_CALLABLE
@@ -422,12 +438,12 @@ void CUDARenderer::LoadMeshTextures(const std::string texturePaths[4], size_t me
 		dev_TextureData.resize(newSize * NumTextures);
 	}
 
-	GPUTextures gpuTextures{};
+	GPUTexturesCompact gpuTextures{};
 
 	//0 DIFFUSE > 1 NORMAL > 2 SPECULAR > 3 GLOSSINESS
 	for (int i{}; i < NumTextures; ++i)
 	{
-		GPUTexture* gpuTexture;
+		GPUTextureCompact* gpuTexture;
 		switch (i)
 		{
 		case 0:
@@ -499,8 +515,8 @@ void CUDARenderer::LoadMeshTextures(const std::string texturePaths[4], size_t me
 			}*/
 
 			gpuTexture->dev_pTex = dev_TextureObject;
-			gpuTexture->w = width;
-			gpuTexture->h = height;
+			gpuTextures.w = width;
+			gpuTextures.h = height;
 			gpuTexture->dev_TextureData = dev_TextureData[textureIdx];
 
 			/*DEPRECATED
@@ -654,25 +670,129 @@ void CUDARenderer::Present()
 #pragma region GPU HELPER FUNCTIONS
 
 GPU_CALLABLE static
-OVertex GetNDCVertex(const IVertex& __restrict__ iVertex, const FPoint3& camPos,
-	const FMatrix4& viewProjectionMatrix, const FMatrix4& worldMatrix)
+void MultiplyMatrix(const float* matA, const float* matB, float* matC, unsigned int matSize)
+{
+	const unsigned int col = blockIdx.x * matSize + threadIdx.x;
+	const unsigned int row = blockIdx.y * matSize + threadIdx.y;
+
+	if (col < matSize && row < matSize)
+	{
+		float sum{};
+		for (unsigned int i{}; i < matSize; ++i)
+		{
+			//matA goes from left to right in memory (row)
+			//matB goes from top to bottom in memory (column)
+			sum += matA[(threadIdx.y * matSize) + i] * matB[(i * matSize) + threadIdx.x];
+		}
+		__syncthreads();
+		matC[col + row * matSize] = sum;
+	}
+}
+
+GPU_CALLABLE static
+void MultiplyMatrixVector(const float* mat, const float* p, float* output, unsigned int matSize)
+{
+	const unsigned int idx = threadIdx.x % 4;
+
+	float sum{};
+	for (unsigned int i{}; i < matSize; ++i)
+	{
+		//mat goes from left to right, every column per row
+		//p goes from left to right, every column for 1 row
+		sum += mat[(idx * matSize) + i] * p[threadIdx.x];
+	}
+	__syncthreads();
+	output[threadIdx.x] = sum;
+}
+
+GPU_CALLABLE static
+void CalculateIVertexPositionToNDC(float* iPositions, float* oPositions)
+{
+	//TODO: store members of vertices in separate arrays
+	//		kernel does 1 operation at a time, with same shared memory
+	//		e.g. load shared memory block with FPoint3 IVertex data
+	//		calculate each element with each thread
+	//		(store FMatrix4 in first row of shared memory, broadcast memory access since threads need same data)
+
+	const float* WVPMatrix = reinterpret_cast<float*>(dev_WVPMatrix_const);
+
+	//TODO: define size of dynamic shared memory by checking whether 
+	//		amount of vertices >= 65535 (max number of blocks) / amount of vertices that are able to be processed in 1 CTA/block (8 here)
+	//		this way we can have CTAs process double the amount of vertices without bank conflicts (slower, but good scaling method (for now))
+	__shared__ float buffer[32]; //32 banks of 4 bytes per block
+
+	//coalesced load into shared memory
+	//buffer[threadIdx.x] = iPositions[threadIdx.x - (threadIdx.x / 3)]; //non-coalesced global read
+	//if we skip the 4th value, we can have a strided access
+	buffer[threadIdx.x] = iPositions[threadIdx.x]; //resorted to converting and storing IPositions into FPoint4
+
+	__syncthreads();
+
+	//calculate NDC (WVP * v.p)
+	MultiplyMatrixVector(WVPMatrix, buffer, buffer, 4);
+
+	__syncthreads();
+
+	//divide xyz by w
+	buffer[threadIdx.x] /= buffer[(threadIdx.x / 4) * 4 + 3]; //idx of w per 4 => 3 - 7 - 11 - 15 - ...
+
+	__syncthreads();
+
+	//coalesced store into global memory
+	oPositions[threadIdx.x] = buffer[threadIdx.x];
+}
+
+GPU_CALLABLE static
+void CalculateIVertexWorldPosition(float* iPositions, float* oWorldPos)
+{
+	const float* camPos = reinterpret_cast<float*>(dev_CameraPos_const);
+	const float* worldMatrix = reinterpret_cast<float*>(dev_WorldMatrix_const);
+	const float* rotationMatrix = reinterpret_cast<float*>(dev_RotationMatrix_const);
+
+	__shared__ float buffer[32]; //32 banks of 4 bytes per block
+
+	//coalesced load into shared memory
+	buffer[threadIdx.x] = iPositions[threadIdx.x];
+
+	__syncthreads();
+
+	MultiplyMatrixVector(worldMatrix, buffer, buffer, 4); //calculate worldposition
+
+	__syncthreads();
+
+	oWorldPos[threadIdx.x] = buffer[threadIdx.x];
+
+	__syncthreads();
+
+	MultiplyMatrixVector(worldMatrix, buffer, buffer, 4); //calculate viewdirection
+
+	MultiplyMatrixVector(rotationMatrix, buffer, buffer, 3); //calculate normal
+	MultiplyMatrixVector(rotationMatrix, buffer, buffer, 3); //calculate tangent
+
+	//TODO: copy uv and colour
+}
+
+//DEPRECATED
+GPU_CALLABLE static
+OVertex GetNDCVertex(const IVertex& __restrict__ iVertex)
 {
 	OVertex oVertex;
 
-	const FPoint3 worldPosition{ worldMatrix * FPoint4{ iVertex.p } };
-	const FMatrix4 worldViewProjectionMatrix = viewProjectionMatrix * worldMatrix;
-	const FMatrix3 rotationMatrix = (FMatrix3)worldMatrix;
+	const FPoint3& camPos = reinterpret_cast<FPoint3&>(dev_CameraPos_const);
+	const FMatrix4& WVPMatrix = reinterpret_cast<FMatrix4&>(dev_WVPMatrix_const);
+	const FMatrix4& worldMatrix = reinterpret_cast<FMatrix4&>(dev_WorldMatrix_const);
+	const FMatrix3& rotationMatrix = reinterpret_cast<FMatrix3&>(dev_RotationMatrix_const);
 
-	oVertex.p = worldViewProjectionMatrix * FPoint4{ iVertex.p };
+	const FPoint3 worldPosition{ worldMatrix * FPoint4{ iVertex.p } };
+
+	oVertex.p = WVPMatrix * FPoint4{ iVertex.p };
 	oVertex.p.x /= oVertex.p.w;
 	oVertex.p.y /= oVertex.p.w;
 	oVertex.p.z /= oVertex.p.w;
-
-	oVertex.vd = FVector3{ GetNormalized(worldPosition - camPos) };
+	oVertex.uv = iVertex.uv;
 	oVertex.n = FVector3{ rotationMatrix * iVertex.n };
 	oVertex.tan = FVector3{ rotationMatrix * iVertex.tan };
-
-	oVertex.uv = iVertex.uv;
+	oVertex.vd = FVector3{ GetNormalized(worldPosition - camPos) };
 	oVertex.c = iVertex.c;
 
 	return oVertex;
@@ -926,17 +1046,14 @@ RGBColor ShadePixel(const PixelShade& pixelShade, SampleState sampleState, bool 
 		const float lightIntensity = 7.0f;
 
 		// texture sampling
-		const GPUTexture& diffTex = pixelShade.textures.Diff;
-		const GPUTexture& normTex = pixelShade.textures.Norm;
-		const GPUTexture& specTex = pixelShade.textures.Spec;
-		const GPUTexture& glossTex = pixelShade.textures.Gloss;
-		if (diffTex.dev_pTex != 0)
+		const GPUTexturesCompact& textures = pixelShade.textures;
+		if (textures.Diff.dev_pTex != 0)
 		{
-			const RGBColor diffuseSample = GPUTextureSampler::Sample(diffTex, pixelShade.uv, sampleState);
+			const RGBColor diffuseSample = GPUTextureSampler::Sample(textures.Diff, textures.w, textures.h, pixelShade.uv, sampleState);
 
-			if (normTex.dev_pTex != 0)
+			if (textures.Norm.dev_pTex != 0)
 			{
-				const RGBColor normalSample = GPUTextureSampler::Sample(normTex, pixelShade.uv, sampleState);
+				const RGBColor normalSample = GPUTextureSampler::Sample(textures.Norm, textures.w, textures.h, pixelShade.uv, sampleState);
 
 				// normal mapping
 				FVector3 binormal = Cross(pixelShade.tan, pixelShade.n);
@@ -954,10 +1071,10 @@ RGBColor ShadePixel(const PixelShade& pixelShade, SampleState sampleState, bool 
 				observedArea *= lightIntensity;
 				const RGBColor diffuseColour = diffuseSample * observedArea;
 
-				if (specTex.dev_pTex != 0 && glossTex.dev_pTex != 0)
+				if (textures.Spec.dev_pTex != 0 && textures.Gloss.dev_pTex != 0)
 				{
-					const RGBColor specularSample = GPUTextureSampler::Sample(specTex, pixelShade.uv, sampleState);
-					const RGBColor glossSample = GPUTextureSampler::Sample(glossTex, pixelShade.uv, sampleState);
+					const RGBColor specularSample = GPUTextureSampler::Sample(textures.Spec, textures.w, textures.h, pixelShade.uv, sampleState);
+					const RGBColor glossSample = GPUTextureSampler::Sample(textures.Gloss, textures.w, textures.h, pixelShade.uv, sampleState);
 
 					// phong specular
 					const FVector3 reflectV{ Reflect(lightDirection, finalNormal) };
@@ -1036,26 +1153,26 @@ void Clear()
 }
 
 GPU_KERNEL
-void VertexShaderKernel(const IVertex* __restrict__ dev_IVertices, OVertex* dev_OVertices, const size_t numVertices,
-	const FPoint3 camPos, const FMatrix4 viewProjectionMatrix, const FMatrix4 worldMatrix)
+void VertexShaderKernel(const IVertex_Point4* __restrict__ dev_IVertices, OVertex* dev_OVertices, const size_t numVertices)
 {
-	//TODO: local memory (global memory stats) is organised such that consecutive 32-bit variables are accessed by consecutive thread IDs
-	//accesses are therefore fully coalesced as long as all threads in a warp access the same relative address
-	//(e.g., same index in an array variable, same member in a structure variable)
-
+	//sizeof(IVertex_Point4) == //60 bytes, 15 floats
+	//sizeof(OVertex) == 72 bytes, 18 floats
+	__shared__ float iPositionsBuffer[32];
 	const unsigned int vertexIdx = (blockIdx.x * blockDim.x) + threadIdx.x;
-
-	//const int nThreads = 1;
-	//const size_t sizeOfIVertex = sizeof(IVertex); //56
-	//__shared__ int iVertexBuffer[nThread * sizeOfIVertex];
-	//memcpy(iVertexBuffer, dev_IVertexBuffer[vertexIdx], sizeOfIVertex);
 
 	if (vertexIdx < numVertices)
 	{
-		const IVertex iV = dev_IVertices[vertexIdx];
-		const OVertex oV = GetNDCVertex(iV, camPos, viewProjectionMatrix, worldMatrix);
-		//const OVertex oV = GetNDCVertex(reinterpret_cast<const IVertex&>(iVertexBuffer[nThreads * sizeOfIVertex]), camPos, viewProjectionMatrix, worldMatrix);
-		dev_OVertices[vertexIdx] = std::move(oV);
+		//strided copy
+		const unsigned int stridedIdx = threadIdx.x % 4 + (threadIdx.x / 4) * sizeof(IVertex_Point4); //== stride
+		iPositionsBuffer[vertexIdx] = reinterpret_cast<const float*>(dev_IVertices)[stridedIdx];
+
+		__syncthreads();
+
+		CalculateIVertexPositionToNDC(iPositionsBuffer, dev_OPositions);
+
+		__syncthreads();
+
+		reinterpret_cast<float*>(&dev_OPositions)[vertexIdx] = iPositionsBuffer[vertexIdx];
 	}
 }
 
@@ -1237,7 +1354,7 @@ void RasterizeTriangle()
 
 GPU_KERNEL
 void RasterizerKernel(const TriangleIdx* __restrict__ const dev_Triangles, const OVertex* __restrict__ const dev_OVertices, const size_t numTriangles,
-	PixelShade* dev_PixelShadeBuffer, int* dev_DepthBuffer, int* dev_Mutex, GPUTextures textures,
+	PixelShade* dev_PixelShadeBuffer, int* dev_DepthBuffer, int* dev_Mutex, GPUTexturesCompact textures,
 	const FVector3 camFwd, const CullingMode cm, const unsigned int width, const unsigned int height)
 {
 	//TODO: use shared memory, then coalesced copy
@@ -1392,6 +1509,8 @@ void RasterizerKernel(const TriangleIdx* __restrict__ const dev_Triangles, const
 
 				//store textures
 				pixelShade.textures = textures;
+				
+				//TODO: store texture w and height in const memory?
 
 				//multiplying z value by a INT_MAX because atomicCAS only accepts ints
 				const int scaledZ = zInterpolated * INT_MAX;
@@ -1529,14 +1648,13 @@ void CUDARenderer::Clear(const RGBColor& colour)
 }
 
 CPU_CALLABLE
-void CUDARenderer::VertexShader(const MeshIdentifier& mi, const FPoint3& camPos, const FMatrix4& viewProjectionMatrix, const FMatrix4& worldMatrix)
+void CUDARenderer::VertexShader(const MeshIdentifier& mi)
 {
-	const size_t numVertices = mi.pMesh->GetVertices().size();
+	const size_t numVertices = mi.pMesh->GetVertexAmount();
 	const unsigned int numThreadsPerBlock = 256;
 	const unsigned int numBlocks = (unsigned int)(numVertices + numThreadsPerBlock - 1) / numThreadsPerBlock;
 	VertexShaderKernel<<<numBlocks, numThreadsPerBlock>>>(
-		dev_IVertexBuffer[mi.Idx], dev_OVertexBuffer[mi.Idx], numVertices,
-		camPos, viewProjectionMatrix, worldMatrix);
+		dev_IVertexBuffer[mi.Idx], dev_OVertexBuffer[mi.Idx], numVertices);
 }
 
 CPU_CALLABLE
@@ -1545,7 +1663,7 @@ void CUDARenderer::TriangleAssembler(MeshIdentifier& mi)
 	//unsigned int* dev_VisibleNumTriangles;
 	//CheckErrorCuda(cudaMalloc((void**)&dev_VisibleNumTriangles, sizeof(unsigned int)));
 
-	const size_t numIndices = mi.pMesh->GetIndexes().size();
+	const size_t numIndices = mi.pMesh->GetIndexAmount();
 	const PrimitiveTopology topology = mi.pMesh->GetTopology();
 
 	const unsigned int numThreadsPerBlock = 256;
@@ -1699,12 +1817,13 @@ void CUDARenderer::LoadScene(const SceneGraph* pSceneGraph)
 		mi.pMesh = pMesh;
 		size_t numTriangles{};
 
-		const std::vector<IVertex>& vertexBuffer = pMesh->GetVertices();
-		const std::vector<unsigned int>& indexBuffer = pMesh->GetIndexes();
-		const size_t numVertices = vertexBuffer.size();
-		const size_t numIndices = indexBuffer.size();
+		float* vertexBuffer = pMesh->GetVertices();
+		unsigned int* indexBuffer = pMesh->GetIndexes();
+		const unsigned int numVertices = pMesh->GetVertexAmount();
+		const unsigned int numIndices = pMesh->GetIndexAmount();
 		const PrimitiveTopology topology = pMesh->GetTopology();
 		const short vertexType = pMesh->GetVertexType();
+		const short stride = pMesh->GetVertexStride();
 		const FMatrix4& worldMat = pMesh->GetWorldMatrix();
 
 		switch (topology)
@@ -1719,7 +1838,7 @@ void CUDARenderer::LoadScene(const SceneGraph* pSceneGraph)
 		mi.TotalNumTriangles = numTriangles;
 
 		AllocateMeshBuffers(numVertices, numIndices, numTriangles, mi.Idx);
-		CopyMeshBuffers(vertexBuffer, indexBuffer, mi.Idx);
+		CopyMeshBuffers(vertexBuffer, numVertices, stride, indexBuffer, numIndices, mi.Idx);
 		LoadMeshTextures(pMesh->GetTexPaths(), mi.Idx);
 		mi.Textures = m_TextureObjects[mi.Idx];
 
@@ -1750,6 +1869,8 @@ void CUDARenderer::Render(const SceneManager& sm, const Camera* pCamera)
 	//Update global memory for camera's matrices
 	//UpdateCameraDataAsync(camPos, viewProjectionMatrix);
 
+	CheckErrorCuda(cudaMemcpyToSymbol(dev_CameraPos_const, camPos.data, sizeof(camPos), 0, cudaMemcpyHostToDevice));
+
 	//SceneGraph Data
 	const SceneGraph* pSceneGraph = sm.GetSceneGraph();
 	const std::vector<Mesh*>& pObjects = pSceneGraph->GetMeshes();
@@ -1766,21 +1887,24 @@ void CUDARenderer::Render(const SceneManager& sm, const Camera* pCamera)
 		//Mesh Data
 		const Mesh* pMesh = pObjects[mi.Idx];
 		const FMatrix4& worldMat = pMesh->GetWorldMatrix();
+		const FMatrix4 worldViewProjectionMatrix = viewProjectionMatrix * worldMat;
+		const FMatrix3 rotationMatrix = (FMatrix3)worldMat;
 
-		//TODO: random illegal memory access BUG
-		//Update global memory for mesh's worldmatrix
-		//UpdateWorldMatrixDataAsync(worldMat);
-		//cudaDeviceSynchronize();
+		//Update const data
+		CheckErrorCuda(cudaMemcpyToSymbol(dev_WorldMatrix_const, worldMat.data, sizeof(worldMat), 0, cudaMemcpyHostToDevice));
+		CheckErrorCuda(cudaMemcpyToSymbol(dev_WVPMatrix_const, worldViewProjectionMatrix.data, sizeof(worldViewProjectionMatrix), 0, cudaMemcpyHostToDevice));
+		CheckErrorCuda(cudaMemcpyToSymbol(dev_RotationMatrix_const, rotationMatrix.data, sizeof(rotationMatrix), 0, cudaMemcpyHostToDevice));
+		cudaDeviceSynchronize();
 
 		//TODO: can async copy (parts of) mesh buffers H2D
 
 #ifdef BENCHMARK
 		StartTimer();
 #endif
-		//---STAGE 1---:  Perform Output Vertex Assembling
 		//TODO: async & streams
 		//TODO: find out what order is best, for cudaDevCpy and Malloc
-		VertexShader(mi, camPos, viewProjectionMatrix, worldMat);
+		//---STAGE 1---:  Perform Output Vertex Assembling
+		VertexShader(mi);
 		CheckErrorCuda(cudaDeviceSynchronize());
 		//---END STAGE 1---
 #ifdef BENCHMARK
@@ -1855,7 +1979,7 @@ void CUDARenderer::WarmUp()
 	ResetDepthBufferKernel<<<0, 0>>>(nullptr, 0, m_WindowHelper.Width, m_WindowHelper.Height);
 	ClearFrameBufferKernel<<<0, 0>>>(nullptr, m_WindowHelper.Width, m_WindowHelper.Height, 0);
 	ClearPixelShadeBufferKernel<<<0, 0>>>(nullptr, 0);
-	VertexShaderKernel<<<0, 0>>>(nullptr, nullptr, 0, {}, {}, {});
+	VertexShaderKernel<<<0, 0>>>(nullptr, nullptr, 0);
 	TriangleAssemblerKernel<<<0, 0>>>(nullptr, nullptr, 0, nullptr, (PrimitiveTopology)0);
 	RasterizerKernel<<<0, 0>>>(nullptr, nullptr, 0, nullptr, nullptr, nullptr, {}, {}, (CullingMode)0, m_WindowHelper.Width, m_WindowHelper.Height);
 	PixelShaderKernel<<<0, 0>>> (nullptr, nullptr, SampleState(0), false, m_WindowHelper.Width, m_WindowHelper.Height);

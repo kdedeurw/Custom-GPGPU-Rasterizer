@@ -2,13 +2,16 @@
 #include "Mesh.h"
 #include "Texture.h"
 
-Mesh::Mesh(const std::vector<IVertex>& vertices, const std::vector<unsigned int>& indexes, 
+Mesh::Mesh(float* pVertices, unsigned int vertexAmount, short stride, unsigned int* pIndexes, unsigned int indexAmount,
 	short vType, PrimitiveTopology pT, const FPoint3& position)
-	: m_VertexBuffer{ vertices }
-	, m_IndexBuffer{ indexes }
+	: m_pVertexBuffer{ pVertices }
+	, m_pIndexBuffer{ pIndexes }
 	, m_TexturePaths{}
 	, m_Topology{ pT }
 	, m_VertexType{ vType }
+	, m_VertexStride{ stride }
+	, m_VertexAmount{ vertexAmount }
+	, m_IndexAmount{ indexAmount }
 	, m_pTextures{}
 	, m_WorldSpace{ FMatrix4::Identity() }
 {
@@ -19,6 +22,11 @@ Mesh::Mesh(const std::vector<IVertex>& vertices, const std::vector<unsigned int>
 
 Mesh::~Mesh()
 {
+	delete[] m_pVertexBuffer;
+	m_pVertexBuffer = nullptr;
+	delete[] m_pIndexBuffer;
+	m_pIndexBuffer = nullptr;
+
 	if (m_pTextures.pDiff)
 	{
 		delete m_pTextures.pDiff;

@@ -15,6 +15,7 @@ struct WindowHelper;
 class Camera;
 class Mesh;
 struct IVertex;
+struct IVertex_Point4;
 struct OVertex;
 struct BoundingBox;
 enum class SampleState;
@@ -82,7 +83,7 @@ public:
 		unsigned int VisibleNumTriangles; //<READ/WRITE>
 		const Mesh* pMesh; //<READ ONLY>
 		CullingMode CullMode; //<READ ONLY>
-		GPUTextures Textures; //<READ ONLY>
+		GPUTexturesCompact Textures; //<READ ONLY>
 	};
 private:
 	//-----MEMBER VARIABLES-----
@@ -94,7 +95,7 @@ private:
 	unsigned int* m_h_pFrameBuffer{};
 	cudaEvent_t m_StartEvent{}, m_StopEvent{};
 	std::vector<MeshIdentifier> m_MeshIdentifiers{};
-	std::vector<GPUTextures> m_TextureObjects{};
+	std::vector<GPUTexturesCompact> m_TextureObjects{};
 
 	//CANNOT DIRECTLY COPY PINNED MEMORY TO CONST DEVICE MEMORY
 	//CameraData* m_pCameraData{};
@@ -105,7 +106,7 @@ private:
 	//function that allocates all output buffers for a mesh (idx)
 	CPU_CALLABLE void AllocateMeshBuffers(const size_t numVertices, const size_t numIndices, const size_t numTriangles, size_t meshIdx = 0);
 	//function that copies raw input buffers for a mesh (idx)
-	CPU_CALLABLE void CopyMeshBuffers(const std::vector<IVertex>& vertexBuffer, const std::vector<unsigned int>& indexBuffer, size_t meshIdx = 0);
+	CPU_CALLABLE void CopyMeshBuffers(float* vertexBuffer, unsigned int numVertices, short stride, unsigned int* indexBuffer, unsigned int numIndices, size_t meshIdx = 0);
 	//function that preloads GPU textures in device's texture memory
 	CPU_CALLABLE void LoadMeshTextures(const std::string texturePaths[4], size_t meshIdx = 0);
 	//function that frees all texture objects
@@ -128,7 +129,7 @@ private:
 
 	//Reset depth buffer, mutex buffer and pixelshadebuffer
 	CPU_CALLABLE void Clear(const RGBColor& colour = { 0.25f, 0.25f, 0.25f });
-	CPU_CALLABLE void VertexShader(const MeshIdentifier& mi, const FPoint3& camPos, const FMatrix4& viewProjectionMatrix, const FMatrix4& worldMatrix);
+	CPU_CALLABLE void VertexShader(const MeshIdentifier& mi);
 	CPU_CALLABLE void TriangleAssembler(MeshIdentifier& mi);
 	CPU_CALLABLE void Rasterizer(const MeshIdentifier& mi, const FVector3& camFwd, const CullingMode cm = CullingMode::BackFace);
 	CPU_CALLABLE void PixelShader(SampleState sampleState, bool isDepthColour);

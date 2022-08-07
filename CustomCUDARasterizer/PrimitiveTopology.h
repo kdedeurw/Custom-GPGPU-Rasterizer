@@ -1,6 +1,6 @@
 #pragma once
 
-enum class PrimitiveTopology : short
+enum class PrimitiveTopology : unsigned char
 {
 	TriangleList,
 	TriangleStrip,

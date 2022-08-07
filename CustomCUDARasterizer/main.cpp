@@ -38,7 +38,7 @@ void CreateScenes(SceneManager& sm)
 {
 	std::vector<SceneGraph*> pSceneGraphs{};
 	ObjParser parser{};
-	std::vector<IVertex> vertexBuffer{};
+	std::vector<IVertex_Point4> vertexBuffer{};
 	std::vector<unsigned int> indexBuffer{};
 
 	//{
@@ -48,24 +48,24 @@ void CreateScenes(SceneManager& sm)
 	//		// Mesh 1 // Triangle 1
 	//		short vertexType{};
 	//		vertexType |= (int)VertexType::Col;
-	//		std::vector<IVertex> vertices{
+	//		IVertex* vertices = new IVertex[]{
 	//			IVertex{ FPoint3{ 0.f, 2.f, 0.f }, RGBColor{1.f, 1.f, 1.f} },
 	//			IVertex{ FPoint3{ -1.f, 0.f, 0.f }, RGBColor{1.f, 1.f, 1.f} },
 	//			IVertex{ FPoint3{ 1.f, 0.f, 0.f }, RGBColor{1.f, 1.f, 1.f} } };
-	//		std::vector<unsigned int> indices{ 0, 1, 2 };
-	//		Mesh* pTriangle = new Mesh{ vertices, indices, vertexType, PrimitiveTopology::TriangleList };
+	//		unsigned int* indices = new unsigned int[]{ 0, 1, 2 };
+	//		Mesh* pTriangle = new Mesh{ reinterpret_cast<float*>(vertices), 3, sizeof(IVertex), indices, 3, vertexType, PrimitiveTopology::TriangleList };
 	//		pSceneGraph->AddMesh(pTriangle);
 	//	}
 	//	{
 	//		// Mesh 2 // Triangle 2
 	//		short vertexType{};
 	//		vertexType |= (int)VertexType::Col;
-	//		std::vector<IVertex> vertices{
+	//		IVertex* vertices = new IVertex[]{
 	//			IVertex{ FPoint3{ 0.f, 4.f, -2.f }, RGBColor{1.f, 0.f, 0.f} },
 	//			IVertex{ FPoint3{ -3.f, -2.f, -2.f }, RGBColor{0.f, 1.f, 0.f} },
 	//			IVertex{ FPoint3{ 3.f, -2.f, -2.f }, RGBColor{0.f, 0.f, 1.f} } };
-	//		std::vector<unsigned int> indices{ 0, 1, 2 };
-	//		Mesh* pTriangle = new Mesh{ vertices, indices, vertexType, PrimitiveTopology::TriangleList };
+	//		unsigned int* indices = new unsigned int[]{ 0, 1, 2 };
+	//		Mesh* pTriangle = new Mesh{ reinterpret_cast<float*>(vertices), 3, sizeof(IVertex), indices, 3, vertexType, PrimitiveTopology::TriangleList };
 	//		pSceneGraph->AddMesh(pTriangle);
 	//	}
 	//	//pSceneGraph->AddLight(new DirectionalLight{ RGBColor{1.f, 1.f, 1.f}, 2.f, FVector3{ 0.577f, -0.577f, -0.577f } });
@@ -77,14 +77,15 @@ void CreateScenes(SceneManager& sm)
 	//	SceneGraph* pSceneGraph = new SceneGraph{};
 	//	short vertexType{};
 	//	vertexType |= (int)VertexType::Uv;
-	//	std::vector<IVertex> vertices{
-	//		IVertex{FPoint3{-3, 3, -2}, FVector2{0, 0}}, IVertex{FPoint3{0, 3, -2}, FVector2{0.5f, 0}}, IVertex{FPoint3{3, 3, -2}, FVector2{1, 0}},
-	//		IVertex{FPoint3{-3, 0, -2}, FVector2{0, 0.5f}}, IVertex{FPoint3{0, 0, -2}, FVector2{0.5f, 0.5f}}, IVertex{FPoint3{3, 0, -2}, FVector2{1, 0.5f}},
-	//		IVertex{FPoint3{-3, -3, -2}, FVector2{0, 1}}, IVertex{FPoint3{0, -3, -2}, FVector2{0.5f, 1}}, IVertex{FPoint3{3, -3, -2}, FVector2{1, 1}} };
 	//	const std::string texPaths[4]{ "Resources/uv_grid_2.png", "", "", "" };
 	//	{
 	//		// Mesh 1 // TriangleList Quad
-	//		std::vector<unsigned int> indices{ 0, 3, 1,
+	//		IVertex* vertices = new IVertex[]{
+	//			IVertex{FPoint3{-3, 3, -2}, FVector2{0, 0}}, IVertex{FPoint3{0, 3, -2}, FVector2{0.5f, 0}}, IVertex{FPoint3{3, 3, -2}, FVector2{1, 0}},
+	//			IVertex{FPoint3{-3, 0, -2}, FVector2{0, 0.5f}}, IVertex{FPoint3{0, 0, -2}, FVector2{0.5f, 0.5f}}, IVertex{FPoint3{3, 0, -2}, FVector2{1, 0.5f}},
+	//			IVertex{FPoint3{-3, -3, -2}, FVector2{0, 1}}, IVertex{FPoint3{0, -3, -2}, FVector2{0.5f, 1}}, IVertex{FPoint3{3, -3, -2}, FVector2{1, 1}} };
+	//		unsigned int* indices = new unsigned int[]{
+	//									0, 3, 1,
 	//									3, 4, 1,
 	//									1, 4, 2,
 	//									4, 5, 2,
@@ -92,14 +93,18 @@ void CreateScenes(SceneManager& sm)
 	//									6, 7, 4,
 	//									4, 7, 5,
 	//									7, 8, 5, }; // obviously a list
-	//		Mesh* pTriangleListQuad = new Mesh{ vertices, indices, vertexType, PrimitiveTopology::TriangleList };
+	//		Mesh* pTriangleListQuad = new Mesh{ reinterpret_cast<float*>(vertices), 9, sizeof(IVertex), indices, 24, vertexType, PrimitiveTopology::TriangleList };
 	//		pTriangleListQuad->LoadTextures(texPaths);
 	//		pSceneGraph->AddMesh(pTriangleListQuad);
 	//	}
 	//	//{
 	//	//	// Mesh 2 // TriangleStrip Quad
-	//	//	std::vector<unsigned int> indices{ 0, 3, 1, 4, 2, 5, 5, 3, 3, 6, 4, 7, 5, 8 }; // strip
-	//	//	Mesh* pTriangleStripQuad = new Mesh{ vertices, indices, vertexType, PrimitiveTopology::TriangleStrip };
+	//	// 	IVertex* vertices = new IVertex[]{
+	//	//		IVertex{ FPoint3{-3, 3, -2}, FVector2{0, 0} }, IVertex{ FPoint3{0, 3, -2}, FVector2{0.5f, 0} }, IVertex{ FPoint3{3, 3, -2}, FVector2{1, 0} },
+	//	//		IVertex{ FPoint3{-3, 0, -2}, FVector2{0, 0.5f} }, IVertex{ FPoint3{0, 0, -2}, FVector2{0.5f, 0.5f} }, IVertex{ FPoint3{3, 0, -2}, FVector2{1, 0.5f} },
+	//	//		IVertex{ FPoint3{-3, -3, -2}, FVector2{0, 1} }, IVertex{ FPoint3{0, -3, -2}, FVector2{0.5f, 1} }, IVertex{ FPoint3{3, -3, -2}, FVector2{1, 1} } };
+	//	//	unsigned int* indices = new unsigned int[]{ 0, 3, 1, 4, 2, 5, 5, 3, 3, 6, 4, 7, 5, 8 }; // strip
+	//	//	Mesh* pTriangleStripQuad = new Mesh{ reinterpret_cast<float*>(vertices), 9, sizeof(IVertex), indices, 24, vertexType, PrimitiveTopology::TriangleStrip };
 	//	//	pTriangleStripQuad->LoadTextures(texPaths);
 	//	//	pSceneGraph->AddMesh(pTriangleStripQuad);
 	//	//}
@@ -116,8 +121,14 @@ void CreateScenes(SceneManager& sm)
 	//		parser.OpenFile("Resources/tuktuk.obj");
 	//		parser.SetInvertYAxis(true);
 	//		parser.ReadFromObjFile(vertexBuffer, indexBuffer, vertexType);
+	//		const size_t vertexAmount = vertexBuffer.size();
+	//		const size_t indexAmount = indexBuffer.size();
+	//		float* pVertexData = new float[vertexAmount];
+	//		unsigned int* pIndexData = new unsigned int[indexAmount];
+	//		std::memcpy(pVertexData, vertexBuffer.data(), vertexAmount * sizeof(IVertex_Point4));
+	//		std::memcpy(pIndexData, indexBuffer.data(), indexAmount * 4);
+	//		Mesh* pTukTukMesh = new Mesh{ pVertexData, vertexAmount, sizeof(IVertex_Point4), pIndexData, indexAmount, vertexType, PrimitiveTopology::TriangleList };
 	//		const std::string texPaths[4]{ "Resources/tuktuk.png", "", "", "" };
-	//		Mesh* pTukTukMesh = new Mesh{ vertexBuffer, indexBuffer, vertexType, PrimitiveTopology::TriangleList };
 	//		pTukTukMesh->LoadTextures(texPaths);
 	//		pSceneGraph->AddMesh(pTukTukMesh);
 	//	}
@@ -134,7 +145,13 @@ void CreateScenes(SceneManager& sm)
 	//		short vertexType{};
 	//		parser.OpenFile("Resources/lowpoly_bunny.obj");
 	//		parser.ReadFromObjFile(vertexBuffer, indexBuffer, vertexType);
-	//		Mesh* pBunnyMesh = new Mesh{ vertexBuffer, indexBuffer, vertexType, PrimitiveTopology::TriangleList };
+	//		const size_t vertexAmount = vertexBuffer.size();
+	//		const size_t indexAmount = indexBuffer.size();
+	//		float* pVertexData = new float[vertexAmount];
+	//		unsigned int* pIndexData = new unsigned int[indexAmount];
+	//		std::memcpy(pVertexData, vertexBuffer.data(), vertexAmount * sizeof(IVertex_Point4));
+	//		std::memcpy(pIndexData, indexBuffer.data(), indexAmount * 4);
+	//		Mesh* pBunnyMesh = new Mesh{ pVertexData, vertexAmount, sizeof(IVertex_Point4), pIndexData, indexAmount, vertexType, PrimitiveTopology::TriangleList };
 	//		pSceneGraph->AddMesh(pBunnyMesh);
 	//	}
 	//	pSceneGraph->AddLight(new DirectionalLight{ RGBColor{1.f, 1.f, 1.f}, 2.f, FVector3{ 0.577f, -0.577f, -0.577f } });
@@ -150,8 +167,14 @@ void CreateScenes(SceneManager& sm)
 	//		parser.OpenFile("Resources/vehicle.obj");
 	//		parser.SetInvertYAxis(true);
 	//		parser.ReadFromObjFile(vertexBuffer, indexBuffer, vertexType);
+	//		const size_t vertexAmount = vertexBuffer.size();
+	//		const size_t indexAmount = indexBuffer.size();
+	//		float* pVertexData = new float[vertexAmount];
+	//		unsigned int* pIndexData = new unsigned int[indexAmount];
+	//		std::memcpy(pVertexData, vertexBuffer.data(), vertexAmount * sizeof(IVertex_Point4));
+	//		std::memcpy(pIndexData, indexBuffer.data(), indexAmount * 4);
 	//		const std::string texPaths[4]{ "Resources/vehicle_diffuse.png", "Resources/vehicle_normal.png", "Resources/vehicle_specular.png", "Resources/vehicle_gloss.png" };
-	//		Mesh* pVehicleMesh = new Mesh{ vertexBuffer, indexBuffer, vertexType, PrimitiveTopology::TriangleList };
+	//		Mesh* pVehicleMesh = new Mesh{ pVertexData, vertexAmount, sizeof(IVertex_Point4), pIndexData, indexAmount, vertexType, PrimitiveTopology::TriangleList };
 	//		pVehicleMesh->LoadTextures(texPaths);
 	//		pSceneGraph->AddMesh(pVehicleMesh);
 	//	}
@@ -166,7 +189,7 @@ void CreateScenes(SceneManager& sm)
 			// Mesh 1
 			short vertexType{};
 			vertexType |= (int)VertexType::Col;
-			std::vector<IVertex> vertices{
+			IVertex* vertices = new IVertex[]{
 				IVertex{ FPoint3{ 1.f, -1.f, -1.f }, RGBColor{1.f, 0.f, 0.f} },
 				IVertex{ FPoint3{ 1.f, -1.f, 1.f }, RGBColor{0.f, 1.f, 0.f} },
 				IVertex{ FPoint3{ -1.f, -1.f, 1.f }, RGBColor{0.f, 0.f, 1.f} },
@@ -175,11 +198,11 @@ void CreateScenes(SceneManager& sm)
 				IVertex{ FPoint3{ 1.f, 1.f, 1.f }, RGBColor{0.f, 0.f, 1.f} },
 				IVertex{ FPoint3{ -1.f, 1.f, 1.f }, RGBColor{1.f, 0.f, 0.f} },
 				IVertex{ FPoint3{ -1.f, 1.f, -1.f }, RGBColor{0.f, 1.f, 0.f} } };
-			std::vector<unsigned int> indices{ 
+			unsigned int* indices = new unsigned int[]{ 
 				1, 2, 3, 7, 6, 5, 4, 5, 1, 5, 6, 2, 2, 6, 7, 0, 3, 7, 0, 1, 3, 4, 7, 5, 0, 4, 1, 1, 5, 2, 3, 2, 7, 4, 0, 7, //BackFace
 				7, 0, 4, 7, 2, 3, 2, 5, 1, 1, 4, 0, 5, 7, 4, 3, 1, 0, 7, 3, 0, 7, 6, 2, 2, 6, 5, 1, 5, 4, 5, 6, 7, 3, 2, 1, //FrontFace
 				};
-			Mesh* pCube = new Mesh{ vertices, indices, vertexType, PrimitiveTopology::TriangleList };
+			Mesh* pCube = new Mesh{ reinterpret_cast<float*>(vertices), 8, sizeof(IVertex), indices, 72, vertexType, PrimitiveTopology::TriangleList };
 			pSceneGraph->AddMesh(pCube);
 		}
 		pSceneGraphs.push_back(pSceneGraph);

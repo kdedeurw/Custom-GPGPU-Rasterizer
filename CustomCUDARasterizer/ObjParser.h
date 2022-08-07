@@ -21,6 +21,7 @@ public:
 	void CloseFile();
 
 	void ReadFromObjFile(std::vector<IVertex>& vertexBuffer, std::vector<unsigned int>& indexBuffer, short& vertexType);
+	void ReadFromObjFile(std::vector<IVertex_Point4>& vertexBuffer, std::vector<unsigned int>& indexBuffer, short& vertexType);
 
 	void SetInvertYAxis(bool value);
 
@@ -41,6 +42,7 @@ private:
 	void StoreUV(std::stringstream& uv);
 	void GetFirstSecondThird(std::stringstream& fst, std::string& first, std::string& second, std::string& third);
 
+	void ParseData();
 	void AssignVertices(std::vector<IVertex>& vertexBuffer, std::vector<unsigned int>& indexBuffer, short& vertexType);
 	void ClearData();
 };
