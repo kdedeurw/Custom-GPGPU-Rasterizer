@@ -189,20 +189,23 @@ void CreateScenes(SceneManager& sm)
 			// Mesh 1
 			short vertexType{};
 			vertexType |= (int)VertexType::Col;
-			IVertex* vertices = new IVertex[]{
-				IVertex{ FPoint3{ 1.f, -1.f, -1.f }, RGBColor{1.f, 0.f, 0.f} },
-				IVertex{ FPoint3{ 1.f, -1.f, 1.f }, RGBColor{0.f, 1.f, 0.f} },
-				IVertex{ FPoint3{ -1.f, -1.f, 1.f }, RGBColor{0.f, 0.f, 1.f} },
-				IVertex{ FPoint3{ -1.f, -1.f, -1.f }, RGBColor{1.f, 0.f, 0.f} },
-				IVertex{ FPoint3{ 1.f, 1.f, -1.f }, RGBColor{0.f, 1.f, 0.f} },
-				IVertex{ FPoint3{ 1.f, 1.f, 1.f }, RGBColor{0.f, 0.f, 1.f} },
-				IVertex{ FPoint3{ -1.f, 1.f, 1.f }, RGBColor{1.f, 0.f, 0.f} },
-				IVertex{ FPoint3{ -1.f, 1.f, -1.f }, RGBColor{0.f, 1.f, 0.f} } };
-			unsigned int* indices = new unsigned int[]{ 
+			const unsigned int numVertices = 8;
+			const unsigned int numIndices = 72;
+			IVertex* vertices = new IVertex[numVertices];
+			vertices[0] = IVertex{ FPoint3{ 1.f, -1.f, -1.f }, RGBColor{1.f, 0.f, 0.f} };
+			vertices[1] = IVertex{ FPoint3{ 1.f, -1.f, 1.f }, RGBColor{0.f, 1.f, 0.f} };
+			vertices[2] = IVertex{ FPoint3{ -1.f, -1.f, 1.f }, RGBColor{0.f, 0.f, 1.f} };
+			vertices[3] = IVertex{ FPoint3{ -1.f, -1.f, -1.f }, RGBColor{1.f, 0.f, 0.f} };
+			vertices[4] = IVertex{ FPoint3{ 1.f, 1.f, -1.f }, RGBColor{0.f, 1.f, 0.f} };
+			vertices[5] = IVertex{ FPoint3{ 1.f, 1.f, 1.f }, RGBColor{0.f, 0.f, 1.f} };
+			vertices[6] = IVertex{ FPoint3{ -1.f, 1.f, 1.f }, RGBColor{1.f, 0.f, 0.f} };
+			vertices[7] = IVertex{ FPoint3{ -1.f, 1.f, -1.f }, RGBColor{0.f, 1.f, 0.f} };
+			unsigned int* indices = new unsigned int[numIndices];
+			unsigned int copy[]{ 
 				1, 2, 3, 7, 6, 5, 4, 5, 1, 5, 6, 2, 2, 6, 7, 0, 3, 7, 0, 1, 3, 4, 7, 5, 0, 4, 1, 1, 5, 2, 3, 2, 7, 4, 0, 7, //BackFace
-				7, 0, 4, 7, 2, 3, 2, 5, 1, 1, 4, 0, 5, 7, 4, 3, 1, 0, 7, 3, 0, 7, 6, 2, 2, 6, 5, 1, 5, 4, 5, 6, 7, 3, 2, 1, //FrontFace
-				};
-			Mesh* pCube = new Mesh{ reinterpret_cast<float*>(vertices), 8, sizeof(IVertex), indices, 72, vertexType, PrimitiveTopology::TriangleList };
+				7, 0, 4, 7, 2, 3, 2, 5, 1, 1, 4, 0, 5, 7, 4, 3, 1, 0, 7, 3, 0, 7, 6, 2, 2, 6, 5, 1, 5, 4, 5, 6, 7, 3, 2, 1 }; //FrontFace
+			std::memcpy(indices, copy, numIndices * 4);
+			Mesh* pCube = new Mesh{ reinterpret_cast<float*>(vertices), numVertices, sizeof(IVertex), indices, numIndices, vertexType, PrimitiveTopology::TriangleList };
 			pSceneGraph->AddMesh(pCube);
 		}
 		pSceneGraphs.push_back(pSceneGraph);

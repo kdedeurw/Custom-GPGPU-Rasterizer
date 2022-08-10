@@ -7,98 +7,53 @@
 #include "RGBColor.h"
 
 //Forward declarations
-struct RGBValues;
-struct RGBAValues;
-union RGB;
-union RGBA;
-BOTH_CALLABLE RGB GetRGB_SDL(const RGBColor& colour);
-BOTH_CALLABLE RGBA GetRGBA_SDL(const RGBColor& colour);
+struct RGB;
+struct RGBA;
 
-struct RGBValues
-{
-	//Uninitialized ctor
-	BOTH_CALLABLE RGBValues()
-	{}
-	BOTH_CALLABLE RGBValues(unsigned char r, unsigned char g, unsigned char b)
-		: r{ r }
-		, g{ g }
-		, b{ b }
-	{}
-	unsigned char r;
-	unsigned char g;
-	unsigned char b;
-};
+BOTH_CALLABLE RGBColor GetRGBColor(unsigned int colour);
+BOTH_CALLABLE RGBColor GetRGBColor_RBFlipped(unsigned int colour);
 
-struct RGBAValues : public RGBValues
-{
-	//Uninitialized ctor
-	BOTH_CALLABLE RGBAValues()
-	{}
-	BOTH_CALLABLE RGBAValues(unsigned char r, unsigned char g, unsigned char b, unsigned char a)
-		: RGBValues{ r, g, b }
-		, a{ a }
-	{}
-	unsigned char a;
-};
-
-union RGB
-{
-	//Uninitialized ctor
-	BOTH_CALLABLE RGB()
-	{}
-	BOTH_CALLABLE RGB(unsigned int colour)
-		: colour{ colour }
-	{}
-	BOTH_CALLABLE RGB(const RGBColor& colour)
-		: colour{ GetRGB_SDL(colour).colour }
-	{}
-	RGBValues values;
-	unsigned int colour;
-};
-
-union RGBA
+struct RGBA
 {
 	//Uninitialized ctor
 	BOTH_CALLABLE RGBA()
 	{}
 	BOTH_CALLABLE RGBA(unsigned int colour)
-		: colour{ colour }
+		: colour32{ colour }
 	{}
 	BOTH_CALLABLE RGBA(const RGBColor& colour)
-		: colour{ GetRGBA_SDL(colour).colour }
+		: colour32{ GetRGBAFromColour(colour).colour32 }
 	{}
-	RGBAValues values;
-	unsigned int colour;
+
+	union
+	{
+		struct
+		{
+			unsigned char r8, g8, b8, a8;
+		};
+		unsigned int colour32;
+	};
+
+	BOTH_CALLABLE static
+	RGBA GetRGBAFromColour(const RGBColor& colour)
+	{
+		RGBA rgba;
+		rgba.r8 = (unsigned char)(colour.b * 255);
+		rgba.g8 = (unsigned char)(colour.g * 255);
+		rgba.b8 = (unsigned char)(colour.r * 255);
+		rgba.a8 = 0; //UCHAR_MAX // doesn't matter in this case
+		return rgba;
+	}
 };
 
-BOTH_CALLABLE RGB GetRGB_SDL(const RGBColor& colour)
+BOTH_CALLABLE RGBColor GetRGBColor(unsigned int colour)
 {
-	RGB rgb;
-	rgb.values.r = (unsigned char)(colour.b * 255);
-	rgb.values.g = (unsigned char)(colour.g * 255);
-	rgb.values.b = (unsigned char)(colour.r * 255);
-	return rgb;
+	const RGBA& c = reinterpret_cast<RGBA&>(colour);
+	return RGBColor{ c.r8 / 255.f, c.g8 / 255.f, c.b8 / 255.f };
 }
 
-BOTH_CALLABLE RGBA GetRGBA_SDL(const RGBColor& colour)
+BOTH_CALLABLE RGBColor GetRGBColor_RBFlipped(unsigned int colour)
 {
-	RGBA rgba;
-	rgba.values.r = (unsigned char)(colour.b * 255);
-	rgba.values.g = (unsigned char)(colour.g * 255);
-	rgba.values.b = (unsigned char)(colour.r * 255);
-	rgba.values.a = 0; //UCHAR_MAX // doesn't matter in this case
-	return rgba;
-}
-
-//TODO: static_cast + return, without copying into RGBA struct
-BOTH_CALLABLE RGBColor GetRGBColor_SDL(unsigned int colour)
-{
-	const RGBA c{ std::move(colour) };
-	return RGBColor{ c.values.r / 255.f, c.values.g / 255.f, c.values.b / 255.f };
-}
-
-BOTH_CALLABLE RGBColor GetRGBColor_SDL_RBFlipped(unsigned int colour)
-{
-	const RGBA c{ std::move(colour) };
-	return RGBColor{ c.values.b / 255.f, c.values.g / 255.f, c.values.r / 255.f };
+	const RGBA& c = reinterpret_cast<RGBA&>(colour);
+	return RGBColor{ c.b8 / 255.f, c.g8 / 255.f, c.r8 / 255.f };
 }

@@ -82,7 +82,6 @@ public:
 		unsigned int TotalNumTriangles; //<READ ONLY>
 		unsigned int VisibleNumTriangles; //<READ/WRITE>
 		const Mesh* pMesh; //<READ ONLY>
-		CullingMode CullMode; //<READ ONLY>
 		GPUTexturesCompact Textures; //<READ ONLY>
 	};
 private:
@@ -104,11 +103,13 @@ private:
 	//-----CPU HELPER FUNCTIONS-----
 	
 	//function that allocates all output buffers for a mesh (idx)
-	CPU_CALLABLE void AllocateMeshBuffers(const size_t numVertices, const size_t numIndices, const size_t numTriangles, size_t meshIdx = 0);
+	CPU_CALLABLE void AllocateMeshBuffers(const size_t numVertices, const size_t numIndices, const size_t numTriangles, unsigned int stride, size_t meshIdx = 0);
 	//function that copies raw input buffers for a mesh (idx)
 	CPU_CALLABLE void CopyMeshBuffers(float* vertexBuffer, unsigned int numVertices, short stride, unsigned int* indexBuffer, unsigned int numIndices, size_t meshIdx = 0);
 	//function that preloads GPU textures in device's texture memory
 	CPU_CALLABLE void LoadMeshTextures(const std::string texturePaths[4], size_t meshIdx = 0);
+	//function that loads GPU textures in device's texture memory
+	CPU_CALLABLE GPUTexture LoadGPUTexture(const std::string texturePath, unsigned int textureIdx);
 	//function that frees all texture objects
 	CPU_CALLABLE void FreeTextures();
 	//function that frees all mesh buffers

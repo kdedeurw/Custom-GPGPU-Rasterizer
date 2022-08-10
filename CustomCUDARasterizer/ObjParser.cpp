@@ -138,6 +138,7 @@ void ObjParser::ReadFromObjFile(std::vector<IVertex_Point4>& vertexBuffer, std::
 			{
 				IVertex_Point4 v{};
 				v.p = m_Positions[m_PositionIndices[i]];
+				v.p.w = 1.f;
 				v.uv = m_UVs[m_UVIndices[i]];
 				v.n = m_Normals[m_NormalIndices[i]];
 				vertexBuffer.push_back(v);
@@ -207,6 +208,7 @@ void ObjParser::ReadFromObjFile(std::vector<IVertex_Point4>& vertexBuffer, std::
 			{
 				IVertex_Point4 v{};
 				v.p = m_Positions[m_PositionIndices[i]];
+				v.p.w = 1.f;
 				v.uv = m_UVs[m_UVIndices[i]];
 				v.n = m_Normals[m_NormalIndices[i]];
 				vertexBuffer.push_back(v);
@@ -242,6 +244,7 @@ void ObjParser::ReadFromObjFile(std::vector<IVertex_Point4>& vertexBuffer, std::
 			{
 				IVertex_Point4 v{};
 				v.p = m_Positions[m_PositionIndices[i]];
+				v.p.w = 1.f;
 				vertexBuffer.push_back(v);
 				index.v = m_PositionIndices[i];
 				index.idx = indexCounter;

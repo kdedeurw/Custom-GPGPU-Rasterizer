@@ -10,7 +10,7 @@
 class Mesh
 {
 public:
-	explicit Mesh(float* pVertices, unsigned int vertexAmount, short stride, unsigned int* pIndexes, unsigned int indexAmount,
+	explicit Mesh(float* pVertices, unsigned int vertexAmount, unsigned char stride, unsigned int* pIndexes, unsigned int indexAmount,
 		short vType, PrimitiveTopology pT = PrimitiveTopology::TriangleList, const FPoint3& position = FPoint3{});
 	virtual ~Mesh();
 
@@ -24,7 +24,7 @@ public:
 	const Textures& GetTextures() const { return m_pTextures; };
 	const FMatrix4& GetWorldMatrix() const { return m_WorldSpace; };
 
-	virtual void Update(float elapsedSec) {};
+	virtual void Update(float elapsedSec);
 	void LoadTextures(const std::string texPaths[4]);
 	const std::string* GetTexPaths() const { return m_TexturePaths; };
 

@@ -131,7 +131,6 @@ xcopy "$(SolutionDir)3rdParty\lib\vld\x64\Microsoft.DTfW.DHL.manifest" "$(OutDir
     <ClCompile Include="Camera.cpp" />
     <ClCompile Include="CUDABenchMarker.cpp" />
     <ClCompile Include="DirectionalLight.cpp" />
-    <ClCompile Include="ERenderer.cpp" />
     <ClCompile Include="ETimer.cpp" />
     <ClCompile Include="EventManager.cpp" />
     <ClCompile Include="Light.cpp" />
@@ -151,10 +150,10 @@ xcopy "$(SolutionDir)3rdParty\lib\vld\x64\Microsoft.DTfW.DHL.manifest" "$(OutDir
     <ClInclude Include="BoundingBox.h" />
     <ClInclude Include="Camera.h" />
     <ClInclude Include="CUDABenchMarker.h" />
+    <ClInclude Include="CUDAMatrixMath.cuh" />
     <ClInclude Include="CullingMode.h" />
     <ClInclude Include="DEFINES.h" />
     <ClInclude Include="DirectionalLight.h" />
-    <ClInclude Include="ERenderer.h" />
     <ClInclude Include="ETimer.h" />
     <ClInclude Include="EventManager.h" />
     <ClInclude Include="GPUHelpers.h" />
@@ -166,6 +165,7 @@ xcopy "$(SolutionDir)3rdParty\lib\vld\x64\Microsoft.DTfW.DHL.manifest" "$(OutDir
     <ClInclude Include="Matrix2.h" />
     <ClInclude Include="Matrix3.h" />
     <ClInclude Include="Matrix4.h" />
+    <ClInclude Include="MemoryConversionStrings.h" />
     <ClInclude Include="Mesh.h" />
     <ClInclude Include="ObjParser.h" />
     <ClInclude Include="PCH.h" />

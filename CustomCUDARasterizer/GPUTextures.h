@@ -1,7 +1,7 @@
 #pragma once
 #include "GPUHelpers.h"
 
-struct GPUTextureCompact
+struct GPUTextureCompact // size == 4
 {
 	cudaTextureObject_t dev_pTex; //cuda texture pointer address
 	unsigned int* dev_TextureData; //pixel array
@@ -14,7 +14,7 @@ struct GPUTexture : public GPUTextureCompact //size == 6
 	const static unsigned int bpp = 4; //bytes per pixel
 };
 
-struct GPUTextures
+struct GPUTextures // size == 24
 {
 	GPUTexture Diff;
 	GPUTexture Norm;
@@ -22,7 +22,7 @@ struct GPUTextures
 	GPUTexture Gloss;
 };
 
-struct GPUTexturesCompact //saves about 24 precious bytes
+struct GPUTexturesCompact //size == 18 (saves about 24 precious bytes)
 {
 	GPUTextureCompact Diff;
 	GPUTextureCompact Norm;

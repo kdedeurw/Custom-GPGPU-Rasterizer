@@ -57,7 +57,7 @@ RGBColor GPUTextureSampler::Sample1D(const GPUTextureCompact& gpuTexture, unsign
 
 	unsigned int sample = tex1Dfetch<unsigned int>(gpuTexture.dev_pTex, u + v * w);
 	const RGBA rgba{ sample };
-	return RGBColor{ rgba.values.b / 255.f, rgba.values.g / 255.f, rgba.values.r / 255.f };
+	return RGBColor{ rgba.b8 / 255.f, rgba.g8 / 255.f, rgba.r8 / 255.f };
 }
 
 GPU_CALLABLE GPU_INLINE
@@ -75,7 +75,7 @@ RGBColor GPUTextureSampler::Sample2D(const GPUTextureCompact& gpuTexture, unsign
 
 	unsigned int sample = tex2D<unsigned int>(gpuTexture.dev_pTex, u, v);
 	const RGBA rgba{ sample };
-	return RGBColor{ rgba.values.b / 255.f, rgba.values.g / 255.f, rgba.values.r / 255.f };
+	return RGBColor{ rgba.b8 / 255.f, rgba.g8 / 255.f, rgba.r8 / 255.f };
 }
 
 GPU_CALLABLE GPU_INLINE
@@ -86,9 +86,9 @@ RGBColor GPUTextureSampler::SamplePoint(const GPUTexture& gpuTexture, const FVec
 	const int v{ int(uv.y * gpuTexture.h + 0.5f) };
 	if (u < 0 || v < 0 || u >= gpuTexture.w || v >= gpuTexture.h)
 		return RGBColor{ 1.f, 0.f, 1.f };
-	const int sampleIdx = (int)u + (int)v * gpuTexture.w;
+	const int sampleIdx = u + v * gpuTexture.w;
 	unsigned int sample = gpuTexture.dev_TextureData[sampleIdx];
-	RGBColor sampleColour = GetRGBColor_SDL(sample);
+	RGBColor sampleColour = GetRGBColor(sample);
 	return sampleColour;
 }
 
@@ -100,9 +100,9 @@ RGBColor GPUTextureSampler::SamplePoint(const GPUTextureCompact& gpuTexture, uns
 	const int v{ int(uv.y * h + 0.5f) };
 	if (u < 0 || v < 0 || u >= w || v >= h)
 		return RGBColor{ 1.f, 0.f, 1.f };
-	const int sampleIdx = (int)u + (int)v * w;
+	const int sampleIdx = u + v * w;
 	unsigned int sample = gpuTexture.dev_TextureData[sampleIdx];
-	RGBColor sampleColour = GetRGBColor_SDL(sample);
+	RGBColor sampleColour = GetRGBColor(sample);
 	return sampleColour;
 }
 
@@ -162,9 +162,9 @@ RGBColor GPUTextureSampler::SampleLinear(const GPUTexture& gpuTexture, const FVe
 	for (int i{}; i < numNeighbours; ++i)
 	{
 		rgba = pixels[neighbours[i]];
-		finalSampleColour.r += rgba.values.r * weight;
-		finalSampleColour.g += rgba.values.g * weight;
-		finalSampleColour.b += rgba.values.b * weight;
+		finalSampleColour.r += rgba.r8 * weight;
+		finalSampleColour.g += rgba.g8 * weight;
+		finalSampleColour.b += rgba.b8 * weight;
 	}
 	////sample the other 4 corners
 	//finalSampleColour /= 2; //re-enable this bc of shared finalSampleColour
@@ -179,9 +179,9 @@ RGBColor GPUTextureSampler::SampleLinear(const GPUTexture& gpuTexture, const FVe
 
 	//Step 5: add original pixel sample and divide by 2 to not oversample colour
 	rgba = pixels[originalPixel];
-	finalSampleColour.r += rgba.values.r / 2.f;
-	finalSampleColour.g += rgba.values.g / 2.f;
-	finalSampleColour.b += rgba.values.b / 2.f;
+	finalSampleColour.r += rgba.r8 / 2.f;
+	finalSampleColour.g += rgba.g8 / 2.f;
+	finalSampleColour.b += rgba.b8 / 2.f;
 
 	//Step 6: return finalSampleColour / 255
 	return finalSampleColour / 255.f;
@@ -243,9 +243,9 @@ RGBColor GPUTextureSampler::SampleLinear(const GPUTextureCompact& gpuTexture, un
 	for (int i{}; i < numNeighbours; ++i)
 	{
 		rgba = pixels[neighbours[i]];
-		finalSampleColour.r += rgba.values.r * weight;
-		finalSampleColour.g += rgba.values.g * weight;
-		finalSampleColour.b += rgba.values.b * weight;
+		finalSampleColour.r += rgba.r8 * weight;
+		finalSampleColour.g += rgba.g8 * weight;
+		finalSampleColour.b += rgba.b8 * weight;
 	}
 	////sample the other 4 corners
 	//finalSampleColour /= 2; //re-enable this bc of shared finalSampleColour
@@ -260,9 +260,9 @@ RGBColor GPUTextureSampler::SampleLinear(const GPUTextureCompact& gpuTexture, un
 
 	//Step 5: add original pixel sample and divide by 2 to not oversample colour
 	rgba = pixels[originalPixel];
-	finalSampleColour.r += rgba.values.r / 2.f;
-	finalSampleColour.g += rgba.values.g / 2.f;
-	finalSampleColour.b += rgba.values.b / 2.f;
+	finalSampleColour.r += rgba.r8 / 2.f;
+	finalSampleColour.g += rgba.g8 / 2.f;
+	finalSampleColour.b += rgba.b8 / 2.f;
 
 	//Step 6: return finalSampleColour / 255
 	return finalSampleColour / 255.f;

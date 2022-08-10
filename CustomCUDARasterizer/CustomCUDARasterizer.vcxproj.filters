@@ -70,9 +70,6 @@
     <ClCompile Include="Texture.cpp">
       <Filter>Renderer\Shading</Filter>
     </ClCompile>
-    <ClCompile Include="ERenderer.cpp">
-      <Filter>Renderer</Filter>
-    </ClCompile>
     <ClCompile Include="CUDABenchMarker.cpp">
       <Filter>Helpers\CUDA</Filter>
     </ClCompile>
@@ -117,9 +114,6 @@
     </ClInclude>
     <ClInclude Include="Vertex.h">
       <Filter>Renderer\Shading</Filter>
-    </ClInclude>
-    <ClInclude Include="ERenderer.h">
-      <Filter>Renderer</Filter>
     </ClInclude>
     <ClInclude Include="BoundingBox.h">
       <Filter>Helpers</Filter>
@@ -208,6 +202,10 @@
     <ClInclude Include="VertexType.h">
       <Filter>Renderer</Filter>
     </ClInclude>
+    <ClInclude Include="CUDAMatrixMath.cuh">
+      <Filter>Helpers\CUDA</Filter>
+    </ClInclude>
+    <ClInclude Include="MemoryConversionStrings.h" />
   </ItemGroup>
   <ItemGroup>
     <None Include="CustomCUDARasterizer.props" />

@@ -11,13 +11,13 @@ struct SDL_Surface;
 class Texture
 {
 public:
-	explicit Texture(const char* file);
-	~Texture();
-	RGBColor inline Sample(const FVector2& uv, SampleState state = SampleState::Point) const;
-	RGBColor inline SamplePoint(const FVector2& uv) const;
-	RGBColor inline SampleLinear(const FVector2& uv) const;
+	Texture(const char* file);
+	virtual ~Texture();
+	virtual RGBColor inline Sample(const FVector2& uv, SampleState state = SampleState::Point) const;
+	virtual RGBColor inline SamplePoint(const FVector2& uv) const;
+	virtual RGBColor inline SampleLinear(const FVector2& uv) const;
 
-private:
+protected:
 	SDL_Surface* m_pSurface;
 
 };

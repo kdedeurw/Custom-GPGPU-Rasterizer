@@ -325,3 +325,12 @@ struct OVertex : public OVertex_Base
 	FVector3 vd;  // view direction
 	RGBColor c; // colour
 };
+
+struct OVertexData // size == 14
+{
+	FVector2 uv;
+	FVector3 n;
+	FVector3 tan;
+	FVector3 vd;
+	RGBColor c;
+};

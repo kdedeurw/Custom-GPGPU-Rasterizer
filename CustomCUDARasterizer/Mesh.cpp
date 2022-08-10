@@ -2,7 +2,7 @@
 #include "Mesh.h"
 #include "Texture.h"
 
-Mesh::Mesh(float* pVertices, unsigned int vertexAmount, short stride, unsigned int* pIndexes, unsigned int indexAmount,
+Mesh::Mesh(float* pVertices, unsigned int vertexAmount, unsigned char stride, unsigned int* pIndexes, unsigned int indexAmount,
 	short vType, PrimitiveTopology pT, const FPoint3& position)
 	: m_pVertexBuffer{ pVertices }
 	, m_pIndexBuffer{ pIndexes }
