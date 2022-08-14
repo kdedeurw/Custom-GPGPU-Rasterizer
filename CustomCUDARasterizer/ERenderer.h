@@ -68,7 +68,8 @@ namespace Elite
 		BoundingBox GetBoundingBox(FPoint4 rasterCoords[3]);
 		OVertex GetNDCVertexDeprecated(const IVertex& vertex, const FMatrix4& worldMatrix = FMatrix4::Identity());
 		inline OVertex GetNDCVertex(const IVertex& vertex, const FMatrix4& viewProjectionMatrix, const FMatrix4& worldMatrix = FMatrix4::Identity());
-		std::vector<OVertex> GetNDCMeshVertices(const std::vector<IVertex>& vertices, const FMatrix4& iewProjectionMatrix, const FMatrix4& worldMatrix = FMatrix4::Identity());
+		std::vector<OVertex> GetNDCMeshVertices(const std::vector<IVertex>& vertices, const FMatrix4& viewProjectionMatrix, const FMatrix4& worldMatrix = FMatrix4::Identity());
+		std::vector<OVertex> GetNDCMeshVertices(const float* pVertices, unsigned int numVertices, const FMatrix4& viewProjectionMatrix, const FMatrix4& worldMatrix = FMatrix4::Identity());
 		inline void ShadePixel(const OVertex& oVertex, const Textures& textures, const SceneManager& sm);
 	};
 }

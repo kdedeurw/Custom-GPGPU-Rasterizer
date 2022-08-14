@@ -21,7 +21,6 @@ public:
 	void CloseFile();
 
 	void ReadFromObjFile(std::vector<IVertex>& vertexBuffer, std::vector<unsigned int>& indexBuffer, short& vertexType);
-	void ReadFromObjFile(std::vector<IVertex_Point4>& vertexBuffer, std::vector<unsigned int>& indexBuffer, short& vertexType);
 
 	void SetInvertYAxis(bool value);
 

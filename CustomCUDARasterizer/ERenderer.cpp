@@ -58,22 +58,25 @@ void Elite::Renderer::Render(const SceneManager& sm)
 	//Render frame by looping over all objects
 	for (Mesh* pMesh : pObjects)
 	{
-		std::vector<OVertex> NDCVertices{ GetNDCMeshVertices(pMesh->GetVertices(), viewProjectionMatrix, pMesh->GetWorldMatrix()) }; // calculate all IVertices to OVertices !in NDC!
-		const std::vector<unsigned int>& indices{ pMesh->GetIndexes() };
+		const std::vector<IVertex>& vertexBuffer = pMesh->GetVertexBuffer();
+		const unsigned int numVertices = pMesh->GetVertexAmount();
+		const std::vector<unsigned int>& indexBuffer = pMesh->GetIndexBuffer();
+		const unsigned int numIndices = pMesh->GetIndexAmount();
 		m_pTextures = &pMesh->GetTextures();
 		const PrimitiveTopology pT{ pMesh->GetTopology() };
 		const CullingMode cm{ sm.GetCullingMode() };
-		const size_t size{ indices.size() };
+
+		std::vector<OVertex> NDCVertices{ GetNDCMeshVertices(vertexBuffer, viewProjectionMatrix, pMesh->GetWorldMatrix()) }; // calculate all IVertices to OVertices !in NDC!
 
 		// Topology
 		//"A switch statement does a hidden check to see if there are more than 10 things to check, not just if - else." -Terry A. Davis
 		if (pT == PrimitiveTopology::TriangleList)
 		{
-			for (size_t idx{ 2 }; idx < size; idx += 3)
+			for (size_t idx{ 2 }; idx < numIndices; idx += 3)
 			{
-				const OVertex& v0 = NDCVertices[indices[idx - 2]];
-				const OVertex& v1 = NDCVertices[indices[idx - 1]];
-				const OVertex& v2 = NDCVertices[indices[idx]];
+				const OVertex& v0 = NDCVertices[indexBuffer[idx - 2]];
+				const OVertex& v1 = NDCVertices[indexBuffer[idx - 1]];
+				const OVertex& v2 = NDCVertices[indexBuffer[idx]];
 
 				//is triangle visible according to cullingmode?
 				if (cm == CullingMode::BackFace)
@@ -113,11 +116,11 @@ void Elite::Renderer::Render(const SceneManager& sm)
 		{
 			bool isOdd{};//could replace with modulo operator, but this is way more performant, at the cost of using a tiny bit more memory
 			//https://embeddedgurus.com/stack-overflow/2011/02/efficient-c-tip-13-use-the-modulus-operator-with-caution/
-			for (size_t idx{}; idx < size - 2; ++idx)
+			for (size_t idx{}; idx < numIndices - 2; ++idx)
 			{
-				const unsigned int idx0 = indices[idx];
-				const unsigned int idx1 = isOdd ? indices[idx + 1] : indices[idx + 2];
-				const unsigned int idx2 = isOdd ? indices[idx + 2] : indices[idx + 1];
+				const unsigned int idx0 = indexBuffer[idx];
+				const unsigned int idx1 = isOdd ? indexBuffer[idx + 1] : indexBuffer[idx + 2];
+				const unsigned int idx2 = isOdd ? indexBuffer[idx + 2] : indexBuffer[idx + 1];
 
 				const OVertex& v0 = NDCVertices[idx0];
 				const OVertex& v1 = NDCVertices[idx1];
@@ -213,6 +216,7 @@ OVertex Elite::Renderer::GetNDCVertex(const IVertex& vertex, const FMatrix4& vie
 {
 	//-----------------------------Matrix Based-----------------------------
 	const FMatrix4 worldViewProjectionMatrix{ viewProjectionMatrix * worldMatrix };
+	const FMatrix3 rotationMatrix = (FMatrix3)worldMatrix;
 	//FPoint4 NDCspace = worldViewProjectionMatrix * FPoint4{ vertex.p.x, vertex.p.y, vertex.p.z, vertex.p.z };
 	FPoint4 NDCspace = worldViewProjectionMatrix * FPoint4{ vertex.p };
 
@@ -231,8 +235,8 @@ OVertex Elite::Renderer::GetNDCVertex(const IVertex& vertex, const FMatrix4& vie
 	//const FMatrix3 rotationMatrix = (FMatrix3)worldMatrix;
 	const FPoint3 worldPosition{ worldMatrix * FPoint4{ vertex.p } };
 	const FVector3 viewDirection{ GetNormalized(worldPosition - camPos) };
-	const FVector3 worldNormal{ (FMatrix3)worldMatrix * vertex.n };
-	const FVector3 worldTangent{ (FMatrix3)worldMatrix * vertex.tan };
+	const FVector3 worldNormal{ rotationMatrix * vertex.n };
+	const FVector3 worldTangent{ rotationMatrix * vertex.tan };
 
 	return OVertex{ NDCspace, vertex.uv, worldNormal, worldTangent, vertex.c, viewDirection };
 }
@@ -251,6 +255,17 @@ std::vector<OVertex> Elite::Renderer::GetNDCMeshVertices(const std::vector<IVert
 	// Basically the compilers optimizes the proces above so an automatic std::move() will be used instead of a copy construction (thank god)
 }
 
+std::vector<OVertex> Elite::Renderer::GetNDCMeshVertices(const float* pVertices, unsigned int numVertices, const FMatrix4& viewProjectionMatrix, const FMatrix4& worldMatrix)
+{
+	std::vector<OVertex> corrVertices{};
+	corrVertices.reserve(numVertices);
+	for (size_t i{}; i < numVertices; ++i)
+	{
+		corrVertices.push_back(GetNDCVertex(reinterpret_cast<const IVertex*>(pVertices)[i], viewProjectionMatrix, worldMatrix));
+	}
+	return corrVertices;
+}
+
 void Elite::Renderer::RenderPixelsInTriangle(const SceneManager& sm, const OVertex* triangle[3], FPoint4 rasterCoords[3])
 {
 	const BoundingBox bb = GetBoundingBox(rasterCoords);
@@ -264,9 +279,9 @@ void Elite::Renderer::RenderPixelsInTriangle(const SceneManager& sm, const OVert
 	const float v2InvDepth = 1.f / rasterCoords[2].w;
 
 	//Loop over all pixels in bounding box
-	for (uint32_t r = bb.yMin; r < bb.yMax; ++r)
+	for (short r = bb.yMin; r < bb.yMax; ++r)
 	{
-		for (uint32_t c = bb.xMin; c < bb.xMax; ++c)
+		for (short c = bb.xMin; c < bb.xMax; ++c)
 		{
 			const FPoint2 pixel{ float(c), float(r) };
 			float weights[3]{}; // array of 3 addresses

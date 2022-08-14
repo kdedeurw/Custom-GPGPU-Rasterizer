@@ -10,34 +10,28 @@
 class Mesh
 {
 public:
-	explicit Mesh(float* pVertices, unsigned int vertexAmount, unsigned char stride, unsigned int* pIndexes, unsigned int indexAmount,
-		short vType, PrimitiveTopology pT = PrimitiveTopology::TriangleList, const FPoint3& position = FPoint3{});
+	explicit Mesh(std::vector<IVertex>& vertexBuffer, std::vector<unsigned int>& indexBuffer,
+		PrimitiveTopology pT = PrimitiveTopology::TriangleList, const FPoint3& position = FPoint3{});
 	virtual ~Mesh();
 
-	float* GetVertices() const { return m_pVertexBuffer; };
-	unsigned int* GetIndexes() const { return m_pIndexBuffer; };
+	const std::vector<IVertex>& GetVertexBuffer() const { return m_VertexBuffer; };
+	const std::vector<unsigned int>& GetIndexBuffer() const { return m_IndexBuffer; };
 	PrimitiveTopology GetTopology() const { return m_Topology; };
-	short GetVertexType() const { return m_VertexType; };
-	short GetVertexStride() const { return m_VertexStride; };
-	unsigned int GetVertexAmount() const { return m_VertexAmount; };
-	unsigned int GetIndexAmount() const { return m_IndexAmount; };
+	short GetVertexStride() const { return sizeof(IVertex); };
+	unsigned int GetVertexAmount() const { return m_VertexBuffer.size(); };
+	unsigned int GetIndexAmount() const { return m_IndexBuffer.size(); };
 	const Textures& GetTextures() const { return m_pTextures; };
 	const FMatrix4& GetWorldMatrix() const { return m_WorldSpace; };
+	FMatrix3 GetRotationMatrix() const { return (FMatrix3)m_WorldSpace; };
 
 	virtual void Update(float elapsedSec);
 	void LoadTextures(const std::string texPaths[4]);
 	const std::string* GetTexPaths() const { return m_TexturePaths; };
 
-	bool IsPoint4Pos() const { return m_VertexType | (short)VertexType::Pos4; }
-
 protected:
 	const PrimitiveTopology m_Topology;
-	const unsigned char m_VertexStride;
-	const short m_VertexType;
-	float* m_pVertexBuffer;
-	unsigned int* m_pIndexBuffer;
-	unsigned int m_VertexAmount;
-	unsigned int m_IndexAmount;
+	std::vector<IVertex> m_VertexBuffer;
+	std::vector<unsigned int> m_IndexBuffer;
 	Textures m_pTextures;
 	FMatrix4 m_WorldSpace;
 	std::string m_TexturePaths[4];

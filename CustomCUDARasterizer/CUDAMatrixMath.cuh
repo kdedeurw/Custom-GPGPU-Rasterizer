@@ -1,6 +1,5 @@
+#pragma once
 //CUDA includes
-#include "cuda_runtime.h"
-#include "device_launch_parameters.h"
 #include "GPUHelpers.h"
 
 GPU_CALLABLE GPU_INLINE static

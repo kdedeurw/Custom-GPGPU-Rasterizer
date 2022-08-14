@@ -1,7 +1,7 @@
 #pragma once
 //CUDA includes
-#include "cuda_runtime.h"
-#include "device_launch_parameters.h"
+#include "GPUHelpers.h"
+#include "CUDABenchMarker.h"
 
 //Standard includes
 #include <stdio.h>
@@ -13,6 +13,26 @@
 #include "Math.h"
 #include "MathUtilities.h"
 #include "RGBColor.h"
+#include "RGBRaw.h"
+
+//Misc includes
+#include "WindowHelper.h"
+#include "MemoryConversionStrings.h"
+#include "DEFINES.h"
+
+//Geometry includes
+#include "SceneGraph.h"
+#include "SceneManager.h"
+#include "Camera.h"
+#include "Mesh.h"
+#include "Vertex.h"
+#include "Structs.h"
+#include "PrimitiveTopology.h"
+#include "BoundingBox.h"
+#include "GPUTextures.h"
+#include "Light.h"
+#include "GPUTextures.h"
+#include "CullingMode.h"
 
 // Convenience function for checking CUDA runtime API results
 // can be wrapped around any runtime API call. No-op in release builds.

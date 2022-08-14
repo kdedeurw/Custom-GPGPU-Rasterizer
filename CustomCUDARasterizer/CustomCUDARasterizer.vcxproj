@@ -124,13 +124,17 @@ xcopy "$(SolutionDir)3rdParty\lib\vld\x64\Microsoft.DTfW.DHL.manifest" "$(OutDir
     </CudaLink>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <CudaCompile Include="main.cpp" />
-    <CudaCompile Include="CUDARenderer.cu" />
+    <CudaCompile Include="main.cu" />
+    <CudaCompile Include="CUDARenderer.cu">
+      <FileType>Document</FileType>
+    </CudaCompile>
+    <CudaCompile Include="RasterizerOperations.cu" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="Camera.cpp" />
     <ClCompile Include="CUDABenchMarker.cpp" />
     <ClCompile Include="DirectionalLight.cpp" />
+    <ClCompile Include="ERenderer.cpp" />
     <ClCompile Include="ETimer.cpp" />
     <ClCompile Include="EventManager.cpp" />
     <ClCompile Include="Light.cpp" />
@@ -150,10 +154,13 @@ xcopy "$(SolutionDir)3rdParty\lib\vld\x64\Microsoft.DTfW.DHL.manifest" "$(OutDir
     <ClInclude Include="BoundingBox.h" />
     <ClInclude Include="Camera.h" />
     <ClInclude Include="CUDABenchMarker.h" />
-    <ClInclude Include="CUDAMatrixMath.cuh" />
+    <ClInclude Include="CUDAMatrixMath.cuh">
+      <FileType>Document</FileType>
+    </ClInclude>
     <ClInclude Include="CullingMode.h" />
     <ClInclude Include="DEFINES.h" />
     <ClInclude Include="DirectionalLight.h" />
+    <ClInclude Include="ERenderer.h" />
     <ClInclude Include="ETimer.h" />
     <ClInclude Include="EventManager.h" />
     <ClInclude Include="GPUHelpers.h" />
@@ -174,7 +181,7 @@ xcopy "$(SolutionDir)3rdParty\lib\vld\x64\Microsoft.DTfW.DHL.manifest" "$(OutDir
     <ClInclude Include="Point3.h" />
     <ClInclude Include="Point4.h" />
     <ClInclude Include="PointLight.h" />
-    <ClInclude Include="CUDARenderer.cuh" />
+    <ClInclude Include="CUDARenderer.h" />
     <ClInclude Include="PrimitiveTopology.h" />
     <ClInclude Include="RGBColor.h" />
     <ClInclude Include="RGBRaw.h" />
@@ -182,6 +189,7 @@ xcopy "$(SolutionDir)3rdParty\lib\vld\x64\Microsoft.DTfW.DHL.manifest" "$(OutDir
     <ClInclude Include="SceneGraph.h" />
     <ClInclude Include="SceneManager.h" />
     <ClInclude Include="GPUTextureSampler.cuh" />
+    <ClInclude Include="Structs.h" />
     <ClInclude Include="Texture.h" />
     <ClInclude Include="Textures.h" />
     <ClInclude Include="Triangle.h" />

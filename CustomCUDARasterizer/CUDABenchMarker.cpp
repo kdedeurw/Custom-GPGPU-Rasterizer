@@ -9,6 +9,8 @@ CUDABenchMarker::CUDABenchMarker(int amountOfTimes, int amountOfTimeAverages)
 	, m_StopEvent{}
 {
 	m_TimesMs = new float[amountOfTimes * amountOfTimeAverages];
+	CheckErrorCuda(cudaEventCreate(&m_StartEvent));
+	CheckErrorCuda(cudaEventCreate(&m_StopEvent));
 }
 
 CUDABenchMarker::~CUDABenchMarker()

@@ -313,7 +313,7 @@ struct OVertex : public OVertex_Base
 		, c{ colour }
 		, n{ normal }
 		, tan{ tangent }
-		, vd{viewDirection}
+		, vd{ viewDirection }
 	{}
 	BOTH_CALLABLE OVertex(const OVertex& other) // copy constructor => basically shallow copy
 		: OVertex{ other.p, other.uv, other.n, other.tan, other.c, other.vd }

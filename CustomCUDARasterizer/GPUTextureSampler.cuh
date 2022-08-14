@@ -1,11 +1,8 @@
 #pragma once
-#include "cuda_runtime.h"
-#include "device_launch_parameters.h"
-
 #include "GPUHelpers.h"
 
-#include "RGBColor.h"
 #include "Math.h"
+#include "RGBColor.h"
 #include "GPUTextures.h"
 #include "RGBRaw.h"
 #include "SampleState.h"
@@ -88,7 +85,7 @@ RGBColor GPUTextureSampler::SamplePoint(const GPUTexture& gpuTexture, const FVec
 		return RGBColor{ 1.f, 0.f, 1.f };
 	const int sampleIdx = u + v * gpuTexture.w;
 	unsigned int sample = gpuTexture.dev_TextureData[sampleIdx];
-	RGBColor sampleColour = GetRGBColor(sample);
+	RGBColor sampleColour = RGBA::GetRGBColor(sample);
 	return sampleColour;
 }
 
@@ -102,7 +99,7 @@ RGBColor GPUTextureSampler::SamplePoint(const GPUTextureCompact& gpuTexture, uns
 		return RGBColor{ 1.f, 0.f, 1.f };
 	const int sampleIdx = u + v * w;
 	unsigned int sample = gpuTexture.dev_TextureData[sampleIdx];
-	RGBColor sampleColour = GetRGBColor(sample);
+	RGBColor sampleColour = RGBA::GetRGBColor(sample);
 	return sampleColour;
 }
 

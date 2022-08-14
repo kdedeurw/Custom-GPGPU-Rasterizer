@@ -27,7 +27,10 @@
     </Filter>
   </ItemGroup>
   <ItemGroup>
-    <CudaCompile Include="main.cpp" />
+    <CudaCompile Include="main.cu" />
+    <CudaCompile Include="RasterizerOperations.cu">
+      <Filter>Helpers\CUDA</Filter>
+    </CudaCompile>
     <CudaCompile Include="CUDARenderer.cu">
       <Filter>Helpers\CUDA</Filter>
     </CudaCompile>
@@ -72,6 +75,9 @@
     </ClCompile>
     <ClCompile Include="CUDABenchMarker.cpp">
       <Filter>Helpers\CUDA</Filter>
+    </ClCompile>
+    <ClCompile Include="ERenderer.cpp">
+      <Filter>Renderer</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
@@ -175,7 +181,7 @@
     <ClInclude Include="GPUTextures.h">
       <Filter>Helpers</Filter>
     </ClInclude>
-    <ClInclude Include="CUDARenderer.cuh">
+    <ClInclude Include="CUDARenderer.h">
       <Filter>Helpers\CUDA</Filter>
     </ClInclude>
     <ClInclude Include="GPUTextureSampler.cuh">
@@ -202,10 +208,16 @@
     <ClInclude Include="VertexType.h">
       <Filter>Renderer</Filter>
     </ClInclude>
+    <ClInclude Include="MemoryConversionStrings.h" />
+    <ClInclude Include="ERenderer.h">
+      <Filter>Renderer</Filter>
+    </ClInclude>
+    <ClInclude Include="Structs.h">
+      <Filter>Helpers</Filter>
+    </ClInclude>
     <ClInclude Include="CUDAMatrixMath.cuh">
       <Filter>Helpers\CUDA</Filter>
     </ClInclude>
-    <ClInclude Include="MemoryConversionStrings.h" />
   </ItemGroup>
   <ItemGroup>
     <None Include="CustomCUDARasterizer.props" />
