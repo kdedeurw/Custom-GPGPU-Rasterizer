@@ -340,6 +340,7 @@ void ObjParser::AssignVertices(std::vector<IVertex>& vertexBuffer, std::vector<u
 				IVertex v;
 				v.p = m_Positions[m_PositionIndices[i]];
 				v.uv = FVector2{};
+				v.c = { 1.f, 1.f, 1.f };
 				vertexBuffer.push_back(v);
 				index.v = m_PositionIndices[i];
 				index.idx = indexCounter;

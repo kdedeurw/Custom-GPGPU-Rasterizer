@@ -102,7 +102,7 @@ bool IsTriangleInFrustum(const FPoint4& v0, const FPoint4& v1, const FPoint4& v2
 	//TODO: bug, triangles gets culled when zoomed in, aka all 3 vertices are outside of frustum
 }
 
-GPU_CALLABLE static
+BOTH_CALLABLE static
 BoundingBox GetBoundingBox(const FPoint4& v0, const FPoint4& v1, const FPoint4& v2, const unsigned int width, const unsigned int height)
 {
 	BoundingBox bb;
@@ -120,6 +120,24 @@ BoundingBox GetBoundingBox(const FPoint4& v0, const FPoint4& v1, const FPoint4& 
 }
 
 GPU_CALLABLE static
+BoundingBox GetBoundingBoxTiled(const FPoint4& v0, const FPoint4& v1, const FPoint4& v2, 
+	const unsigned int minX, const unsigned int minY, const unsigned int maxX, const unsigned int maxY)
+{
+	BoundingBox bb;
+	bb.xMin = (short)GetMinElement(v0.x, v1.x, v2.x) - 1; // xMin
+	bb.yMin = (short)GetMinElement(v0.y, v1.y, v2.y) - 1; // yMin
+	bb.xMax = (short)GetMaxElement(v0.x, v1.x, v2.x) + 1; // xMax
+	bb.yMax = (short)GetMaxElement(v0.y, v1.y, v2.y) + 1; // yMax
+
+	if (bb.xMin < minX) bb.xMin = minX; //clamp minX to Left of screen
+	if (bb.yMin < minY) bb.yMin = minY; //clamp minY to Bottom of screen
+	if (bb.xMax > maxX) bb.xMax = maxX; //clamp maxX to Right of screen
+	if (bb.yMax > maxY) bb.yMax = maxY; //clamp maxY to Top of screen
+
+	return bb;
+}
+
+BOTH_CALLABLE static
 void NDCToScreenSpace(FPoint4& v0, FPoint4& v1, FPoint4& v2, const unsigned int width, const unsigned int height)
 {
 	v0.x = ((v0.x + 1) / 2) * width;
@@ -181,25 +199,19 @@ BoundingBox GetBoundingBox(const RasterTriangle& triangle, const unsigned int wi
 }
 
 GPU_CALLABLE static
-OVertex GetNDCVertex(const IVertex& __restrict__ iVertex)
+OVertex GetNDCVertex(const IVertex& __restrict__ iVertex, const FMatrix4& wvpMat, const FMatrix4& worldMat, const FMatrix3& rotMat, const FPoint3& camPos)
 {
-	const FPoint3 camPos{};
-	const FMatrix4 WVPMatrix{};
-	const FMatrix4 worldMatrix{};
-	const FMatrix3 rotationMatrix{};
-
 	OVertex oVertex;
-	oVertex.p = WVPMatrix * FPoint4{ iVertex.p };
+	oVertex.p = wvpMat * FPoint4{ iVertex.p };
 	oVertex.p.x /= oVertex.p.w;
 	oVertex.p.y /= oVertex.p.w;
 	oVertex.p.z /= oVertex.p.w;
 
-	oVertex.n = FVector3{ rotationMatrix * iVertex.n };
+	oVertex.n = rotMat * iVertex.n;
+	oVertex.tan = rotMat * iVertex.tan;
 
-	oVertex.tan = FVector3{ rotationMatrix * iVertex.tan };
-
-	const FPoint3 worldPosition{ worldMatrix * FPoint4{ iVertex.p } };
-	oVertex.vd = FVector3{ GetNormalized(worldPosition - camPos) };
+	const FPoint3 worldPosition{ worldMat * FPoint4{ iVertex.p } };
+	oVertex.vd = GetNormalized(worldPosition - camPos);
 
 	oVertex.uv = iVertex.uv;
 	oVertex.c = iVertex.c;
@@ -223,13 +235,13 @@ unsigned int GetStridedIdxByOffset(unsigned int globalDataIdx, unsigned int vert
 }
 
 GPU_CALLABLE static
-void PerformDepthTestAtomic(int* dev_DepthBuffer, int* dev_Mutex, const unsigned int pixelIdx, float zInterpolated, PixelShade* dev_PixelShadeBuffer, const PixelShade& pixelShade)
+void PerformDepthTestAtomic(int* dev_DepthBuffer, int* dev_MutexBuffer, const unsigned int pixelIdx, float zInterpolated, PixelShade* dev_PixelShadeBuffer, const PixelShade& pixelShade)
 {
 	//Update depthbuffer atomically
 	bool isDone = false;
 	do
 	{
-		isDone = (atomicCAS(&dev_Mutex[pixelIdx], 0, 1) == 0);
+		isDone = (atomicCAS(&dev_MutexBuffer[pixelIdx], 0, 1) == 0);
 		if (isDone)
 		{
 			//critical section
@@ -238,7 +250,7 @@ void PerformDepthTestAtomic(int* dev_DepthBuffer, int* dev_Mutex, const unsigned
 				dev_DepthBuffer[pixelIdx] = zInterpolated;
 				dev_PixelShadeBuffer[pixelIdx] = pixelShade;
 			}
-			dev_Mutex[pixelIdx] = 0;
+			dev_MutexBuffer[pixelIdx] = 0;
 			//end of critical section
 		}
 	} while (!isDone);

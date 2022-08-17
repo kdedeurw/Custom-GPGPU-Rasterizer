@@ -24,32 +24,32 @@ void CreateScenes(SceneManager& sm)
 	std::vector<unsigned int> indexBuffer{};
 	short vertexType{};
 
-	{
-		// SceneGraph 1
-		SceneGraph* pSceneGraph = new SceneGraph{};
-		{
-			// Mesh 1 // Triangle 1
-			std::vector<IVertex> vertices = {
-				{ FPoint3{ 0.f, 2.f, 0.f }, RGBColor{1.f, 1.f, 1.f} },
-				{ FPoint3{ -1.f, 0.f, 0.f }, RGBColor{1.f, 1.f, 1.f} },
-				{ FPoint3{ 1.f, 0.f, 0.f }, RGBColor{1.f, 1.f, 1.f} } };
-			std::vector<unsigned int> indices = { 0, 1, 2 };
-			Mesh* pTriangle = new Mesh{ vertices, indices, PrimitiveTopology::TriangleList };
-			pSceneGraph->AddMesh(pTriangle);
-		}
-		{
-			// Mesh 2 // Triangle 2
-			std::vector<IVertex> vertices = {
-				{ FPoint3{ 0.f, 4.f, -2.f }, RGBColor{1.f, 0.f, 0.f} },
-				{ FPoint3{ -3.f, -2.f, -2.f }, RGBColor{0.f, 1.f, 0.f} },
-				{ FPoint3{ 3.f, -2.f, -2.f }, RGBColor{0.f, 0.f, 1.f} } };
-			std::vector<unsigned int> indices = { 0, 1, 2 };
-			Mesh* pTriangle = new Mesh{ vertices, indices, PrimitiveTopology::TriangleList };
-			pSceneGraph->AddMesh(pTriangle);
-		}
-		//pSceneGraph->AddLight(new DirectionalLight{ RGBColor{1.f, 1.f, 1.f}, 2.f, FVector3{ 0.577f, -0.577f, -0.577f } });
-		pSceneGraphs.push_back(pSceneGraph);
-	}
+	//{
+	//	// SceneGraph 1
+	//	SceneGraph* pSceneGraph = new SceneGraph{};
+	//	{
+	//		// Mesh 1 // Triangle 1
+	//		std::vector<IVertex> vertices = {
+	//			{ FPoint3{ 0.f, 2.f, 0.f }, RGBColor{1.f, 1.f, 1.f} },
+	//			{ FPoint3{ -1.f, 0.f, 0.f }, RGBColor{1.f, 1.f, 1.f} },
+	//			{ FPoint3{ 1.f, 0.f, 0.f }, RGBColor{1.f, 1.f, 1.f} } };
+	//		std::vector<unsigned int> indices = { 0, 1, 2 };
+	//		Mesh* pTriangle = new Mesh{ vertices, indices, PrimitiveTopology::TriangleList };
+	//		pSceneGraph->AddMesh(pTriangle);
+	//	}
+	//	{
+	//		// Mesh 2 // Triangle 2
+	//		std::vector<IVertex> vertices = {
+	//			{ FPoint3{ 0.f, 4.f, -2.f }, RGBColor{1.f, 0.f, 0.f} },
+	//			{ FPoint3{ -3.f, -2.f, -2.f }, RGBColor{0.f, 1.f, 0.f} },
+	//			{ FPoint3{ 3.f, -2.f, -2.f }, RGBColor{0.f, 0.f, 1.f} } };
+	//		std::vector<unsigned int> indices = { 0, 1, 2 };
+	//		Mesh* pTriangle = new Mesh{ vertices, indices, PrimitiveTopology::TriangleList };
+	//		pSceneGraph->AddMesh(pTriangle);
+	//	}
+	//	//pSceneGraph->AddLight(new DirectionalLight{ RGBColor{1.f, 1.f, 1.f}, 2.f, FVector3{ 0.577f, -0.577f, -0.577f } });
+	//	pSceneGraphs.push_back(pSceneGraph);
+	//}
 
 	//{
 	//	// SceneGraph 2
@@ -60,9 +60,9 @@ void CreateScenes(SceneManager& sm)
 	//	{
 	//		// Mesh 1 // TriangleList Quad
 	//		std::vector<IVertex> vertices = {
-	//			{FPoint3{-3, 3, -2}, FVector2{0, 0}}, IVertex{FPoint3{0, 3, -2}, FVector2{0.5f, 0}}, IVertex{FPoint3{3, 3, -2}, FVector2{1, 0}},
-	//			{FPoint3{-3, 0, -2}, FVector2{0, 0.5f}}, IVertex{FPoint3{0, 0, -2}, FVector2{0.5f, 0.5f}}, IVertex{FPoint3{3, 0, -2}, FVector2{1, 0.5f}},
-	//			{FPoint3{-3, -3, -2}, FVector2{0, 1}}, IVertex{FPoint3{0, -3, -2}, FVector2{0.5f, 1}}, IVertex{FPoint3{3, -3, -2}, FVector2{1, 1}} };
+	//			{FPoint3{-3, 3, -2}, FVector2{0, 0}}, {FPoint3{0, 3, -2}, FVector2{0.5f, 0}}, {FPoint3{3, 3, -2}, FVector2{1, 0}},
+	//			{FPoint3{-3, 0, -2}, FVector2{0, 0.5f}}, {FPoint3{0, 0, -2}, FVector2{0.5f, 0.5f}}, {FPoint3{3, 0, -2}, FVector2{1, 0.5f}},
+	//			{FPoint3{-3, -3, -2}, FVector2{0, 1}}, {FPoint3{0, -3, -2}, FVector2{0.5f, 1}}, {FPoint3{3, -3, -2}, FVector2{1, 1}} };
 	//		std::vector<unsigned int> indices = {
 	//									0, 3, 1,
 	//									3, 4, 1,
@@ -125,31 +125,29 @@ void CreateScenes(SceneManager& sm)
 	//	pSceneGraphs.push_back(pSceneGraph);
 	//}
 	
-	//{
-	//	// SceneGraph 5 // Vehicle
-	//	SceneGraph* pSceneGraph = new SceneGraph{};
-	//	{
-	//		// Mesh 1 // Vehicle
-	//		short vertexType{};
-	//		parser.OpenFile("Resources/vehicle.obj");
-	//		parser.SetInvertYAxis(true);
-	//		parser.ReadFromObjFile(vertexBuffer, indexBuffer, vertexType);
-	//		const std::string texPaths[4]{ "Resources/vehicle_diffuse.png", "Resources/vehicle_normal.png", "Resources/vehicle_specular.png", "Resources/vehicle_gloss.png" };
-	//		Mesh* pVehicleMesh = new Mesh{ vertexBuffer, indexBuffer, PrimitiveTopology::TriangleList };
-	//		pVehicleMesh->LoadTextures(texPaths);
-	//		pSceneGraph->AddMesh(pVehicleMesh);
-	//	}
-	//	pSceneGraph->AddLight(new DirectionalLight{ RGBColor{1.f, 1.f, 1.f}, 2.f, FVector3{ 0.577f, -0.577f, -0.577f } });
-	//	pSceneGraphs.push_back(pSceneGraph);
-	//}
+	{
+		// SceneGraph 5 // Vehicle
+		SceneGraph* pSceneGraph = new SceneGraph{};
+		{
+			// Mesh 1 // Vehicle
+			short vertexType{};
+			parser.OpenFile("Resources/vehicle.obj");
+			parser.SetInvertYAxis(true);
+			parser.ReadFromObjFile(vertexBuffer, indexBuffer, vertexType);
+			const std::string texPaths[4]{ "Resources/vehicle_diffuse.png", "Resources/vehicle_normal.png", "Resources/vehicle_specular.png", "Resources/vehicle_gloss.png" };
+			Mesh* pVehicleMesh = new Mesh{ vertexBuffer, indexBuffer, PrimitiveTopology::TriangleList };
+			pVehicleMesh->LoadTextures(texPaths);
+			pSceneGraph->AddMesh(pVehicleMesh);
+		}
+		pSceneGraph->AddLight(new DirectionalLight{ RGBColor{1.f, 1.f, 1.f}, 2.f, FVector3{ 0.577f, -0.577f, -0.577f } });
+		pSceneGraphs.push_back(pSceneGraph);
+	}
 
 	//{
 	//	// SceneGraph 6 // Cube
 	//	SceneGraph* pSceneGraph = new SceneGraph{};
 	//	{
 	//		// Mesh 1
-	//		const unsigned int numVertices = 8;
-	//		const unsigned int numIndices = 72;
 	//		std::vector<IVertex> vertices = {
 	//		{ FPoint3{ 1.f, -1.f, -1.f }, RGBColor{1.f, 0.f, 0.f} },
 	//		{ FPoint3{ 1.f, -1.f, 1.f }, RGBColor{0.f, 1.f, 0.f} },
@@ -164,6 +162,31 @@ void CreateScenes(SceneManager& sm)
 	//			7, 0, 4, 7, 2, 3, 2, 5, 1, 1, 4, 0, 5, 7, 4, 3, 1, 0, 7, 3, 0, 7, 6, 2, 2, 6, 5, 1, 5, 4, 5, 6, 7, 3, 2, 1 }; //FrontFace
 	//		Mesh* pCube = new Mesh{ vertices, indices, PrimitiveTopology::TriangleList };
 	//		pSceneGraph->AddMesh(pCube);
+	//	}
+	//	pSceneGraphs.push_back(pSceneGraph);
+	//}
+
+	//{
+	//	// SceneGraph 7 // VertexCount
+	//	SceneGraph* pSceneGraph = new SceneGraph{};
+	//	{
+	//		// Mesh 1
+	//		const unsigned int numVertices = 3 * 1000000;
+	//		std::vector<IVertex> vertices{};
+	//		std::vector<unsigned int> indices{};
+	//		vertices.reserve(numVertices);
+	//		indices.reserve(numVertices * 3);
+	//		for (int i{}; i < numVertices; i += 3)
+	//		{
+	//			vertices.push_back({ FPoint3{ (float)i, 0.f, 0.f }, RGBColor{1.f, 1.f, 1.f} });
+	//			vertices.push_back({ FPoint3{ 0.f, (float)i, 0.f }, RGBColor{1.f, 1.f, 1.f} });
+	//			vertices.push_back({ FPoint3{ 0.f, 0.f, (float)i }, RGBColor{1.f, 1.f, 1.f} });
+	//			indices.push_back(i);
+	//			indices.push_back(i + 1);
+	//			indices.push_back(i + 2);
+	//		}
+	//		Mesh* pVertices = new Mesh{ vertices, indices, PrimitiveTopology::TriangleList };
+	//		pSceneGraph->AddMesh(pVertices);
 	//	}
 	//	pSceneGraphs.push_back(pSceneGraph);
 	//}
@@ -185,8 +208,57 @@ int GetFPSImmediate(float ms)
 	return int(1 / ms * 1000);
 }
 
+void CUDACheckBankConflicts(unsigned int dataSizePerThread)
+{
+	int* memoryLayout = new int[32 * dataSizePerThread]{};
+
+	for (int i{}; i < 32; ++i)
+	{
+		memoryLayout[i * dataSizePerThread] = 1;
+	}
+
+	for (int i{}; i < dataSizePerThread; ++i)
+	{
+		for (int j{}; j < 32; ++j)
+		{
+			std::cout << memoryLayout[i * 32 + j] << "|";
+		}
+		std::cout << '\n';
+	}
+
+	std::cout << "\nData size : " << dataSizePerThread << '\n';
+	int totalBankConflicts{};
+	for (int i{}; i < 32; ++i)
+	{
+		int bankConflicts{};
+		for (int j{}; j < dataSizePerThread; ++j)
+		{
+			if (memoryLayout[i + j * 32] == 1)
+			{
+				++bankConflicts;
+			}
+		}
+		if (bankConflicts > 1)
+		{
+			std::cout << bankConflicts << "-way conflicts at bank: " << i << '\n';
+			++totalBankConflicts;
+		}
+	}
+	if (totalBankConflicts > 0)
+	{
+		std::cout << "Total bank conflicts: " << totalBankConflicts << '\n';
+	}
+	else
+	{
+		std::cout << "No bank conflicts detected!\n";
+	}
+	delete[] memoryLayout;
+}
+
 int main(int argc, char* args[])
 {
+	//CUDACheckBankConflicts(55);
+
 	//Single-GPU setup
 	const int deviceId = 0;
 	CheckErrorCuda(SetDeviceCuda(deviceId));
@@ -211,8 +283,8 @@ int main(int argc, char* args[])
 
 	//Initialize framework
 	SceneManager sm{};
-	//Camera camera{ FPoint3{ 0.f, 5.f, 65.f }, 45.f };
-	Camera camera{ FPoint3{ 0.f, 0.f, 5.f }, 45.f };
+	Camera camera{ FPoint3{ 0.f, 5.f, 65.f }, 45.f };
+	//Camera camera{ FPoint3{ 0.f, 0.f, 5.f }, 45.f };
 	camera.SetAspectRatio(float(width), float(height));
 	Elite::Timer* pTimer = new Elite::Timer();
 
