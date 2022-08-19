@@ -25,7 +25,7 @@ class SceneGraph;
 class CUDARenderer final
 {
 public:
-	CUDARenderer(const WindowHelper& windowHelper);
+	CUDARenderer(const WindowHelper& windowHelper, IPoint2 numBins = {}, IPoint2 binDim = {}, unsigned int binQueueMaxSize = 0);
 	~CUDARenderer() noexcept;
 
 	CUDARenderer(const CUDARenderer&) = delete;
@@ -51,6 +51,9 @@ public:
 	//function that launches the kernels and directly outputs to window
 	void RenderAuto(const SceneManager& sm, const Camera* pCamera);
 
+	unsigned int GetTotalNumVisibleTriangles() const { return m_TotalVisibleNumTriangles; }
+	unsigned int GetTotalNumTriangles() const { return m_TotalNumTriangles; }
+
 	//function that outputs GPU specs
 	void DisplayGPUSpecs(int deviceId = 0);
 
@@ -72,9 +75,12 @@ public:
 private:
 	//-----MEMBER VARIABLES-----
 
+	const IPoint2 m_NumBins;
+	const IPoint2 m_BinDim;
+	const unsigned int m_BinQueueMaxSize;
 	const WindowHelper& m_WindowHelper;
-	size_t m_TotalNumTriangles{};
-	size_t m_TotalVisibleNumTriangles{};
+	unsigned int m_TotalNumTriangles{};
+	unsigned int m_TotalVisibleNumTriangles{};
 	CUDABenchMarker m_BenchMarker{};
 	unsigned int* m_h_pFrameBuffer{};
 	std::vector<MeshIdentifier> m_MeshIdentifiers{};
@@ -109,7 +115,7 @@ private:
 	//Reset depth buffer, mutex buffer and pixelshadebuffer
 	void Clear(const RGBColor& colour = { 0.25f, 0.25f, 0.25f });
 	void VertexShader(const MeshIdentifier& mi);
-	void TriangleAssembler(MeshIdentifier& mi);
+	void TriangleAssembler(MeshIdentifier& mi, const FVector3& camFwd, const CullingMode cm = CullingMode::BackFace);
 	void Rasterizer(const MeshIdentifier& mi, const FVector3& camFwd, const CullingMode cm = CullingMode::BackFace);
 	void PixelShader(SampleState sampleState, bool isDepthColour);
 };

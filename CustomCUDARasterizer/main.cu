@@ -178,9 +178,9 @@ void CreateScenes(SceneManager& sm)
 	//		indices.reserve(numVertices * 3);
 	//		for (int i{}; i < numVertices; i += 3)
 	//		{
-	//			vertices.push_back({ FPoint3{ (float)i, 0.f, 0.f }, RGBColor{1.f, 1.f, 1.f} });
-	//			vertices.push_back({ FPoint3{ 0.f, (float)i, 0.f }, RGBColor{1.f, 1.f, 1.f} });
-	//			vertices.push_back({ FPoint3{ 0.f, 0.f, (float)i }, RGBColor{1.f, 1.f, 1.f} });
+	//			vertices.push_back({ FPoint3{ 0.f, 0.f, 0.f }, RGBColor{1.f, 1.f, 1.f} });
+	//			vertices.push_back({ FPoint3{ 0.f, 0.f, 0.f }, RGBColor{1.f, 1.f, 1.f} });
+	//			vertices.push_back({ FPoint3{ 0.f, 0.f, 0.f }, RGBColor{1.f, 1.f, 1.f} });
 	//			indices.push_back(i);
 	//			indices.push_back(i + 1);
 	//			indices.push_back(i + 2);
@@ -257,7 +257,8 @@ void CUDACheckBankConflicts(unsigned int dataSizePerThread)
 
 int main(int argc, char* args[])
 {
-	//CUDACheckBankConflicts(55);
+	//CUDACheckBankConflicts(19);
+	//return;
 
 	//Single-GPU setup
 	const int deviceId = 0;
@@ -299,7 +300,11 @@ int main(int argc, char* args[])
 	CreateScenes(sm);
 
 #ifdef HARDWARE_ACCELERATION
-	CUDARenderer* pCudaRenderer = new CUDARenderer{ windowHelper };
+	//const IPoint2 binDim = { 16, 16 };
+	const IPoint2 binDim = { (int)width / 2, (int)height / 2 };
+	const IPoint2 numBins = { (int)width / binDim.x, (int)height / binDim.y };
+	const unsigned int binQueueMaxSize = 512;
+	CUDARenderer* pCudaRenderer = new CUDARenderer{ windowHelper, numBins, binDim, binQueueMaxSize };
 	pCudaRenderer->LoadScene(sm.GetSceneGraph());
 	pCudaRenderer->DisplayGPUSpecs();
 #else
@@ -337,11 +342,16 @@ int main(int argc, char* args[])
 
 		//--------- Render ---------
 #ifdef HARDWARE_ACCELERATION
-#ifdef FPS_REALTIME
+#ifdef STATS_REALTIME
 		pCudaRenderer->StartTimer();
 #endif
 		pCudaRenderer->RenderAuto(sm, &camera);
-#ifdef FPS_REALTIME
+#ifdef STATS_REALTIME
+		const unsigned int totalNumVisTris = pCudaRenderer->GetTotalNumVisibleTriangles();
+		const unsigned int totalNumTris = pCudaRenderer->GetTotalNumTriangles();
+		const float percentageVisible = ((float)totalNumVisTris / totalNumTris) * 100.f;
+		std::cout << "Visible Tri's: " << totalNumVisTris << " / " << totalNumTris << ' ';
+		std::cout << '(' << percentageVisible << "%) ";
 		const float ms = pCudaRenderer->StopTimer();
 		std::cout << "FPS: " << GetFPSImmediate(ms);
 		std::cout << " (" << ms << " ms)\r";
@@ -352,7 +362,7 @@ int main(int argc, char* args[])
 
 		//--------- Timer ---------
 		pTimer->Update();
-#ifndef FPS_REALTIME
+#ifndef STATS_REALTIME
 		printTimer += elapsedSec;
 		if (printTimer >= 1.f)
 		{
