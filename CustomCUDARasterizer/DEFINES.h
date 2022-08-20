@@ -9,7 +9,7 @@
 
 //benchmark invidual stages of hardware accelerated cudarenderer
 #ifndef BENCHMARK
-#define BENCHMARK //can comment this line
+//#define BENCHMARK //can comment this line
 #endif
 
 //show fps in realtime
