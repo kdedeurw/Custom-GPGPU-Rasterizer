@@ -79,6 +79,9 @@
     <ClCompile Include="ERenderer.cpp">
       <Filter>Renderer</Filter>
     </ClCompile>
+    <ClCompile Include="Resolution.cpp">
+      <Filter>Helpers</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="PCH.h" />
@@ -220,6 +223,9 @@
     </ClInclude>
     <ClInclude Include="CUDAAtomicQueue.cuh">
       <Filter>Helpers\CUDA</Filter>
+    </ClInclude>
+    <ClInclude Include="Resolution.h">
+      <Filter>Helpers</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>

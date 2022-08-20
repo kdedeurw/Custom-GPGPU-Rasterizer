@@ -145,6 +145,7 @@ xcopy "$(SolutionDir)3rdParty\lib\vld\x64\Microsoft.DTfW.DHL.manifest" "$(OutDir
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|x64'">Create</PrecompiledHeader>
     </ClCompile>
     <ClCompile Include="PointLight.cpp" />
+    <ClCompile Include="Resolution.cpp" />
     <ClCompile Include="SceneGraph.cpp" />
     <ClCompile Include="SceneManager.cpp" />
     <ClCompile Include="Texture.cpp" />
@@ -184,6 +185,7 @@ xcopy "$(SolutionDir)3rdParty\lib\vld\x64\Microsoft.DTfW.DHL.manifest" "$(OutDir
     <ClInclude Include="PointLight.h" />
     <ClInclude Include="CUDARenderer.h" />
     <ClInclude Include="PrimitiveTopology.h" />
+    <ClInclude Include="Resolution.h" />
     <ClInclude Include="RGBColor.h" />
     <ClInclude Include="RGBRaw.h" />
     <ClInclude Include="SampleState.h" />

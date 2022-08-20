@@ -27,32 +27,32 @@ void CreateScenes(SceneManager& sm)
 	std::vector<unsigned int> indexBuffer{};
 	short vertexType{};
 
-	{
-		// SceneGraph 1
-		SceneGraph* pSceneGraph = new SceneGraph{};
-		{
-			// Mesh 1 // White small Triangle
-			std::vector<IVertex> vertices = {
-				{ FPoint3{ 0.f, 2.f, 0.f }, RGBColor{1.f, 1.f, 1.f} },
-				{ FPoint3{ -1.f, 0.f, 0.f }, RGBColor{1.f, 1.f, 1.f} },
-				{ FPoint3{ 1.f, 0.f, 0.f }, RGBColor{1.f, 1.f, 1.f} } };
-			std::vector<unsigned int> indices = { 0, 1, 2 };
-			Mesh* pTriangle = new Mesh{ vertices, indices, PrimitiveTopology::TriangleList };
-			pSceneGraph->AddMesh(pTriangle);
-		}
-		{
-			// Mesh 2 // Coloured larger Triangle
-			std::vector<IVertex> vertices = {
-				{ FPoint3{ 0.f, 4.f, -2.f }, RGBColor{1.f, 0.f, 0.f} },
-				{ FPoint3{ -3.f, -2.f, -2.f }, RGBColor{0.f, 1.f, 0.f} },
-				{ FPoint3{ 3.f, -2.f, -2.f }, RGBColor{0.f, 0.f, 1.f} } };
-			std::vector<unsigned int> indices = { 0, 1, 2 };
-			Mesh* pTriangle = new Mesh{ vertices, indices, PrimitiveTopology::TriangleList };
-			pSceneGraph->AddMesh(pTriangle);
-		}
-		//pSceneGraph->AddLight(new DirectionalLight{ RGBColor{1.f, 1.f, 1.f}, 2.f, FVector3{ 0.577f, -0.577f, -0.577f } });
-		pSceneGraphs.push_back(pSceneGraph);
-	}
+	//{
+	//	// SceneGraph 1
+	//	SceneGraph* pSceneGraph = new SceneGraph{};
+	//	{
+	//		// Mesh 1 // White small Triangle
+	//		std::vector<IVertex> vertices = {
+	//			{ FPoint3{ 0.f, 2.f, 0.f }, RGBColor{1.f, 1.f, 1.f} },
+	//			{ FPoint3{ -1.f, 0.f, 0.f }, RGBColor{1.f, 1.f, 1.f} },
+	//			{ FPoint3{ 1.f, 0.f, 0.f }, RGBColor{1.f, 1.f, 1.f} } };
+	//		std::vector<unsigned int> indices = { 0, 1, 2 };
+	//		Mesh* pTriangle = new Mesh{ vertices, indices, PrimitiveTopology::TriangleList };
+	//		pSceneGraph->AddMesh(pTriangle);
+	//	}
+	//	{
+	//		// Mesh 2 // Coloured larger Triangle
+	//		std::vector<IVertex> vertices = {
+	//			{ FPoint3{ 0.f, 4.f, -2.f }, RGBColor{1.f, 0.f, 0.f} },
+	//			{ FPoint3{ -3.f, -2.f, -2.f }, RGBColor{0.f, 1.f, 0.f} },
+	//			{ FPoint3{ 3.f, -2.f, -2.f }, RGBColor{0.f, 0.f, 1.f} } };
+	//		std::vector<unsigned int> indices = { 0, 1, 2 };
+	//		Mesh* pTriangle = new Mesh{ vertices, indices, PrimitiveTopology::TriangleList };
+	//		pSceneGraph->AddMesh(pTriangle);
+	//	}
+	//	//pSceneGraph->AddLight(new DirectionalLight{ RGBColor{1.f, 1.f, 1.f}, 2.f, FVector3{ 0.577f, -0.577f, -0.577f } });
+	//	pSceneGraphs.push_back(pSceneGraph);
+	//}
 
 	//{
 	//	// SceneGraph 2
@@ -113,20 +113,20 @@ void CreateScenes(SceneManager& sm)
 	//
 	//}
 
-	//{
-	//	// SceneGraph 4 // Bunny
-	//	SceneGraph* pSceneGraph = new SceneGraph{};
-	//	{
-	//		// Mesh 1 // Bunny 
-	//		short vertexType{};
-	//		parser.OpenFile("Resources/lowpoly_bunny.obj");
-	//		parser.ReadFromObjFile(vertexBuffer, indexBuffer, vertexType);
-	//		Mesh* pBunnyMesh = new Mesh{ vertexBuffer, indexBuffer, PrimitiveTopology::TriangleList };
-	//		pSceneGraph->AddMesh(pBunnyMesh);
-	//	}
-	//	pSceneGraph->AddLight(new DirectionalLight{ RGBColor{1.f, 1.f, 1.f}, 2.f, FVector3{ 0.577f, -0.577f, -0.577f } });
-	//	pSceneGraphs.push_back(pSceneGraph);
-	//}
+	{
+		// SceneGraph 4 // Bunny
+		SceneGraph* pSceneGraph = new SceneGraph{};
+		{
+			// Mesh 1 // Bunny 
+			short vertexType{};
+			parser.OpenFile("Resources/lowpoly_bunny.obj");
+			parser.ReadFromObjFile(vertexBuffer, indexBuffer, vertexType);
+			Mesh* pBunnyMesh = new Mesh{ vertexBuffer, indexBuffer, PrimitiveTopology::TriangleList };
+			pSceneGraph->AddMesh(pBunnyMesh);
+		}
+		pSceneGraph->AddLight(new DirectionalLight{ RGBColor{1.f, 1.f, 1.f}, 2.f, FVector3{ 0.577f, -0.577f, -0.577f } });
+		pSceneGraphs.push_back(pSceneGraph);
+	}
 	
 	//{
 	//	// SceneGraph 5 // Vehicle
@@ -258,6 +258,39 @@ void CUDACheckBankConflicts(unsigned int dataSizePerThread)
 	delete[] memoryLayout;
 }
 
+void DisplayResolutionDetails(const Resolution& res)
+{
+	std::cout << "------------------------------\n";
+	std::cout << "Window size: " << res.Width << 'x' << res.Height << "p\n";
+	std::cout << "AspectRatio: " << res.AspectRatio.w << ':' << res.AspectRatio.h << '\n';
+	std::cout << "ResolutionStandard: ";
+	switch (res.Standard)
+	{
+	case Resolution::VGA:
+		std::cout << "VGA";
+		break;
+	case Resolution::SD:
+		std::cout << "SD";
+		break;
+	case Resolution::HD:
+		std::cout << "HD";
+		break;
+	case Resolution::FHD:
+		std::cout << "FHD";
+		break;
+	case Resolution::QHD:
+		std::cout << "QHD";
+		break;
+	case Resolution::UHD:
+		std::cout << "UHD";
+		break;
+	default:
+		break;
+	}
+	std::cout << '\n';
+	std::cout << "------------------------------\n";
+}
+
 int main(int argc, char* args[])
 {
 	//CUDACheckBankConflicts(19);
@@ -274,44 +307,46 @@ int main(int argc, char* args[])
 	//Create window + surfaces
 	SDL_Init(SDL_INIT_VIDEO);
 
-	const uint32_t width = 640;
-	const uint32_t height = 480;
+	//Select resolution
+	const Resolution res = Resolution::GetResolution(Resolution::ResolutionStandard::SD);
+
 	SDL_Window* pWindow = SDL_CreateWindow(
 		"Custom GPGPU CUDA Rasterizer - GW Kristof Dedeurwaerder",
 		SDL_WINDOWPOS_UNDEFINED,
 		SDL_WINDOWPOS_UNDEFINED,
-		width, height, 0);
+		res.Width, res.Height, 0);
 
 	if (!pWindow)
 		return 1;
 
 	//Initialize framework
 	SceneManager sm{};
-	//Camera camera{ FPoint3{ 0.f, 5.f, 65.f }, 45.f };
-	Camera camera{ FPoint3{ 0.f, 1.f, 5.f }, 45.f };
-	camera.SetAspectRatio(float(width), float(height));
+	Camera camera{ FPoint3{ 0.f, 5.f, 65.f }, 45.f };
+	//Camera camera{ FPoint3{ 0.f, 1.f, 5.f }, 45.f };
+	camera.SetAspectRatio(float(res.Width), float(res.Height));
 	Elite::Timer* pTimer = new Elite::Timer();
 
 	WindowHelper windowHelper{};
 	windowHelper.pWindow = pWindow;
-	windowHelper.Width = width;
-	windowHelper.Height = height;
 	windowHelper.pFrontBuffer = SDL_GetWindowSurface(pWindow);
-	windowHelper.pBackBuffer = SDL_CreateRGBSurface(0, width, height, 32, 0, 0, 0, 0);
+	windowHelper.pBackBuffer = SDL_CreateRGBSurface(0, res.Width, res.Height, 32, 0, 0, 0, 0);
 	windowHelper.pBackBufferPixels = (unsigned int*)windowHelper.pBackBuffer->pixels;
+	windowHelper.Resolution = res;
 
 	CreateScenes(sm);
 
+	DisplayResolutionDetails(res);
+
 #ifdef HARDWARE_ACCELERATION
-	const IPoint2 numBins = { 8, 8 };
-	const IPoint2 binDim = { (int)width / numBins.x, (int)height / numBins.y };
-	if (numBins.x < 2 && numBins.y < 2)
-	{
-		std::cout << "Invalid number of bins!, unable to launch\n";
-		return 1;
-	}
+#ifdef BINNING
+	const int binMultiplier = 3;
+	const IPoint2 numBins = { (int)res.AspectRatio.w * binMultiplier, (int)res.AspectRatio.h * binMultiplier };
+	const IPoint2 binDim = { (int)res.Width / numBins.x, (int)res.Height / numBins.y };
 	const unsigned int binQueueMaxSize = 512;
 	CUDARenderer* pCudaRenderer = new CUDARenderer{ windowHelper, numBins, binDim, binQueueMaxSize };
+#else
+	CUDARenderer* pCudaRenderer = new CUDARenderer{ windowHelper };
+#endif
 	pCudaRenderer->LoadScene(sm.GetSceneGraph());
 	pCudaRenderer->DisplayGPUSpecs();
 #else

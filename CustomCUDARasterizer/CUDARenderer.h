@@ -115,9 +115,9 @@ private:
 	//Reset depth buffer, mutex buffer and pixelshadebuffer
 	void Clear(const RGBColor& colour = { 0.25f, 0.25f, 0.25f });
 	void VertexShader(const MeshIdentifier& mi);
-	void TriangleAssembler(MeshIdentifier& mi, const FVector3& camFwd, const CullingMode cm = CullingMode::BackFace);
-	void TriangleBinner(MeshIdentifier& mi);
-	void TriangleAssemblerAndBinner(MeshIdentifier& mi, const FVector3& camFwd, const CullingMode cm = CullingMode::BackFace);
-	void Rasterizer(const MeshIdentifier& mi, const FVector3& camFwd, const CullingMode cm = CullingMode::BackFace);
+	void TriangleAssembler(MeshIdentifier& mi, const FVector3& camFwd, const CullingMode cm = CullingMode::BackFace, cudaStream_t stream = cudaStreamDefault);
+	void TriangleBinner(MeshIdentifier& mi, cudaStream_t stream = cudaStreamDefault);
+	void TriangleAssemblerAndBinner(MeshIdentifier& mi, const FVector3& camFwd, const CullingMode cm = CullingMode::BackFace, cudaStream_t stream = cudaStreamDefault);
+	void Rasterizer(const MeshIdentifier& mi, const FVector3& camFwd, const CullingMode cm = CullingMode::BackFace, cudaStream_t stream = cudaStreamDefault);
 	void PixelShader(SampleState sampleState, bool isDepthColour);
 };

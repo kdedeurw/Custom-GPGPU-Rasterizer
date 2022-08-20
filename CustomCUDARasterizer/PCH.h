@@ -19,6 +19,7 @@
 #include "WindowHelper.h"
 #include "MemoryConversionStrings.h"
 #include "DEFINES.h"
+#include "Resolution.h"
 
 //Geometry includes
 #include "SceneGraph.h"
