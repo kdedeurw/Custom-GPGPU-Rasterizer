@@ -153,6 +153,7 @@ xcopy "$(SolutionDir)3rdParty\lib\vld\x64\Microsoft.DTfW.DHL.manifest" "$(OutDir
   <ItemGroup>
     <ClInclude Include="BoundingBox.h" />
     <ClInclude Include="Camera.h" />
+    <ClInclude Include="CUDAAtomicQueue.cuh" />
     <ClInclude Include="CUDABenchMarker.h" />
     <ClInclude Include="CUDAMatrixMath.cuh">
       <FileType>Document</FileType>

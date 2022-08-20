@@ -1,5 +1,9 @@
 #include "PCH.h"
 
+//TODO: not needed to include math headers, yet they are undefined/unrecognised by the compiler and does not compile
+//https://docs.nvidia.com/cuda/cuda-math-api/group__CUDA__MATH__INT.html#group__CUDA__MATH__INT
+//https://docs.nvidia.com/cuda/pdf/CUDA_Math_API.pdf
+
 //Project CUDA includes
 #include "GPUTextureSampler.cuh"
 
@@ -23,6 +27,14 @@ float GetMaxElement(float val0, float val1, float val2)
 	if (val2 > max)
 		max = val2;
 	return max;
+}
+
+template <typename T>
+BOTH_CALLABLE static
+T ClampFast(T val, T min, T max)
+{
+	const T clamp = val < min ? min : val;
+	return clamp > max ? max : clamp;
 }
 
 GPU_CALLABLE GPU_INLINE static
@@ -111,10 +123,15 @@ BoundingBox GetBoundingBox(const FPoint2& v0, const FPoint2& v1, const FPoint2& 
 	bb.xMax = (short)GetMaxElement(v0.x, v1.x, v2.x) + 1; // xMax
 	bb.yMax = (short)GetMaxElement(v0.y, v1.y, v2.y) + 1; // yMax
 
-	if (bb.xMin < 0) bb.xMin = 0; //clamp minX to Left of screen
-	if (bb.yMin < 0) bb.yMin = 0; //clamp minY to Bottom of screen
-	if (bb.xMax > width) bb.xMax = width; //clamp maxX to Right of screen
-	if (bb.yMax > height) bb.yMax = height; //clamp maxY to Top of screen
+	bb.xMin = ClampFast(bb.xMin, (short)0, (short)width);
+	bb.yMin = ClampFast(bb.yMin, (short)0, (short)height);
+	bb.xMax = ClampFast(bb.xMax, (short)0, (short)width);
+	bb.yMax = ClampFast(bb.yMax, (short)0, (short)height);
+	
+	//if (bb.xMin < 0) bb.xMin = 0; //clamp minX to Left of screen
+	//if (bb.yMin < 0) bb.yMin = 0; //clamp minY to Bottom of screen
+	//if (bb.xMax > width) bb.xMax = width; //clamp maxX to Right of screen
+	//if (bb.yMax > height) bb.yMax = height; //clamp maxY to Top of screen
 
 	return bb;
 }
@@ -539,10 +556,15 @@ BoundingBox GetBoundingBoxTiled(const FPoint2& v0, const FPoint2& v1, const FPoi
 	bb.xMax = (short)GetMaxElement(v0.x, v1.x, v2.x) + 1; // xMax
 	bb.yMax = (short)GetMaxElement(v0.y, v1.y, v2.y) + 1; // yMax
 
-	if (bb.xMin < minX) bb.xMin = minX; //clamp minX to Left of screen
-	if (bb.yMin < minY) bb.yMin = minY; //clamp minY to Bottom of screen
-	if (bb.xMax > maxX) bb.xMax = maxX; //clamp maxX to Right of screen
-	if (bb.yMax > maxY) bb.yMax = maxY; //clamp maxY to Top of screen
+	bb.xMin = ClampFast(bb.xMin, (short)minX, (short)maxX);
+	bb.yMin = ClampFast(bb.yMin, (short)minY, (short)maxY);
+	bb.xMax = ClampFast(bb.xMax, (short)minX, (short)maxX);
+	bb.yMax = ClampFast(bb.yMax, (short)minY, (short)maxY);
+
+	//if (bb.xMin < minX) bb.xMin = minX; //clamp minX to Left of screen
+	//if (bb.yMin < minY) bb.yMin = minY; //clamp minY to Bottom of screen
+	//if (bb.xMax > maxX) bb.xMax = maxX; //clamp maxX to Right of screen
+	//if (bb.yMax > maxY) bb.yMax = maxY; //clamp maxY to Top of screen
 
 	return bb;
 }

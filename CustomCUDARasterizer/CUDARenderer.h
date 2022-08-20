@@ -6,6 +6,7 @@
 #include "GPUTextures.h"
 #include "CullingMode.h"
 #include "CUDABenchMarker.h"
+#include "CUDAAtomicQueue.cuh"
 
 struct WindowHelper;
 class Camera;
@@ -75,14 +76,13 @@ public:
 private:
 	//-----MEMBER VARIABLES-----
 
-	const IPoint2 m_NumBins;
-	const IPoint2 m_BinDim;
-	const unsigned int m_BinQueueMaxSize;
 	const WindowHelper& m_WindowHelper;
 	unsigned int m_TotalNumTriangles{};
 	unsigned int m_TotalVisibleNumTriangles{};
-	CUDABenchMarker m_BenchMarker{};
 	unsigned int* m_h_pFrameBuffer{};
+	IPoint2 m_BinDim;
+	CUDABenchMarker m_BenchMarker{};
+	CUDAAtomicQueues<unsigned int> m_BinQueues;
 	std::vector<MeshIdentifier> m_MeshIdentifiers{};
 	std::vector<GPUTexturesCompact> m_TextureObjects{};
 
@@ -116,6 +116,8 @@ private:
 	void Clear(const RGBColor& colour = { 0.25f, 0.25f, 0.25f });
 	void VertexShader(const MeshIdentifier& mi);
 	void TriangleAssembler(MeshIdentifier& mi, const FVector3& camFwd, const CullingMode cm = CullingMode::BackFace);
+	void TriangleBinner(MeshIdentifier& mi);
+	void TriangleAssemblerAndBinner(MeshIdentifier& mi, const FVector3& camFwd, const CullingMode cm = CullingMode::BackFace);
 	void Rasterizer(const MeshIdentifier& mi, const FVector3& camFwd, const CullingMode cm = CullingMode::BackFace);
 	void PixelShader(SampleState sampleState, bool isDepthColour);
 };

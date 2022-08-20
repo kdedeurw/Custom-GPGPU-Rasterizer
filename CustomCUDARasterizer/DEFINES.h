@@ -14,7 +14,11 @@
 
 //show fps in realtime
 #ifndef FPS_REALTIME
-#define STATS_REALTIME //can comment this line
+//#define STATS_REALTIME //can comment this line
+#endif
+
+#ifndef BINNING
+#define BINNING //can comment this line
 #endif
 
 #endif

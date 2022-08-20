@@ -70,17 +70,16 @@ static CUDA32bTexture2D dev_GlossinessTextureReference{};
 //--------------------------
 
 CPU_CALLABLE
-CUDARenderer::CUDARenderer(const WindowHelper& windowHelper, IPoint2 numBins, IPoint2 binSizeInPixels, unsigned int binQueueMaxSize)
-	: m_NumBins{ numBins }
-	, m_BinDim{ binSizeInPixels }
-	, m_BinQueueMaxSize{ binQueueMaxSize }
-	, m_WindowHelper{ windowHelper }
+CUDARenderer::CUDARenderer(const WindowHelper& windowHelper, IPoint2 numBins, IPoint2 binDim, unsigned int binQueueMaxSize)
+	: m_WindowHelper{ windowHelper }
 	, m_TotalNumTriangles{}
 	, m_TotalVisibleNumTriangles{}
 	, m_h_pFrameBuffer{}
 	, m_MeshIdentifiers{}
 	, m_TextureObjects{}
 	, m_BenchMarker{}
+	, m_BinDim{ binDim }
+	, m_BinQueues{ (unsigned int)numBins.x, (unsigned int)numBins.y, binQueueMaxSize }
 {
 	InitCUDADeviceBuffers();
 }
@@ -278,9 +277,13 @@ void CUDARenderer::Render(const SceneManager& sm, const Camera* pCamera)
 	const std::vector<Mesh*>& pMeshes = pSceneGraph->GetMeshes();
 
 #ifdef BENCHMARK
-	float vertexShadingMs{};
+	float VertexShadingMs{};
+#ifdef BINNING
+	float TriangleBinningMs{};
+#endif
 	float TriangleAssemblingMs{};
 	float RasterizationMs{};
+	float PixelShadingMs{};
 #endif
 
 	m_TotalVisibleNumTriangles = 0;
@@ -314,35 +317,17 @@ void CUDARenderer::Render(const SceneManager& sm, const Camera* pCamera)
 		//---END STAGE 1---
 
 #ifdef BENCHMARK
-		vertexShadingMs += StopTimer();
+		VertexShadingMs += StopTimer();
 		StartTimer();
 #endif
 
+		//Reset number of visible triangles
 		CheckErrorCuda(cudaMemset(dev_NumVisibleTriangles, 0, sizeof(unsigned int)));
 
 		//---STAGE 2---:  Perform Triangle Assembling
 		TriangleAssembler(mi, camFwd, cm);
 		CheckErrorCuda(cudaDeviceSynchronize());
 		//---END STAGE 2---
-
-		//unsigned int dataSize = m_NumBins.x * m_NumBins.y * m_BinQueueMaxSize;
-		//unsigned int* binsData = new unsigned int[dataSize]{};
-		//CheckErrorCuda(cudaMemcpy(binsData, dev_BinQueues, dataSize * 4, cudaMemcpyDeviceToHost));
-		//unsigned int queueSize = m_NumBins.x * m_NumBins.y;
-		//unsigned int* binsSizeData = new unsigned int[queueSize]{};
-		//CheckErrorCuda(cudaMemcpy(binsSizeData, dev_BinQueueSizes, queueSize * 4, cudaMemcpyDeviceToHost));
-		//
-		//for (unsigned int i{}; i < queueSize; ++i)
-		//{
-		//	std::cout << "Queue " << i << " : " << binsSizeData[i] << '\n';
-		//}
-		//
-		//for (unsigned int i{}; i < dataSize; ++i)
-		//{
-		//	std::cout << binsData[i] << ' ';
-		//}
-		//delete[] binsSizeData;
-		//delete[] binsData;
 
 		CheckErrorCuda(cudaMemcpy(&mi.VisibleNumTriangles, dev_NumVisibleTriangles, 4, cudaMemcpyDeviceToHost));
 		m_TotalVisibleNumTriangles += mi.VisibleNumTriangles;
@@ -352,10 +337,29 @@ void CUDARenderer::Render(const SceneManager& sm, const Camera* pCamera)
 		StartTimer();
 #endif
 
-		//---STAGE 3---: Peform Triangle Rasterization & Pixel Shading
-		Rasterizer(mi, camFwd, cm);
+#ifdef BINNING
+
+		//---STAGE 3---:  Perform Output Vertex Assembling
+		TriangleBinner(mi);
 		CheckErrorCuda(cudaDeviceSynchronize());
 		//---END STAGE 3---
+
+#ifdef BENCHMARK
+		TriangleBinningMs += StopTimer();
+		StartTimer();
+#endif
+#endif
+
+		//TODO: not have it per-mesh, but globally per-scene
+		//TRIANGLES GET PUT INTO BINS
+		//RASTERIZER FETCHES TRIANGLES FROM BINS
+		//THIS CONTINUES !PER-MESH! UNTIL ALL TRIANGLES ARE PROCESSED
+		//THEN CONTINUE TO NEXT MESH
+
+		//---STAGE 4---: Peform Triangle Rasterization & interpolated fragment buffering
+		Rasterizer(mi, camFwd, cm);
+		CheckErrorCuda(cudaDeviceSynchronize());
+		//---END STAGE 4---
 
 #ifdef BENCHMARK
 		RasterizationMs += StopTimer();
@@ -366,14 +370,20 @@ void CUDARenderer::Render(const SceneManager& sm, const Camera* pCamera)
 	StartTimer();
 #endif
 
-	//---STAGE 4---: Peform  Pixel Shading
+	//---STAGE 5---: Peform Pixel Shading
 	PixelShader(sampleState, isDepthColour);
 	CheckErrorCuda(cudaDeviceSynchronize());
 
-	//---END STAGE 4---
+	//---END STAGE 5---
 #ifdef BENCHMARK
-	float PixelShadingMs = StopTimer();
-	std::cout << "VS: " << vertexShadingMs << "ms | TA: " << TriangleAssemblingMs << "ms | Raster: " << RasterizationMs << "ms | PS: " << PixelShadingMs << "ms\r";
+	PixelShadingMs = StopTimer();
+	std::cout << "VS: " << VertexShadingMs 
+		<< "ms | TA: " << TriangleAssemblingMs 
+#ifdef BINNING
+		<< "ms | Bin: " << TriangleBinningMs 
+#endif
+		<< "ms | Raster: " << RasterizationMs 
+		<< "ms | PS: " << PixelShadingMs << "ms\r";
 #endif
 }
 
@@ -524,20 +534,20 @@ void CUDARenderer::InitCUDADeviceBuffers()
 	//actual arrays of triangle indexes
 	size = sizeof(unsigned int);
 	cudaFree(dev_BinQueues);
-	cudaMalloc((void**)&dev_BinQueues, m_NumBins.x * m_NumBins.y * m_BinQueueMaxSize * size);
-	cudaMemset(dev_BinQueues, 0, m_NumBins.x * m_NumBins.y * m_BinQueueMaxSize * size);
+	cudaMalloc((void**)&dev_BinQueues, m_BinQueues.NumQueuesX * m_BinQueues.NumQueuesY * m_BinQueues.QueueMaxSize * size);
+	cudaMemset(dev_BinQueues, 0, m_BinQueues.NumQueuesX * m_BinQueues.NumQueuesY * m_BinQueues.QueueMaxSize * size);
 
 	//actual size of arrays
 	size = sizeof(unsigned int);
 	cudaFree(dev_BinQueueSizes);
-	cudaMalloc((void**)&dev_BinQueueSizes, m_NumBins.x * m_NumBins.y * size);
-	cudaMemset(dev_BinQueueSizes, 0, m_NumBins.x * m_NumBins.y * size);
+	cudaMalloc((void**)&dev_BinQueueSizes, m_BinQueues.NumQueuesX * m_BinQueues.NumQueuesY * size);
+	cudaMemset(dev_BinQueueSizes, 0, m_BinQueues.NumQueuesX * m_BinQueues.NumQueuesY * size);
 
 	//mutex buffer to alter bin queue sizes
 	size = sizeof(int);
 	cudaFree(dev_BinQueueSizesMutexBuffer);
-	cudaMalloc((void**)&dev_BinQueueSizesMutexBuffer, m_NumBins.x * m_NumBins.y * size);
-	cudaMemset(dev_BinQueueSizesMutexBuffer, 0, m_NumBins.x * m_NumBins.y * size);
+	cudaMalloc((void**)&dev_BinQueueSizesMutexBuffer, m_BinQueues.NumQueuesX * m_BinQueues.NumQueuesY * size);
+	cudaMemset(dev_BinQueueSizesMutexBuffer, 0, m_BinQueues.NumQueuesX * m_BinQueues.NumQueuesY * size);
 }
 
 CPU_CALLABLE
@@ -897,6 +907,576 @@ void Clear()
 
 #pragma endregion
 
+GPU_KERNEL
+void VertexShaderKernelNaive(const IVertex* __restrict__ dev_IVertices, OVertex* dev_OVertices, unsigned int numVertices)
+{
+	//TODO: store matrix in top of shared memory for faster access
+	//and offset shared memory access for threads
+	//Potential problem: first warp might encounter bank conflicts?
+
+	//The use of shared memory is not applicable here, (even though on-chip memory is faster)
+	//- since the memory is not actually shared between threads
+	//- most calculations are done within the thread's registers themselves (only 28 or 29 needed => < 32)
+	//- the memory is not used multiple times
+
+	//constexpr unsigned int paddedSizeOfIVertex = sizeof(IVertex) / 4 + 1;
+	//extern GPU_SHARED_MEMORY float sharedMemoryBuffer[];
+
+	const FPoint3& camPos = reinterpret_cast<const FPoint3&>(dev_ConstMemory[0]);
+	const FMatrix4& worldMatrix = reinterpret_cast<const FMatrix4&>(dev_ConstMemory[6]);
+	const FMatrix4& WVPMatrix = reinterpret_cast<const FMatrix4&>(dev_ConstMemory[22]);
+	const FMatrix3& rotationMatrix = reinterpret_cast<const FMatrix3&>(dev_ConstMemory[38]);
+
+	const unsigned int vertexIdx = blockIdx.x * blockDim.x + threadIdx.x;
+	if (vertexIdx < numVertices)
+	{
+		const IVertex& iVertex = dev_IVertices[vertexIdx];
+		OVertex oVertex = GetNDCVertex(iVertex, WVPMatrix, worldMatrix, rotationMatrix, camPos);
+		dev_OVertices[vertexIdx] = oVertex;
+	}
+}
+
+GPU_KERNEL
+void TriangleAssemblerKernel(TriangleIdx* dev_Triangles, const unsigned int* __restrict__ const dev_IndexBuffer, unsigned int numIndices,
+	unsigned int* dev_NumVisibleTriangles,
+	const OVertex* dev_OVertices, const PrimitiveTopology pt, const CullingMode cm, const FVector3 camFwd, 
+	unsigned int width, unsigned int height)
+{
+	//advantage of TriangleAssembly: each thread stores 1 triangle
+	//many threads == many triangles processed and/or culled at once
+
+	//TODO: use shared memory to copy faster
+	//data size of 9 shows no bank conflicts!
+	//TriangleIdx can stay in local memory (registers)
+	//DEPENDS ON REGISTER USAGE
+
+	TriangleIdx triangle;
+
+	//'talk about naming gore, eh?
+	const unsigned int indexIdx = (blockIdx.x * blockDim.x) + threadIdx.x;
+	if (pt == PrimitiveTopology::TriangleList)
+	{
+		const unsigned int correctedIdx = (indexIdx * 3);
+		if (correctedIdx < numIndices)
+		{
+			memcpy(&triangle, &dev_IndexBuffer[correctedIdx], sizeof(TriangleIdx));
+		}
+		else
+		{
+			return;
+		}
+	}
+	//TODO: get rid of these nasty if-statements
+	else //if (pt == PrimitiveTopology::TriangleStrip)
+	{
+		if (indexIdx < numIndices - 2)
+		{
+			TriangleIdx triangle;
+			memcpy(&triangle, &dev_IndexBuffer[indexIdx], sizeof(TriangleIdx));
+			const bool isOdd = (indexIdx % 2);
+			if (isOdd)
+			{
+				//swap without temp
+				//TODO: what about indexes at UINT_MAX? => would just overflow and underflow back
+				triangle.idx1 = triangle.idx1 + triangle.idx2;
+				triangle.idx2 = triangle.idx1 - triangle.idx2;
+				triangle.idx1 = triangle.idx1 - triangle.idx2;
+			}
+		}
+		else
+		{
+			return;
+		}
+	}
+
+	FPoint3 p0 = dev_OVertices[triangle.idx0].p.xyz;
+	FPoint3 p1 = dev_OVertices[triangle.idx1].p.xyz;
+	FPoint3 p2 = dev_OVertices[triangle.idx2].p.xyz;
+
+	//PERFORM CULLING
+	if (cm == CullingMode::BackFace)
+	{
+		const FVector3 faceNormal = GetNormalized(Cross(FVector3{ p1 - p0 }, FVector3{ p2 - p0 }));
+		const float cullingValue = Dot(camFwd, faceNormal);
+		if (cullingValue <= 0.f)
+		{
+			return;
+		}
+	}
+	else if (cm == CullingMode::FrontFace)
+	{
+		const FVector3 faceNormal = GetNormalized(Cross(FVector3{ p1 - p0 }, FVector3{ p2 - p0 }));
+		const float cullingValue = Dot(camFwd, faceNormal);
+		if (cullingValue >= 0.f)
+		{
+			return; //cull triangle
+		}
+	}
+	//else if (cm == CullingMode::NoCulling)
+	//{
+	//}
+
+	//PERFORM CLIPPING
+	if (!IsTriangleVisible(p0, p1, p2))
+	{
+		return;
+	}
+	
+	const float totalArea = abs(Cross(p0.xy - p1.xy, p2.xy - p0.xy));
+	if (totalArea <= 0.f)
+	{
+		return; //cull away triangle
+	}
+
+	const unsigned int triangleIdx = atomicAdd(dev_NumVisibleTriangles, 1); //returns old value
+	memcpy(&dev_Triangles[triangleIdx], &triangle, sizeof(TriangleIdx));
+}
+
+GPU_KERNEL
+void RasterizerPerTriangleKernel(const TriangleIdx* __restrict__ const dev_Triangles, const OVertex* __restrict__ const dev_OVertices, 
+	unsigned int numTriangles, PixelShade* dev_PixelShadeBuffer, int* dev_DepthBuffer, int* dev_DepthMutexBuffer, 
+	GPUTexturesCompact textures, const unsigned int width, const unsigned int height)
+{
+	//constexpr unsigned int triangleSize = sizeof(OVertex) * 3 / 4;
+	//extern GPU_SHARED_MEMORY float sharedMemoryBuffer[];
+
+	//Each thread processes 1 triangle
+	const unsigned int globalTriangleIndex = threadIdx.x + blockIdx.x * blockDim.x;
+	if (!(globalTriangleIndex < numTriangles))
+		return;
+
+	const TriangleIdx triangleIdx = dev_Triangles[globalTriangleIndex];
+
+	//Shared memory is laid out in a big row-list
+	//const unsigned int triangleMemoryIdx = threadIdx.x * triangleSize;
+	//OVertex& v0 = reinterpret_cast<OVertex&>(sharedMemoryBuffer[triangleMemoryIdx]);
+	//OVertex& v1 = reinterpret_cast<OVertex&>(sharedMemoryBuffer[triangleMemoryIdx + (sizeof(OVertex) / 4)]);
+	//OVertex& v2 = reinterpret_cast<OVertex&>(sharedMemoryBuffer[triangleMemoryIdx + (sizeof(OVertex) / 4) * 2]);
+
+	//memcpy(&v0, &dev_OVertices[triangleIdx.idx0], sizeof(OVertex));
+	//memcpy(&v1, &dev_OVertices[triangleIdx.idx1], sizeof(OVertex));
+	//memcpy(&v2, &dev_OVertices[triangleIdx.idx2], sizeof(OVertex));
+
+	OVertex v0 = dev_OVertices[triangleIdx.idx0];
+	OVertex v1 = dev_OVertices[triangleIdx.idx1];
+	OVertex v2 = dev_OVertices[triangleIdx.idx2];
+
+	NDCToScreenSpace(v0.p.xy, v1.p.xy, v2.p.xy, width, height);
+	const BoundingBox bb = GetBoundingBox(v0.p.xy, v1.p.xy, v2.p.xy, width, height);
+	//Rasterize Screenspace triangle
+	RasterizeTriangle(bb, v0, v1, v2, dev_DepthMutexBuffer, dev_DepthBuffer, dev_PixelShadeBuffer, width, textures);
+}
+
+GPU_KERNEL
+void PixelShaderKernel(unsigned int* dev_FrameBuffer, const PixelShade* __restrict__ const dev_PixelShadeBuffer,
+	SampleState sampleState, bool isDepthColour, const unsigned int width, const unsigned int height)
+{
+	//Notes: PixelShade has size of 32, but bank conflicts
+	//TODO: store PixelShade data column-based to avoid bank conflicts, but faster access?
+	//GPU_SHARED_MEMORY PixelShade pixelShadeSharedMemory[width * height];
+
+	const unsigned int x = (blockIdx.x * blockDim.x) + threadIdx.x;
+	const unsigned int y = (blockIdx.y * blockDim.y) + threadIdx.y;
+	//TODO: if-statement is not necessary
+	if (x < width && y < height)
+	{
+		const unsigned int pixelIdx = x + y * width;
+		RGBA rgba;
+		if (isDepthColour)
+		{
+			rgba.r8 = 0; //For SDL: R and B values are swapped
+			rgba.g8 = 0;
+			rgba.b8 = (unsigned char)(Remap(dev_PixelShadeBuffer[pixelIdx].zInterpolated, 0.99f, 1.f) * 255);
+			rgba.a8 = 0;
+			dev_FrameBuffer[pixelIdx] = rgba.colour32;
+		}
+		else
+		{
+			const PixelShade& pixelShade = dev_PixelShadeBuffer[pixelIdx];
+			if (pixelShade.textures.Diff.dev_pTex != 0)
+			{
+				RGBColor colour = ShadePixel(pixelShade.textures, pixelShade.uv, pixelShade.n, pixelShade.tan, pixelShade.vd, sampleState);
+				rgba = colour; //== GetRGBAFromColour()
+				dev_FrameBuffer[pixelIdx] = rgba.colour32;
+
+				//normal visualisation
+				//colour.r = pixelShade.n.x;
+				//colour.g = pixelShade.n.y;
+				//colour.b = pixelShade.n.z;
+			}
+			else
+			{
+				dev_FrameBuffer[pixelIdx] = pixelShade.colour;
+			}
+		}
+	}
+}
+
+#pragma region Binning
+
+GPU_KERNEL
+void TriangleAssemblerAndBinnerKernel(TriangleIdx* dev_Triangles, const unsigned int* __restrict__ const dev_IndexBuffer, unsigned int numIndices,
+	unsigned int* dev_NumVisibleTriangles, unsigned int* dev_BinQueueSizes, unsigned int* dev_BinQueues, int* dev_BinQueueSizesMutexBuffer,
+	const OVertex* dev_OVertices, const PrimitiveTopology pt, const CullingMode cm, const FVector3 camFwd,
+	IPoint2 numBins, IPoint2 binDim, unsigned int binQueueMaxSize, unsigned int width, unsigned int height)
+{
+	//advantage of TriangleAssembly: each thread stores 1 triangle
+	//many threads == many triangles processed and/or culled at once
+
+	//TODO: use shared memory to copy faster
+	//data size of 9 shows no bank conflicts!
+	//TriangleIdx can stay in local memory (registers)
+	//DEPENDS ON REGISTER USAGE
+
+	TriangleIdx triangle;
+
+	//'talk about naming gore, eh?
+	const unsigned int indexIdx = (blockIdx.x * blockDim.x) + threadIdx.x;
+	if (pt == PrimitiveTopology::TriangleList)
+	{
+		const unsigned int correctedIdx = (indexIdx * 3);
+		if (correctedIdx < numIndices)
+		{
+			memcpy(&triangle, &dev_IndexBuffer[correctedIdx], sizeof(TriangleIdx));
+		}
+		else
+		{
+			return;
+		}
+	}
+	else //if (pt == PrimitiveTopology::TriangleStrip)
+	{
+		if (indexIdx < numIndices - 2)
+		{
+			TriangleIdx triangle;
+			memcpy(&triangle, &dev_IndexBuffer[indexIdx], sizeof(TriangleIdx));
+			const bool isOdd = (indexIdx % 2);
+			if (isOdd)
+			{
+				//swap without temp
+				//TODO: what about indexes at UINT_MAX? => would just overflow and back
+				triangle.idx1 = triangle.idx1 + triangle.idx2;
+				triangle.idx2 = triangle.idx1 - triangle.idx2;
+				triangle.idx1 = triangle.idx1 - triangle.idx2;
+			}
+		}
+		else
+		{
+			return;
+		}
+	}
+
+	FPoint3 p0 = dev_OVertices[triangle.idx0].p.xyz;
+	FPoint3 p1 = dev_OVertices[triangle.idx1].p.xyz;
+	FPoint3 p2 = dev_OVertices[triangle.idx2].p.xyz;
+
+	//PERFORM CULLING
+	if (cm == CullingMode::BackFace)
+	{
+		const FVector3 faceNormal = GetNormalized(Cross(FVector3{ p1 - p0 }, FVector3{ p2 - p0 }));
+		const float cullingValue = Dot(camFwd, faceNormal);
+		if (cullingValue <= 0.f)
+		{
+			return;
+		}
+	}
+	else if (cm == CullingMode::FrontFace)
+	{
+		const FVector3 faceNormal = GetNormalized(Cross(FVector3{ p1 - p0 }, FVector3{ p2 - p0 }));
+		const float cullingValue = Dot(camFwd, faceNormal);
+		if (cullingValue >= 0.f)
+		{
+			return; //cull triangle
+		}
+	}
+	//else if (cm == CullingMode::NoCulling)
+	//{
+	//}
+
+	//PERFORM CLIPPING
+	if (!IsTriangleVisible(p0, p1, p2))
+	{
+		return;
+	}
+
+	const float totalArea = abs(Cross(p0.xy - p1.xy, p2.xy - p0.xy));
+	if (totalArea <= 0.f)
+	{
+		return; //cull away triangle
+	}
+
+	const unsigned int triangleIdx = atomicAdd(dev_NumVisibleTriangles, 1); //returns old value
+	memcpy(&dev_Triangles[triangleIdx], &triangle, sizeof(TriangleIdx));
+
+	//BINNING
+	//TODO: make separate kernel bc register usage is too high
+
+	//assign to correct bin(s), with globalTriangleIdx corresponding to its bin
+	//each bin is a part of the window (have multiple atomic buffers for each bin)
+
+	NDCToScreenSpace(p0.xy, p1.xy, p2.xy, width, height);
+	const BoundingBox triangleBb = GetBoundingBox(p0.xy, p1.xy, p2.xy, width, height);
+
+	int binMinX = triangleBb.xMin / binDim.x; //most left bin
+	int binMinY = triangleBb.yMin / binDim.y; //most bottom bin
+	int binMaxX = triangleBb.xMax / binDim.x; //most right bin
+	int binMaxY = triangleBb.yMax / binDim.y; //most top bin
+	binMinX = ClampFast(binMinX, 0, numBins.x);
+	binMinY = ClampFast(binMinY, 0, numBins.y);
+	binMaxX = ClampFast(binMaxX, 0, numBins.x - 1);
+	binMaxY = ClampFast(binMaxY, 0, numBins.y - 1);
+	//This creates a grid of bins that overlap with triangle boundingbox
+
+	//TODO: get all middle bin points in triangle polygon
+	//TODO: get all intersecting rectangles of bins from all 3 triangle edges
+	//https://stackoverflow.com/questions/16203760/how-to-check-if-line-segment-intersects-a-rectangle
+
+	for (int y{ binMinY }; y <= binMaxY; ++y)
+	{
+		for (int x{ binMinX }; x <= binMaxX; ++x)
+		{
+			//atomically add triangle to bin queue
+			const unsigned int binIdx = x + y * numBins.x;
+
+			bool isDone = false;
+			do
+			{
+				isDone = (atomicCAS(&dev_BinQueueSizesMutexBuffer[binIdx], 0, 1) == 0);
+				if (isDone)
+				{
+					//critical section
+					const unsigned int currQueueSize = dev_BinQueueSizes[binIdx];
+					if (currQueueSize < binQueueMaxSize)
+					{
+						//insert triangle Idx in queue
+						dev_BinQueues[binIdx * binQueueMaxSize + currQueueSize] = triangleIdx;
+						//increase bin's queue size
+						++dev_BinQueueSizes[binIdx];
+					}
+					dev_BinQueueSizesMutexBuffer[binIdx] = 0;
+					//end of critical section
+				}
+			} while (!isDone);
+		}
+	}
+}
+
+GPU_KERNEL
+void TriangleBinnerKernel(TriangleIdx* dev_Triangles, unsigned int dev_NumVisibleTriangles, 
+	unsigned int* dev_BinQueueSizes, unsigned int* dev_BinQueues, int* dev_BinQueueSizesMutexBuffer,
+	const OVertex* dev_OVertices, 
+	IPoint2 numBins, IPoint2 binDim, unsigned int binQueueMaxSize, unsigned int width, unsigned int height)
+{
+	//TODO: use shared memory to copy faster
+	//data size of 9 shows no bank conflicts!
+	//TriangleIdx can stay in local memory (registers)
+	//DEPENDS ON REGISTER USAGE
+
+	const unsigned int triangleIdx = blockIdx.x * blockDim.x + threadIdx.x;
+	if (triangleIdx > dev_NumVisibleTriangles)
+		return;
+
+	const TriangleIdx triangle = dev_Triangles[triangleIdx];
+
+	FPoint2 p0 = dev_OVertices[triangle.idx0].p.xy;
+	FPoint2 p1 = dev_OVertices[triangle.idx1].p.xy;
+	FPoint2 p2 = dev_OVertices[triangle.idx2].p.xy;
+
+	//assign to correct bin(s), with globalTriangleIdx corresponding to its bin
+	//each bin is a part of the window (have multiple atomic buffers for each bin)
+
+	NDCToScreenSpace(p0, p1, p2, width, height);
+	const BoundingBox triangleBb = GetBoundingBox(p0, p1, p2, width, height);
+
+	int binMinX = triangleBb.xMin / binDim.x; //most left bin
+	int binMinY = triangleBb.yMin / binDim.y; //most bottom bin
+	int binMaxX = triangleBb.xMax / binDim.x; //most right bin
+	int binMaxY = triangleBb.yMax / binDim.y; //most top bin
+	binMinX = ClampFast(binMinX, 0, numBins.x);
+	binMinY = ClampFast(binMinY, 0, numBins.y);
+	binMaxX = ClampFast(binMaxX, 0, numBins.x - 1);
+	binMaxY = ClampFast(binMaxY, 0, numBins.y - 1);
+	//This creates a grid of bins that overlap with triangle boundingbox
+
+	//TODO: get all middle bin points in triangle polygon
+	//TODO: get all intersecting rectangles of bins from all 3 triangle edges
+	//https://stackoverflow.com/questions/16203760/how-to-check-if-line-segment-intersects-a-rectangle
+
+	for (int y{ binMinY }; y <= binMaxY; ++y)
+	{
+		for (int x{ binMinX }; x <= binMaxX; ++x)
+		{
+			//atomically add triangle to bin queue
+			const unsigned int binIdx = x + y * numBins.x;
+	
+			bool isDone = false;
+			do
+			{
+				isDone = (atomicCAS(&dev_BinQueueSizesMutexBuffer[binIdx], 0, 1) == 0);
+				if (isDone)
+				{
+					//critical section
+					const unsigned int currQueueSize = dev_BinQueueSizes[binIdx];
+					if (currQueueSize < binQueueMaxSize)
+					{
+						//insert triangle Idx in queue
+						dev_BinQueues[binIdx * binQueueMaxSize + currQueueSize] = triangleIdx;
+						//increase bin's queue size
+						++dev_BinQueueSizes[binIdx];
+					}
+					dev_BinQueueSizesMutexBuffer[binIdx] = 0;
+					//end of critical section
+				}
+			} while (!isDone);
+		}
+	}
+}
+
+GPU_KERNEL
+void RasterizerPerBinKernel(const TriangleIdx* __restrict__ const dev_Triangles, const OVertex* __restrict__ const dev_OVertices,
+	PixelShade* dev_PixelShadeBuffer, int* dev_DepthBuffer, int* dev_DepthMutexBuffer, GPUTexturesCompact textures,
+	unsigned int* dev_BinQueues, unsigned int* dev_BinQueueSizes, int* dev_BinQueueSizesMutexBuffer,
+	IPoint2 binDim, unsigned int binQueueMaxSize, const unsigned int width, const unsigned int height)
+{
+	//each thread block has the same size of the queue size of a bin
+	//each thread block processes 1 bin
+	const unsigned int binIdx = blockIdx.x + blockIdx.y * gridDim.x;
+
+	//PROGNOSIS: this will be slower and more threads will be "wasted" on the same potential triangle
+	//BUT the main advantage is that big triangles will be eliminated and split up into smaller binned ones
+
+	unsigned int queuedTriangleIdx;
+
+	//TODO: since this is synchronised per block,
+	//use syncthreads() instead of atomics
+
+	//TODO: thread block should be size of queueSize
+	//every thread can non-atomically fetch triangles from queue with thread index
+	//they can atomically flag whether a triangle idx is valid or not
+	//Problem: loop through entire queue array for every thread in Triangle Assembler
+	//OR would not prove interesting bc TA uses FILO queue method
+	//Other "Solution": every thread in TA can also only store triangle in their designated thread.idx spot in the queue array
+	//This would mean that there's always only 2 threads atomically reading and writing 1 element of the queue (interesting enough???)
+	//Don't forget about the dirty flagging thing tho
+
+	//TODO: global/constant value that can be changed by host/CPU
+	bool isQueueEmpty = false;
+
+	bool isDone = false;
+	do
+	{
+		isDone = (atomicCAS(&dev_BinQueueSizesMutexBuffer[binIdx], 0, 1) == 0);
+		if (isDone)
+		{
+			//critical section
+			const unsigned int currQueueSize = dev_BinQueueSizes[binIdx];
+			//1: check whether the bin queue index is greater than 0
+			if (currQueueSize > 0)
+			{
+				//2: fetch this index & decrease bin queue size
+				queuedTriangleIdx = dev_BinQueues[binIdx * binQueueMaxSize + currQueueSize - 1];
+				--dev_BinQueueSizes[binIdx];
+			}
+			else
+			{
+				isQueueEmpty = true;
+			}
+			dev_BinQueueSizesMutexBuffer[binIdx] = 0;
+			//end of critical section
+		}
+	} while (!isDone);
+
+	if (isQueueEmpty)
+		return;
+
+	//TODO: threads cooperatively store in shared memory
+	//extern GPU_SHARED_MEMORY float sharedMemoryBuffer[];
+
+	const TriangleIdx triangleIdx = dev_Triangles[queuedTriangleIdx];
+	OVertex v0 = dev_OVertices[triangleIdx.idx0];
+	OVertex v1 = dev_OVertices[triangleIdx.idx1];
+	OVertex v2 = dev_OVertices[triangleIdx.idx2];
+
+	//TODO: this is still set up for single-threaded rendering
+	//3: rasterize triangle with binned bounding box (COARSE)
+
+	NDCToScreenSpace(v0.p.xy, v1.p.xy, v2.p.xy, width, height);
+	const unsigned int minX = blockIdx.x * binDim.x;
+	const unsigned int minY = blockIdx.y * binDim.y;
+	const unsigned int maxX = minX + binDim.x;
+	const unsigned int maxY = minY + binDim.y;
+	const BoundingBox bb = GetBoundingBoxTiled(v0.p.xy, v1.p.xy, v2.p.xy, minX, minY, maxX, maxY);
+	RasterizeTriangle(bb, v0, v1, v2, dev_DepthMutexBuffer, dev_DepthBuffer, dev_PixelShadeBuffer, width, textures);
+
+	//BoundingBox bb;
+	//bb.xMin = blockIdx.x * binDim.x;
+	//bb.yMin = blockIdx.y * binDim.y;
+	//bb.xMax = bb.xMin + binDim.x;
+	//bb.yMax = bb.yMin + binDim.y;
+	//RasterizeTriangle(bb, v0, v1, v2, dev_DepthMutexBuffer, dev_DepthBuffer, dev_PixelShadeBuffer, width, textures);
+
+	//TODO: every thread in CTA processes a NxN tile of triangle in bin (fine rasterizer)
+	//4: each thread in block does a 8x8 pixel area of triangle
+	//each thread block does 1 triangle instead of each block does sizeofbinqueue triangles
+}
+
+GPU_KERNEL
+void RasterizerPerTile(const TriangleIdx* __restrict__ const dev_Triangles, const OVertex* __restrict__ const dev_OVertices, unsigned int numTriangles,
+	PixelShade* dev_PixelShadeBuffer, int* dev_DepthBuffer, int* dev_MutexBuffer, GPUTexturesCompact textures,
+	const FVector3 camFwd, const CullingMode cm, const unsigned int width, const unsigned int height)
+{
+	//COARSE BINNER:
+	//TODO: define coarse bins
+	//=> screen divided up into pieces of same size
+	//TODO: every bin has a fixed size array buffer of N indexes (triangle idxs)
+	//TODO: process triangle and put into bin (atomically)
+	//=> get boundingbox and % / xy values
+	//TODO: every thread fetches a triangleIdx from bin queue (atomically)
+	//=> check every bin if there's work to do
+
+	//FINE BINNER:
+	//TODO: define fine bins
+	//=> subdivide coarse bins into smaller parts
+	//TODO: every thread processes triangleIdx from coarse bin
+	//TODO: coarse bin but just finer with more arrays???
+
+	//TODO: put in LL
+	//Every triangle has a (fixed) list of bin ids?
+	//Every bin has a (fixed) list of triangleIds?
+
+	constexpr unsigned int triangleSize = sizeof(OVertex) * 3 / 4;
+	GPU_SHARED_MEMORY float sharedMemoryBuffer[224 * triangleSize]; //12096 elements == 48384 bytes
+
+	//Every thread processes 1 single triangle for now
+	const unsigned int globalTriangleIndex = threadIdx.x + blockIdx.x * blockDim.x;
+	if (!(globalTriangleIndex < numTriangles))
+		return;
+
+	const TriangleIdx triangleIdx = dev_Triangles[globalTriangleIndex];
+
+	//Shared memory is laid out in a big row-list
+	const unsigned int triangleMemoryIdx = threadIdx.x * triangleSize;
+	OVertex& v0 = reinterpret_cast<OVertex&>(sharedMemoryBuffer[triangleMemoryIdx]);
+	OVertex& v1 = reinterpret_cast<OVertex&>(sharedMemoryBuffer[triangleMemoryIdx + sizeof(OVertex) / 4]);
+	OVertex& v2 = reinterpret_cast<OVertex&>(sharedMemoryBuffer[triangleMemoryIdx + sizeof(OVertex) / 4]);
+
+	memcpy(&v0, &dev_OVertices[triangleIdx.idx0], sizeof(OVertex));
+	memcpy(&v1, &dev_OVertices[triangleIdx.idx1], sizeof(OVertex));
+	memcpy(&v2, &dev_OVertices[triangleIdx.idx2], sizeof(OVertex));
+
+	const unsigned int minX = 0;
+	const unsigned int minY = 0;
+	const unsigned int maxX = 0;
+	const unsigned int maxY = 0;
+
+	NDCToScreenSpace(v0.p.xy, v1.p.xy, v2.p.xy, width, height);
+	const BoundingBox bb = GetBoundingBoxTiled(v0.p.xy, v1.p.xy, v2.p.xy, minX, minY, maxX, maxY);
+	//Rasterize Screenspace triangle
+	RasterizeTriangle(bb, v0, v1, v2, dev_MutexBuffer, dev_DepthBuffer, dev_PixelShadeBuffer, width, textures);
+}
+
+#pragma endregion
+
 #pragma region DEPRECATED
 
 GPU_KERNEL
@@ -1002,7 +1582,7 @@ void VertexShaderKernelPrototype(const IVertex* __restrict__ dev_IVertices, OVer
 }
 
 GPU_KERNEL
-void TriangleAssemblerKernelOld(TriangleIdx* dev_Triangles, const unsigned int* __restrict__ const dev_IndexBuffer, 
+void TriangleAssemblerKernelOld(TriangleIdx* dev_Triangles, const unsigned int* __restrict__ const dev_IndexBuffer,
 	unsigned int numIndices, const PrimitiveTopology pt)
 {
 	//TODO: perform culling/clipping etc.
@@ -1174,315 +1754,7 @@ void RasterizerPerTriangleKernelOld(const TriangleIdx* __restrict__ const dev_Tr
 
 #pragma endregion
 
-GPU_KERNEL
-void VertexShaderKernelNaive(const IVertex* __restrict__ dev_IVertices, OVertex* dev_OVertices, unsigned int numVertices)
-{
-	//TODO: store matrix in top of shared memory for faster access
-	//and offset shared memory access for threads
-	//Potential problem: first warp might encounter bank conflicts?
-
-	//The use of shared memory is not applicable here, (even though on-chip memory is faster)
-	//- since the memory is not actually shared between threads
-	//- most calculations are done within the thread's registers themselves (only 28 or 29 needed => < 32)
-	//- the memory is not used multiple times
-
-	//constexpr unsigned int paddedSizeOfIVertex = sizeof(IVertex) / 4 + 1;
-	//extern GPU_SHARED_MEMORY float sharedMemoryBuffer[];
-
-	const FPoint3& camPos = reinterpret_cast<const FPoint3&>(dev_ConstMemory[0]);
-	const FMatrix4& worldMatrix = reinterpret_cast<const FMatrix4&>(dev_ConstMemory[6]);
-	const FMatrix4& WVPMatrix = reinterpret_cast<const FMatrix4&>(dev_ConstMemory[22]);
-	const FMatrix3& rotationMatrix = reinterpret_cast<const FMatrix3&>(dev_ConstMemory[38]);
-
-	const unsigned int vertexIdx = blockIdx.x * blockDim.x + threadIdx.x;
-	if (vertexIdx < numVertices)
-	{
-		const IVertex& iVertex = dev_IVertices[vertexIdx];
-		OVertex oVertex = GetNDCVertex(iVertex, WVPMatrix, worldMatrix, rotationMatrix, camPos);
-		dev_OVertices[vertexIdx] = oVertex;
-	}
-}
-
-GPU_KERNEL
-void TriangleAssemblerKernel(TriangleIdx* dev_Triangles, const unsigned int* __restrict__ const dev_IndexBuffer, unsigned int numIndices,
-	unsigned int* dev_NumVisibleTriangles, unsigned int* dev_BinQueueSizes, unsigned int* dev_BinQueues, int* dev_BinQueueSizesMutexBuffer,
-	const OVertex* dev_OVertices, const PrimitiveTopology pt, const CullingMode cm, const FVector3 camFwd, 
-	IPoint2 binDim, unsigned int binQueueMaxSize, unsigned int width, unsigned int height)
-{
-	//advantage of TriangleAssembly: each thread stores 1 triangle
-	//many threads == many triangles processed and/or culled at once
-
-	//TODO: use shared memory to copy faster
-	//data size of 9 shows no bank conflicts!
-	//TriangleIdx can stay in local memory (registers)
-	//DEPENDS ON REGISTER USAGE
-
-	TriangleIdx triangle;
-
-	//'talk about naming gore, eh?
-	const unsigned int indexIdx = (blockIdx.x * blockDim.x) + threadIdx.x;
-	if (pt == PrimitiveTopology::TriangleList)
-	{
-		const unsigned int correctedIdx = (indexIdx * 3);
-		if (correctedIdx < numIndices)
-		{
-			memcpy(&triangle, &dev_IndexBuffer[correctedIdx], sizeof(TriangleIdx));
-		}
-		else
-		{
-			return;
-		}
-	}
-	else //if (pt == PrimitiveTopology::TriangleStrip)
-	{
-		if (indexIdx < numIndices - 2)
-		{
-			TriangleIdx triangle;
-			memcpy(&triangle, &dev_IndexBuffer[indexIdx], sizeof(TriangleIdx));
-			const bool isOdd = (indexIdx % 2);
-			if (isOdd)
-			{
-				//swap without temp
-				//TODO: what about indexes at UINT_MAX? => would just overflow and back
-				triangle.idx1 = triangle.idx1 + triangle.idx2;
-				triangle.idx2 = triangle.idx1 - triangle.idx2;
-				triangle.idx1 = triangle.idx1 - triangle.idx2;
-			}
-		}
-		else
-		{
-			return;
-		}
-	}
-
-	FPoint3 p0 = dev_OVertices[triangle.idx0].p.xyz;
-	FPoint3 p1 = dev_OVertices[triangle.idx1].p.xyz;
-	FPoint3 p2 = dev_OVertices[triangle.idx2].p.xyz;
-
-	//PERFORM CULLING
-	if (cm == CullingMode::BackFace)
-	{
-		const FVector3 faceNormal = GetNormalized(Cross(FVector3{ p1 - p0 }, FVector3{ p2 - p0 }));
-		const float cullingValue = Dot(camFwd, faceNormal);
-		if (cullingValue <= 0.f)
-		{
-			return;
-		}
-	}
-	else if (cm == CullingMode::FrontFace)
-	{
-		const FVector3 faceNormal = GetNormalized(Cross(FVector3{ p1 - p0 }, FVector3{ p2 - p0 }));
-		const float cullingValue = Dot(camFwd, faceNormal);
-		if (cullingValue >= 0.f)
-		{
-			return; //cull triangle
-		}
-	}
-	//else if (cm == CullingMode::NoCulling)
-	//{
-	//}
-
-	//PERFORM CLIPPING
-	if (!IsTriangleVisible(p0, p1, p2))
-	{
-		return;
-	}
-	
-	const float totalArea = abs(Cross(p0.xy - p1.xy, p2.xy - p0.xy));
-	if (totalArea <= 0.f)
-	{
-		return; //cull away triangle
-	}
-
-	const unsigned int globalTriangleIdx = atomicAdd(dev_NumVisibleTriangles, 1); //returns old value
-	memcpy(&dev_Triangles[globalTriangleIdx], &triangle, sizeof(TriangleIdx));
-	return;
-
-	//TODO: make separate kernel bc register usage is too high
-	//BINNING
-
-	//assign to correct bin(s), with globalTriangleIdx corresponding to its bin
-	//each bin is a part of the window (have multiple atomic buffers for each bin)
-	
-	NDCToScreenSpace(p0.xy, p1.xy, p2.xy, width, height);
-	const BoundingBox triangleBb = GetBoundingBox(p0.xy, p1.xy, p2.xy, width, height);
-	
-	const unsigned int binMinX = triangleBb.xMin / binDim.x; //most left bin
-	const unsigned int binMinY = triangleBb.yMin / binDim.y; //most bottom bin
-	const unsigned int binMaxX = triangleBb.xMax / binDim.x; //most right bin
-	const unsigned int binMaxY = triangleBb.yMax / binDim.y; //most top bin
-	//This creates a grid of bins that overlap with triangle boundingbox
-	
-	//TODO: get all middle bin points in triangle polygon
-	//TODO: get all intersecting rectangles of bins from all 3 triangle edges
-	//https://stackoverflow.com/questions/16203760/how-to-check-if-line-segment-intersects-a-rectangle
-	
-	for (unsigned int binY{ binMinY }; binY < binMaxY; ++binY)
-	{
-		for (unsigned int binX{ binMinX }; binX < binMaxX; ++binX)
-		{
-			//atomically add triangle to bin queue
-			const unsigned int binIdx = binX + binY * binDim.x;
-	
-			bool isDone = false;
-			do
-			{
-				isDone = (atomicCAS(&dev_BinQueueSizesMutexBuffer[binIdx], 0, 1) == 0);
-				if (isDone)
-				{
-					//critical section
-					const unsigned int currQueueSize = dev_BinQueueSizes[binIdx];
-					if (currQueueSize < binQueueMaxSize)
-					{
-						dev_BinQueues[binIdx * binQueueMaxSize + currQueueSize] = globalTriangleIdx;
-						++dev_BinQueueSizes[binIdx];
-					}
-					dev_BinQueueSizesMutexBuffer[binIdx] = 0;
-					//end of critical section
-				}
-			} while (!isDone);
-		}
-	}
-}
-
-GPU_KERNEL
-void RasterizerPerBinKernel(const TriangleIdx* __restrict__ const dev_Triangles, const OVertex* __restrict__ const dev_OVertices,
-	PixelShade* dev_PixelShadeBuffer, int* dev_DepthBuffer, int* dev_DepthMutexBuffer, GPUTexturesCompact textures,
-	unsigned int* dev_BinQueues, unsigned int* dev_BinQueueSizes, int* dev_BinQueueSizesMutexBuffer,
-	IPoint2 binDim, unsigned int binQueueMaxSize, const unsigned int width, const unsigned int height)
-{
-	//each thread block has the same size of the queue size of a bin
-	//each thread block processes 1 bin
-	const unsigned int binIdx = blockIdx.x + blockIdx.y * gridDim.x;
-
-	//PROGNOSIS: this will be slower and more threads will be "wasted" on the same potential triangle
-	//BUT the main advantage is that big triangles will be eliminated and split up into smaller binned ones
-
-	unsigned int globalTriangleIdx;
-
-	//TODO: since this is synchronised per block,
-	//use syncthreads() instead of atomics
-
-	bool isDone = false;
-	do
-	{
-		isDone = (atomicCAS(&dev_BinQueueSizesMutexBuffer[binIdx], 0, 1) == 0);
-		if (isDone)
-		{
-			//critical section
-			//1: check whether the bin queue index is greater than 0
-			const unsigned int binQueueSize = dev_BinQueueSizes[binIdx];
-			if (binQueueSize > 0)
-			{
-				//2: fetch this index & decrease bin queue size
-				globalTriangleIdx = dev_BinQueues[binIdx * binQueueMaxSize + binQueueSize];
-				--dev_BinQueueSizes[binIdx];
-			}
-			dev_BinQueueSizesMutexBuffer[binIdx] = 0;
-			//end of critical section
-		}
-	} while (!isDone);
-
-	//TODO: threads cooperatively store in shared memory
-	const TriangleIdx& triangle = dev_Triangles[globalTriangleIdx];
-	OVertex v0 = dev_OVertices[triangle.idx0];
-	OVertex v1 = dev_OVertices[triangle.idx1];
-	OVertex v2 = dev_OVertices[triangle.idx2];
-
-	//TODO: this is still set up for single-threaded rendering
-	//3: rasterize triangle with binned bounding box (COARSE)
-	BoundingBox bb;
-	bb.xMin = blockIdx.x * binDim.x;
-	bb.yMin = blockIdx.y * binDim.y;
-	bb.xMax = bb.xMin + binDim.x;
-	bb.yMax = bb.yMin + binDim.y;
-	//4: each thread in block does a 8x8 pixel area of triangle
-	//each thread block does 1 triangle instead of each block does sizeofbinqueue triangles
-	
-	NDCToScreenSpace(v0.p.xy, v1.p.xy, v2.p.xy, width, height);
-	//TODO: every thread in CTA processes a NxN tile of triangle in bin (fine rasterizer)
-	RasterizeTriangle(bb, v0, v1, v2, dev_DepthMutexBuffer, dev_DepthBuffer, dev_PixelShadeBuffer, width, textures);
-}
-
-GPU_KERNEL
-void RasterizerPerTriangleKernel(const TriangleIdx* __restrict__ const dev_Triangles, const OVertex* __restrict__ const dev_OVertices, 
-	unsigned int numTriangles, PixelShade* dev_PixelShadeBuffer, int* dev_DepthBuffer, int* dev_DepthMutexBuffer, 
-	GPUTexturesCompact textures, const unsigned int width, const unsigned int height)
-{
-	//constexpr unsigned int triangleSize = sizeof(OVertex) * 3 / 4;
-	//extern GPU_SHARED_MEMORY float sharedMemoryBuffer[];
-
-	//Each thread processes 1 triangle
-	const unsigned int globalTriangleIndex = threadIdx.x + blockIdx.x * blockDim.x;
-	if (!(globalTriangleIndex < numTriangles))
-		return;
-
-	const TriangleIdx triangleIdx = dev_Triangles[globalTriangleIndex];
-
-	//Shared memory is laid out in a big row-list
-	//const unsigned int triangleMemoryIdx = threadIdx.x * triangleSize;
-	//OVertex& v0 = reinterpret_cast<OVertex&>(sharedMemoryBuffer[triangleMemoryIdx]);
-	//OVertex& v1 = reinterpret_cast<OVertex&>(sharedMemoryBuffer[triangleMemoryIdx + (sizeof(OVertex) / 4)]);
-	//OVertex& v2 = reinterpret_cast<OVertex&>(sharedMemoryBuffer[triangleMemoryIdx + (sizeof(OVertex) / 4) * 2]);
-
-	//memcpy(&v0, &dev_OVertices[triangleIdx.idx0], sizeof(OVertex));
-	//memcpy(&v1, &dev_OVertices[triangleIdx.idx1], sizeof(OVertex));
-	//memcpy(&v2, &dev_OVertices[triangleIdx.idx2], sizeof(OVertex));
-
-	OVertex v0 = dev_OVertices[triangleIdx.idx0];
-	OVertex v1 = dev_OVertices[triangleIdx.idx1];
-	OVertex v2 = dev_OVertices[triangleIdx.idx2];
-
-	NDCToScreenSpace(v0.p.xy, v1.p.xy, v2.p.xy, width, height);
-	const BoundingBox bb = GetBoundingBox(v0.p.xy, v1.p.xy, v2.p.xy, width, height);
-	//Rasterize Screenspace triangle
-	RasterizeTriangle(bb, v0, v1, v2, dev_DepthMutexBuffer, dev_DepthBuffer, dev_PixelShadeBuffer, width, textures);
-}
-
-GPU_KERNEL
-void PixelShaderKernel(unsigned int* dev_FrameBuffer, const PixelShade* __restrict__ const dev_PixelShadeBuffer,
-	SampleState sampleState, bool isDepthColour, const unsigned int width, const unsigned int height)
-{
-	//Notes: PixelShade has size of 32, but bank conflicts
-	//TODO: store PixelShade data column-based to avoid bank conflicts, but faster access?
-	//GPU_SHARED_MEMORY PixelShade pixelShadeSharedMemory[width * height];
-
-	const unsigned int x = (blockIdx.x * blockDim.x) + threadIdx.x;
-	const unsigned int y = (blockIdx.y * blockDim.y) + threadIdx.y;
-	//TODO: if-statement is not necessary
-	if (x < width && y < height)
-	{
-		const unsigned int pixelIdx = x + y * width;
-		RGBA rgba;
-		if (isDepthColour)
-		{
-			rgba.r8 = 0; //For SDL: R and B values are swapped
-			rgba.g8 = 0;
-			rgba.b8 = (unsigned char)(Remap(dev_PixelShadeBuffer[pixelIdx].zInterpolated, 0.99f, 1.f) * 255);
-			rgba.a8 = 0;
-			dev_FrameBuffer[pixelIdx] = rgba.colour32;
-		}
-		else
-		{
-			const PixelShade& pixelShade = dev_PixelShadeBuffer[pixelIdx];
-			if (pixelShade.textures.Diff.dev_pTex != 0)
-			{
-				RGBColor colour = ShadePixel(pixelShade.textures, pixelShade.uv, pixelShade.n, pixelShade.tan, pixelShade.vd, sampleState);
-				rgba = colour; //== GetRGBAFromColour()
-				dev_FrameBuffer[pixelIdx] = rgba.colour32;
-
-				//normal visualisation
-				//colour.r = pixelShade.n.x;
-				//colour.g = pixelShade.n.y;
-				//colour.b = pixelShade.n.z;
-			}
-			else
-			{
-				dev_FrameBuffer[pixelIdx] = pixelShade.colour;
-			}
-		}
-	}
-}
+#pragma region TESTING
 
 GPU_KERNEL
 void TextureTestKernel(unsigned int* dev_FrameBuffer, GPUTexture texture, const unsigned int width, const unsigned int height)
@@ -1539,60 +1811,7 @@ void DrawTextureGlobalKernel(unsigned int* dev_FrameBuffer, GPUTexture texture, 
 	}
 }
 
-GPU_KERNEL
-void RasterizerPerTile(const TriangleIdx* __restrict__ const dev_Triangles, const OVertex* __restrict__ const dev_OVertices, unsigned int numTriangles,
-	PixelShade* dev_PixelShadeBuffer, int* dev_DepthBuffer, int* dev_MutexBuffer, GPUTexturesCompact textures,
-	const FVector3 camFwd, const CullingMode cm, const unsigned int width, const unsigned int height)
-{
-	//COARSE BINNER:
-	//TODO: define coarse bins
-	//=> screen divided up into pieces of same size
-	//TODO: every bin has a fixed size array buffer of N indexes (triangle idxs)
-	//TODO: process triangle and put into bin (atomically)
-	//=> get boundingbox and % / xy values
-	//TODO: every thread fetches a triangleIdx from bin queue (atomically)
-	//=> check every bin if there's work to do
-
-	//FINE BINNER:
-	//TODO: define fine bins
-	//=> subdivide coarse bins into smaller parts
-	//TODO: every thread processes triangleIdx from coarse bin
-	//TODO: coarse bin but just finer with more arrays???
-
-	//TODO: put in LL
-	//Every triangle has a (fixed) list of bin ids?
-	//Every bin has a (fixed) list of triangleIds?
-
-	constexpr unsigned int triangleSize = sizeof(OVertex) * 3 / 4;
-	GPU_SHARED_MEMORY float sharedMemoryBuffer[224 * triangleSize]; //12096 elements == 48384 bytes
-
-	//Every thread processes 1 single triangle for now
-	const unsigned int globalTriangleIndex = threadIdx.x + blockIdx.x * blockDim.x;
-	if (!(globalTriangleIndex < numTriangles))
-		return;
-
-	const TriangleIdx triangleIdx = dev_Triangles[globalTriangleIndex];
-
-	//Shared memory is laid out in a big row-list
-	const unsigned int triangleMemoryIdx = threadIdx.x * triangleSize;
-	OVertex& v0 = reinterpret_cast<OVertex&>(sharedMemoryBuffer[triangleMemoryIdx]);
-	OVertex& v1 = reinterpret_cast<OVertex&>(sharedMemoryBuffer[triangleMemoryIdx + sizeof(OVertex) / 4]);
-	OVertex& v2 = reinterpret_cast<OVertex&>(sharedMemoryBuffer[triangleMemoryIdx + sizeof(OVertex) / 4]);
-
-	memcpy(&v0, &dev_OVertices[triangleIdx.idx0], sizeof(OVertex));
-	memcpy(&v1, &dev_OVertices[triangleIdx.idx1], sizeof(OVertex));
-	memcpy(&v2, &dev_OVertices[triangleIdx.idx2], sizeof(OVertex));
-
-	const unsigned int minX = 0;
-	const unsigned int minY = 0;
-	const unsigned int maxX = 0;
-	const unsigned int maxY = 0;
-
-	NDCToScreenSpace(v0.p.xy, v1.p.xy, v2.p.xy, width, height);
-	const BoundingBox bb = GetBoundingBoxTiled(v0.p.xy, v1.p.xy, v2.p.xy, minX, minY, maxX, maxY);
-	//Rasterize Screenspace triangle
-	RasterizeTriangle(bb, v0, v1, v2, dev_MutexBuffer, dev_DepthBuffer, dev_PixelShadeBuffer, width, textures);
-}
+#pragma endregion
 
 #pragma endregion
 
@@ -1632,10 +1851,11 @@ void CUDARenderer::Clear(const RGBColor& colour)
 	}
 
 	{
-		const dim3 numThreadsPerBlock{ 32, 32 };
-		const dim3 numBlocks{ m_WindowHelper.Width / numThreadsPerBlock.x, m_WindowHelper.Height / numThreadsPerBlock.y };
-		ClearDepthMutexBufferKernel<<<numBlocks, numThreadsPerBlock>>>
-			(dev_DepthMutexBuffer, m_WindowHelper.Width, m_WindowHelper.Height);
+		////UNNECESSARY STEP: mutexbuffer should always revert to base initialized state, otherwise deadlocks would occur
+		//const dim3 numThreadsPerBlock{ 32, 32 };
+		//const dim3 numBlocks{ m_WindowHelper.Width / numThreadsPerBlock.x, m_WindowHelper.Height / numThreadsPerBlock.y };
+		//ClearDepthMutexBufferKernel<<<numBlocks, numThreadsPerBlock>>>
+		//	(dev_DepthMutexBuffer, m_WindowHelper.Width, m_WindowHelper.Height);
 	}
 }
 
@@ -1680,37 +1900,72 @@ void CUDARenderer::TriangleAssembler(MeshIdentifier& mi, const FVector3& camFwd,
 
 	const unsigned int numThreadsPerBlock = 256;
 	const unsigned int numBlocks = (numTriangles + (numThreadsPerBlock - 1)) / numThreadsPerBlock;
+	TriangleAssemblerKernel<<<numBlocks, numThreadsPerBlock>>>(
+		dev_Triangles[mi.Idx], dev_IndexBuffer[mi.Idx], numIndices, dev_NumVisibleTriangles,
+		dev_OVertexBuffer[mi.Idx], topology, cm, camFwd,
+		m_WindowHelper.Width, m_WindowHelper.Height);
+
 	//TriangleAssemblerKernelOld<<<numBlocks, numThreadsPerBlock>>>(
 	//	dev_Triangles[mi.Idx], dev_IndexBuffer[mi.Idx], 
 	//	numIndices, topology);
+}
 
-	TriangleAssemblerKernel<<<numBlocks, numThreadsPerBlock>>>(
+CPU_CALLABLE
+void CUDARenderer::TriangleBinner(MeshIdentifier& mi)
+{
+	const unsigned int numTriangles = mi.VisibleNumTriangles;
+	const IPoint2 numBins = { (int)m_BinQueues.NumQueuesX, (int)m_BinQueues.NumQueuesY };
+
+	const unsigned int numThreadsPerBlock = 256;
+	const unsigned int numBlocks = (numTriangles + (numThreadsPerBlock - 1)) / numThreadsPerBlock;
+	TriangleBinnerKernel<<<numBlocks, numThreadsPerBlock>>>(
+		dev_Triangles[mi.Idx], mi.VisibleNumTriangles,
+		dev_BinQueueSizes, dev_BinQueues, dev_BinQueueSizesMutexBuffer,
+		dev_OVertexBuffer[mi.Idx],
+		numBins, m_BinDim, m_BinQueues.QueueMaxSize, m_WindowHelper.Width, m_WindowHelper.Height);
+}
+
+CPU_CALLABLE
+void CUDARenderer::TriangleAssemblerAndBinner(MeshIdentifier& mi, const FVector3& camFwd, const CullingMode cm)
+{
+	const unsigned int numIndices = mi.pMesh->GetIndexAmount();
+	const PrimitiveTopology topology = mi.pMesh->GetTopology();
+	const unsigned int numTriangles = mi.TotalNumTriangles;
+	const IPoint2 numBins = { (int)m_BinQueues.NumQueuesX, (int)m_BinQueues.NumQueuesY };
+
+	const unsigned int numThreadsPerBlock = 256;
+	const unsigned int numBlocks = (numTriangles + (numThreadsPerBlock - 1)) / numThreadsPerBlock;
+	TriangleAssemblerAndBinnerKernel<<<numBlocks, numThreadsPerBlock>>>(
 		dev_Triangles[mi.Idx], dev_IndexBuffer[mi.Idx], numIndices, dev_NumVisibleTriangles,
 		dev_BinQueueSizes, dev_BinQueues, dev_BinQueueSizesMutexBuffer,
 		dev_OVertexBuffer[mi.Idx], topology, cm, camFwd, 
-		m_BinDim, m_BinQueueMaxSize, m_WindowHelper.Width, m_WindowHelper.Height);
+		numBins, m_BinDim, m_BinQueues.QueueMaxSize, m_WindowHelper.Width, m_WindowHelper.Height);
 }
 
 CPU_CALLABLE
 void CUDARenderer::Rasterizer(const MeshIdentifier& mi, const FVector3& camFwd, const CullingMode cm)
 {
-	//const unsigned int numTriangles = mi.TotalNumTriangles;
-	const unsigned int numTriangles = mi.VisibleNumTriangles;
 	const GPUTexturesCompact& textures = mi.Textures;
 
 	constexpr unsigned int numThreadsPerBlock = 256;
-	const unsigned int numBlocks = (numTriangles + (numThreadsPerBlock - 1)) / numThreadsPerBlock;
-	//RasterizerPerBinKernel<<<numBlocks, numThreadsPerBlock>>>(
-	//	dev_Triangles[mi.Idx], dev_OVertexBuffer[mi.Idx],
-	//	dev_PixelShadeBuffer, dev_DepthBuffer, dev_DepthMutexBuffer, textures,
-	//	dev_BinQueues, dev_BinQueueSizes, dev_BinQueueSizesMutexBuffer, m_BinDim,
-	//	m_BinQueueMaxSize, m_WindowHelper.Width, m_WindowHelper.Height);
 
+#ifdef BINNING
+	const dim3 numBlocks = { m_BinQueues.NumQueuesX, m_BinQueues.NumQueuesY };
+	RasterizerPerBinKernel<<<numBlocks, numThreadsPerBlock>>>(
+		dev_Triangles[mi.Idx], dev_OVertexBuffer[mi.Idx],
+		dev_PixelShadeBuffer, dev_DepthBuffer, dev_DepthMutexBuffer, textures,
+		dev_BinQueues, dev_BinQueueSizes, dev_BinQueueSizesMutexBuffer, m_BinDim,
+		m_BinQueues.QueueMaxSize, m_WindowHelper.Width, m_WindowHelper.Height);
+#else
+	const unsigned int numTriangles = mi.VisibleNumTriangles;
+	const unsigned int numBlocks = (numTriangles + (numThreadsPerBlock - 1)) / numThreadsPerBlock;
 	RasterizerPerTriangleKernel<<<numBlocks, numThreadsPerBlock>>>(
 		dev_Triangles[mi.Idx], dev_OVertexBuffer[mi.Idx], numTriangles,
 		dev_PixelShadeBuffer, dev_DepthBuffer, dev_DepthMutexBuffer, textures,
 		m_WindowHelper.Width, m_WindowHelper.Height);
+#endif
 
+	//SHARED MEMORY ATTEMPT
 	//shared memory needed per triangle = 3 * OVertex (216 bytes)
 	//shared memory per block: 49152 bytes
 	//Thus 227.555 triangles per 48Kbs

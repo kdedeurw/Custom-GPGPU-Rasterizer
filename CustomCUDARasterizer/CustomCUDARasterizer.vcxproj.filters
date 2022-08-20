@@ -218,6 +218,9 @@
     <ClInclude Include="CUDAMatrixMath.cuh">
       <Filter>Helpers\CUDA</Filter>
     </ClInclude>
+    <ClInclude Include="CUDAAtomicQueue.cuh">
+      <Filter>Helpers\CUDA</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <None Include="CustomCUDARasterizer.props" />
