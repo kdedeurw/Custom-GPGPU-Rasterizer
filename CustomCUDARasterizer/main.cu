@@ -54,45 +54,45 @@ void CreateScenes(SceneManager& sm)
 	//	pSceneGraphs.push_back(pSceneGraph);
 	//}
 
-	//{
-	//	// SceneGraph 2
-	//	SceneGraph* pSceneGraph = new SceneGraph{};
-	//	short vertexType{};
-	//	vertexType |= (int)VertexType::Uv;
-	//	const std::string texPaths[4]{ "Resources/uv_grid_2.png", "", "", "" };
-	//	{
-	//		// Mesh 1 // TriangleList Quad
-	//		std::vector<IVertex> vertices = {
-	//			{FPoint3{-3, 3, -2}, FVector2{0, 0}}, {FPoint3{0, 3, -2}, FVector2{0.5f, 0}}, {FPoint3{3, 3, -2}, FVector2{1, 0}},
-	//			{FPoint3{-3, 0, -2}, FVector2{0, 0.5f}}, {FPoint3{0, 0, -2}, FVector2{0.5f, 0.5f}}, {FPoint3{3, 0, -2}, FVector2{1, 0.5f}},
-	//			{FPoint3{-3, -3, -2}, FVector2{0, 1}}, {FPoint3{0, -3, -2}, FVector2{0.5f, 1}}, {FPoint3{3, -3, -2}, FVector2{1, 1}} };
-	//		std::vector<unsigned int> indices = {
-	//									0, 3, 1,
-	//									3, 4, 1,
-	//									1, 4, 2,
-	//									4, 5, 2,
-	//									3, 6, 4,
-	//									6, 7, 4,
-	//									4, 7, 5,
-	//									7, 8, 5, }; // obviously a list
-	//		Mesh* pTriangleListQuad = new Mesh{ vertices, indices, PrimitiveTopology::TriangleList };
-	//		pTriangleListQuad->LoadTextures(texPaths);
-	//		pSceneGraph->AddMesh(pTriangleListQuad);
-	//	}
-	//	//{
-	//	//	// Mesh 2 // TriangleStrip Quad
-	//	//	std::vector<IVertex> vertices = {
-	//	//		{ FPoint3{-3, 3, -2}, FVector2{0, 0} }, IVertex{ FPoint3{0, 3, -2}, FVector2{0.5f, 0} }, IVertex{ FPoint3{3, 3, -2}, FVector2{1, 0} },
-	//	//		{ FPoint3{-3, 0, -2}, FVector2{0, 0.5f} }, IVertex{ FPoint3{0, 0, -2}, FVector2{0.5f, 0.5f} }, IVertex{ FPoint3{3, 0, -2}, FVector2{1, 0.5f} },
-	//	//		{ FPoint3{-3, -3, -2}, FVector2{0, 1} }, IVertex{ FPoint3{0, -3, -2}, FVector2{0.5f, 1} }, IVertex{ FPoint3{3, -3, -2}, FVector2{1, 1} } };
-	//	//	std::vector<unsigned int> indices = { 0, 3, 1, 4, 2, 5, 5, 3, 3, 6, 4, 7, 5, 8 }; // strip
-	//	//	Mesh* pTriangleStripQuad = new Mesh{ vertices, indices, PrimitiveTopology::TriangleStrip };
-	//	//	pTriangleStripQuad->LoadTextures(texPaths);
-	//	//	pSceneGraph->AddMesh(pTriangleStripQuad);
-	//	//}
-	//	pSceneGraph->AddLight(new DirectionalLight{ RGBColor{1.f, 1.f, 1.f}, 2.f, FVector3{ 0.577f, -0.577f, -0.577f } });
-	//	pSceneGraphs.push_back(pSceneGraph);
-	//}
+	{
+		// SceneGraph 2
+		SceneGraph* pSceneGraph = new SceneGraph{};
+		short vertexType{};
+		vertexType |= (int)VertexType::Uv;
+		const std::string texPaths[4]{ "Resources/uv_grid_2.png", "", "", "" };
+		{
+			// Mesh 1 // TriangleList Quad
+			std::vector<IVertex> vertices = {
+				{FPoint3{-3, 3, -2}, FVector2{0, 0}}, {FPoint3{0, 3, -2}, FVector2{0.5f, 0}}, {FPoint3{3, 3, -2}, FVector2{1, 0}},
+				{FPoint3{-3, 0, -2}, FVector2{0, 0.5f}}, {FPoint3{0, 0, -2}, FVector2{0.5f, 0.5f}}, {FPoint3{3, 0, -2}, FVector2{1, 0.5f}},
+				{FPoint3{-3, -3, -2}, FVector2{0, 1}}, {FPoint3{0, -3, -2}, FVector2{0.5f, 1}}, {FPoint3{3, -3, -2}, FVector2{1, 1}} };
+			std::vector<unsigned int> indices = {
+										0, 3, 1,
+										3, 4, 1,
+										1, 4, 2,
+										4, 5, 2,
+										3, 6, 4,
+										6, 7, 4,
+										4, 7, 5,
+										7, 8, 5, }; // obviously a list
+			Mesh* pTriangleListQuad = new Mesh{ vertices, indices, PrimitiveTopology::TriangleList };
+			pTriangleListQuad->LoadTextures(texPaths);
+			pSceneGraph->AddMesh(pTriangleListQuad);
+		}
+		//{
+		//	// Mesh 2 // TriangleStrip Quad
+		//	std::vector<IVertex> vertices = {
+		//		{ FPoint3{-3, 3, -2}, FVector2{0, 0} }, IVertex{ FPoint3{0, 3, -2}, FVector2{0.5f, 0} }, IVertex{ FPoint3{3, 3, -2}, FVector2{1, 0} },
+		//		{ FPoint3{-3, 0, -2}, FVector2{0, 0.5f} }, IVertex{ FPoint3{0, 0, -2}, FVector2{0.5f, 0.5f} }, IVertex{ FPoint3{3, 0, -2}, FVector2{1, 0.5f} },
+		//		{ FPoint3{-3, -3, -2}, FVector2{0, 1} }, IVertex{ FPoint3{0, -3, -2}, FVector2{0.5f, 1} }, IVertex{ FPoint3{3, -3, -2}, FVector2{1, 1} } };
+		//	std::vector<unsigned int> indices = { 0, 3, 1, 4, 2, 5, 5, 3, 3, 6, 4, 7, 5, 8 }; // strip
+		//	Mesh* pTriangleStripQuad = new Mesh{ vertices, indices, PrimitiveTopology::TriangleStrip };
+		//	pTriangleStripQuad->LoadTextures(texPaths);
+		//	pSceneGraph->AddMesh(pTriangleStripQuad);
+		//}
+		pSceneGraph->AddLight(new DirectionalLight{ RGBColor{1.f, 1.f, 1.f}, 2.f, FVector3{ 0.577f, -0.577f, -0.577f } });
+		pSceneGraphs.push_back(pSceneGraph);
+	}
 	
 	//{
 	//	// SceneGraph 3 // TukTuk
@@ -113,20 +113,20 @@ void CreateScenes(SceneManager& sm)
 	//
 	//}
 
-	{
-		// SceneGraph 4 // Bunny
-		SceneGraph* pSceneGraph = new SceneGraph{};
-		{
-			// Mesh 1 // Bunny 
-			short vertexType{};
-			parser.OpenFile("Resources/lowpoly_bunny.obj");
-			parser.ReadFromObjFile(vertexBuffer, indexBuffer, vertexType);
-			Mesh* pBunnyMesh = new Mesh{ vertexBuffer, indexBuffer, PrimitiveTopology::TriangleList };
-			pSceneGraph->AddMesh(pBunnyMesh);
-		}
-		pSceneGraph->AddLight(new DirectionalLight{ RGBColor{1.f, 1.f, 1.f}, 2.f, FVector3{ 0.577f, -0.577f, -0.577f } });
-		pSceneGraphs.push_back(pSceneGraph);
-	}
+	//{
+	//	// SceneGraph 4 // Bunny
+	//	SceneGraph* pSceneGraph = new SceneGraph{};
+	//	{
+	//		// Mesh 1 // Bunny 
+	//		short vertexType{};
+	//		parser.OpenFile("Resources/lowpoly_bunny.obj");
+	//		parser.ReadFromObjFile(vertexBuffer, indexBuffer, vertexType);
+	//		Mesh* pBunnyMesh = new Mesh{ vertexBuffer, indexBuffer, PrimitiveTopology::TriangleList };
+	//		pSceneGraph->AddMesh(pBunnyMesh);
+	//	}
+	//	pSceneGraph->AddLight(new DirectionalLight{ RGBColor{1.f, 1.f, 1.f}, 2.f, FVector3{ 0.577f, -0.577f, -0.577f } });
+	//	pSceneGraphs.push_back(pSceneGraph);
+	//}
 	
 	//{
 	//	// SceneGraph 5 // Vehicle
@@ -321,8 +321,8 @@ int main(int argc, char* args[])
 
 	//Initialize framework
 	SceneManager sm{};
-	Camera camera{ FPoint3{ 0.f, 5.f, 65.f }, 45.f };
-	//Camera camera{ FPoint3{ 0.f, 1.f, 5.f }, 45.f };
+	//Camera camera{ FPoint3{ 0.f, 5.f, 65.f }, 45.f };
+	Camera camera{ FPoint3{ 0.f, 1.f, 5.f }, 45.f };
 	camera.SetAspectRatio(float(res.Width), float(res.Height));
 	Elite::Timer* pTimer = new Elite::Timer();
 
@@ -339,7 +339,12 @@ int main(int argc, char* args[])
 
 #ifdef HARDWARE_ACCELERATION
 #ifdef BINNING
-	const int binMultiplier = 3;
+	const int binMultiplier = 1; //should be a multiple of 2
+	if (binMultiplier != 1 && binMultiplier % 2 != 0)
+	{
+		std::cout << "Invalid binMultiplier, not a multiple of 2!\n";
+		goto shutdown;
+	}
 	const IPoint2 numBins = { (int)res.AspectRatio.w * binMultiplier, (int)res.AspectRatio.h * binMultiplier };
 	const IPoint2 binDim = { (int)res.Width / numBins.x, (int)res.Height / numBins.y };
 	const unsigned int binQueueMaxSize = 512;
@@ -422,16 +427,20 @@ int main(int argc, char* args[])
 	}
 	pTimer->Stop();
 
+shutdown:
+
 	//Shutdown framework
 #ifdef HARDWARE_ACCELERATION
 	CheckErrorCuda(DeviceSynchroniseCuda());
-	delete pCudaRenderer;
+	if (pCudaRenderer)
+		delete pCudaRenderer;
 	CheckErrorCuda(DeviceResetCuda());
 #else
-	delete pRenderer;
+	if (pRenderer)
+		delete pRenderer;
 #endif
-	delete pTimer;
-
+	if (pTimer)
+		delete pTimer;
 
 	ShutDown(pWindow);
 	return 0;

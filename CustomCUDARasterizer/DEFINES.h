@@ -1,15 +1,13 @@
 #pragma once
 
-//enable hardware accelerated CUDA rasterizer
 #ifndef HARDWARE_ACCELERATION
-#define HARDWARE_ACCELERATION //can comment this line
+#define HARDWARE_ACCELERATION //enable hardware accelerated CUDA rasterizer
 #endif
 
 #ifdef HARDWARE_ACCELERATION
 
-//benchmark invidual stages of hardware accelerated cudarenderer
 #ifndef BENCHMARK
-//#define BENCHMARK //can comment this line
+//#define BENCHMARK //benchmark invidual stages of hardware accelerated cudarenderer
 #endif
 
 //show fps in realtime
@@ -18,7 +16,14 @@
 #endif
 
 #ifndef BINNING
-#define BINNING //can comment this line
+#define BINNING //enable triangle binning
+#ifdef BINNING
+
+#ifndef FINERASTER
+//#define FINERASTER //perform fine rasterization per bin
+#endif
+
+#endif
 #endif
 
 #endif

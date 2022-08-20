@@ -109,7 +109,7 @@ RGBColor GPUTextureSampler::SampleLinear(const GPUTexture& gpuTexture, const FVe
 	//Step 1: find pixel to sample from
 	const int x = int(uv.x * gpuTexture.w + 0.5f);
 	const int y = int(uv.y * gpuTexture.h + 0.5f);
-	if (x < 0 || y < 0 || x > gpuTexture.w || y > gpuTexture.h)
+	if (x < 0 || y < 0 || x >= gpuTexture.w || y >= gpuTexture.h)
 		return RGBColor{ 1.f, 0.f, 1.f };
 
 	//Step 2: find 4 neighbours
@@ -190,7 +190,7 @@ RGBColor GPUTextureSampler::SampleLinear(const GPUTextureCompact& gpuTexture, un
 	//Step 1: find pixel to sample from
 	const int x = int(uv.x * w + 0.5f);
 	const int y = int(uv.y * h + 0.5f);
-	if (x < 0 || y < 0 || x > w || y > h)
+	if (x < 0 || y < 0 || x >= w || y >= h)
 		return RGBColor{ 1.f, 0.f, 1.f };
 
 	//Step 2: find 4 neighbours

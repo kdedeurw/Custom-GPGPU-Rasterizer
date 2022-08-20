@@ -375,13 +375,18 @@ void CUDARenderer::Render(const SceneManager& sm, const Camera* pCamera)
 #endif
 #endif
 
+		//TODO: measure time from binnerstream with event
+		CheckErrorCuda(cudaStreamSynchronize(binnerStream));
+		//IF BINNER STAGE HAS FINISHED, SET DIRTY FLAG
+		binnerStatus = 1;
+		CheckErrorCuda(cudaMemcpyToSymbol(dev_ConstMemory, &binnerStatus, sizeof(int), IsFinishedBinningIdx * 4));
+		CheckErrorCuda(cudaDeviceSynchronize());
+
 		//TODO: Rasterization happens on a per-mesh basis instead of per-scenegraph?
 
 		//---STAGE 4---: Peform Triangle Rasterization & interpolated fragment buffering
 		Rasterizer(mi, camFwd, cm, rasterizerStream);
 		//CheckErrorCuda(cudaDeviceSynchronize());
-
-		//IF BINNER STAGE HAS FINISHED, SET DIRTY FLAG
 
 		//cudaError_t test = cudaStreamQuery(binnerStream);
 		//while (test != cudaSuccess)
@@ -391,11 +396,12 @@ void CUDARenderer::Render(const SceneManager& sm, const Camera* pCamera)
 		//	test = cudaStreamQuery(binnerStream);
 		//}
 
-		//TODO: measure time from binnerstream with event
-		CheckErrorCuda(cudaStreamSynchronize(binnerStream));
-		binnerStatus = 1;
-		CheckErrorCuda(cudaMemcpyToSymbol(dev_ConstMemory, &binnerStatus, sizeof(int), IsFinishedBinningIdx * 4));
-		CheckErrorCuda(cudaDeviceSynchronize());
+		////TODO: measure time from binnerstream with event
+		//CheckErrorCuda(cudaStreamSynchronize(binnerStream));
+		////IF BINNER STAGE HAS FINISHED, SET DIRTY FLAG
+		//binnerStatus = 1;
+		//CheckErrorCuda(cudaMemcpyToSymbol(dev_ConstMemory, &binnerStatus, sizeof(int), IsFinishedBinningIdx * 4));
+		//CheckErrorCuda(cudaDeviceSynchronize());
 
 		//---END STAGE 4---
 
@@ -1398,7 +1404,7 @@ void RasterizerPerBinKernel(const TriangleIdx* __restrict__ const dev_Triangles,
 	//This would mean that there's always only 2 threads atomically reading and writing 1 element of the queue (interesting enough???)
 	//Don't forget about the dirty flagging thing tho
 
-	int& isFinishedBinning = reinterpret_cast<int&>(dev_ConstMemory[IsFinishedBinningIdx]);
+	const int& isFinishedBinning = reinterpret_cast<int&>(dev_ConstMemory[IsFinishedBinningIdx]);
 	do
 	{
 		unsigned int queuedTriangleIdx;
@@ -1465,123 +1471,98 @@ void RasterizerPerBinKernel(const TriangleIdx* __restrict__ const dev_Triangles,
 GPU_KERNEL
 void RasterizerPerBinBatchSizeKernel(const TriangleIdx* __restrict__ const dev_Triangles, const OVertex* __restrict__ const dev_OVertices,
 	PixelShade* dev_PixelShadeBuffer, int* dev_DepthBuffer, int* dev_DepthMutexBuffer, GPUTexturesCompact textures,
-	unsigned int* dev_BinQueues, unsigned int* dev_BinQueueSizes, int* dev_BinQueueSizesMutexBuffer,
-	IPoint2 binDim, unsigned int binQueueMaxSize, const unsigned int width, const unsigned int height)
+	unsigned int* dev_BinQueues, unsigned int* dev_BinQueueSizes, int* dev_BinQueueSizesMutexBuffer, IPoint2 binDim, unsigned int binQueueMaxSize, 
+	const unsigned int pixelCoverageX, const unsigned int pixelCoverageY, const unsigned int width, const unsigned int height)
 {
 	//TODO: blocksize.x == binQueueMaxSize
 
-	GPU_SHARED_MEMORY unsigned int triangleIndexes[513];
+	//512 triangle indexes + 1 queue size
+	extern GPU_SHARED_MEMORY unsigned int triangleQueueBuffer[];
+	const int& isFinishedBinning = reinterpret_cast<int&>(dev_ConstMemory[IsFinishedBinningIdx]);
 
-	//TODO: get correct binIdx
+	const bool isBarrierThread = threadIdx.x == 0 && threadIdx.y == 0;
 	const unsigned int binIdx = blockIdx.x + blockIdx.y * gridDim.x;
 
-	unsigned int& queueSize = triangleIndexes[512];
+	unsigned int& queueSize = triangleQueueBuffer[512];
 
-	//only 1 thread per block does an atomic operation, acts as a barrier thread for entire block
-	if (threadIdx.x == 0)
+	do
 	{
-		queueSize = dev_BinQueueSizes[binIdx];
-		//continuously check whether queue is full
-		while (queueSize >= binQueueMaxSize)
+		//only 1 thread per block does an atomic operation, acts as a barrier thread for entire block
+		if (isBarrierThread)
 		{
-			queueSize = dev_BinQueueSizes[binIdx];
-			//bool isDone = false;
-			//do
-			//{
-			//	//TODO: redundant when each block does 1 unique bin
-			//	isDone = (atomicCAS(&dev_BinQueueSizesMutexBuffer[binIdx], 0, 1) == 0);
-			//} while (!isDone);
+			//continuously check whether queue is full
+			do
+			{
+				queueSize = dev_BinQueueSizes[binIdx];
+				//bool isDone = false;
+				//do
+				//{
+				//	//TODO: redundant when each block does 1 unique bin
+				//	isDone = (atomicCAS(&dev_BinQueueSizesMutexBuffer[binIdx], 0, 1) == 0);
+				//} while (!isDone);
+
+				//release barrier and process remaining triangles
+				if (isFinishedBinning)
+					break;
+
+			} while (queueSize != binQueueMaxSize);
+			//if queue is full, "release barrier"
 		}
-		//if queue is full, "release barrier"
-	}
-	//acts as a block barrier
-	__syncthreads();
-	//critical section
-	
-	//coalesced fetch in batch size of blockdim
-	triangleIndexes[threadIdx.x] = dev_BinQueues[binIdx * binQueueMaxSize + threadIdx.x];
+		//acts as a block barrier
+		__syncthreads();
+		//critical section
 
-	//no binner thread should be allowed to access queuesize bc (queuesize == maxqueuesize)
-	//will allow binner threads to atomically write to this again
-	dev_BinQueueSizes[binIdx] = 0;
-	//dev_BinQueueSizesMutexBuffer[binIdx] = 0;
-	//end of critical section
+		if (isFinishedBinning && queueSize < 1)
+			return;
 
-	const TriangleIdx triangleIdx = dev_Triangles[triangleIndexes[threadIdx.x]];
-	OVertex v0 = dev_OVertices[triangleIdx.idx0];
-	OVertex v1 = dev_OVertices[triangleIdx.idx1];
-	OVertex v2 = dev_OVertices[triangleIdx.idx2];
+		//coalesced fetch in batch size of blockdim
+		const unsigned int blockSizeTotal = blockDim.x * blockDim.y;
+		const unsigned int loops = binQueueMaxSize / blockSizeTotal;
+		for (unsigned int i{}; i < loops; ++i)
+		{
+			triangleQueueBuffer[threadIdx.x + i * blockSizeTotal] = dev_BinQueues[binIdx * binQueueMaxSize + threadIdx.x + i * blockSizeTotal];
+		}
 
-	NDCToScreenSpace(v0.p.xy, v1.p.xy, v2.p.xy, width, height);
-	const unsigned int minX = blockIdx.x * binDim.x;
-	const unsigned int minY = blockIdx.y * binDim.y;
-	const unsigned int maxX = minX + binDim.x;
-	const unsigned int maxY = minY + binDim.y;
-	const BoundingBox bb = GetBoundingBoxTiled(v0.p.xy, v1.p.xy, v2.p.xy, minX, minY, maxX, maxY);
-	RasterizeTriangle(bb, v0, v1, v2, dev_DepthMutexBuffer, dev_DepthBuffer, dev_PixelShadeBuffer, width, textures);
-}
+		//no binner thread should be allowed to access queuesize bc (queuesize == maxqueuesize)
+		//will allow binner threads to atomically write to this again
+		if (isBarrierThread)
+		{
+			dev_BinQueueSizes[binIdx] = 0;
+		}
+		//dev_BinQueueSizesMutexBuffer[binIdx] = 0;
+		//end of critical section
+		__syncthreads();
 
-GPU_KERNEL
-void RasterizerPerTile(const TriangleIdx* __restrict__ const dev_Triangles, const OVertex* __restrict__ const dev_OVertices, unsigned int numTriangles,
-	PixelShade* dev_PixelShadeBuffer, int* dev_DepthBuffer, int* dev_MutexBuffer, GPUTexturesCompact textures, 
-	unsigned int* dev_BinQueues, unsigned int* dev_BinQueueSizes, int* dev_BinQueueSizesMutexBuffer,
-	IPoint2 binDim, unsigned int binQueueMaxSize, const unsigned int width, const unsigned int height)
-{
-	//FINE BINNER:
-	//TODO: define fine bins
-	//=> subdivide coarse bins into smaller parts
-	//TODO: every thread processes triangleIdx from coarse bin
-	//TODO: coarse bin but just finer with more arrays???
+		//every thread covers a NxN pixel area
+		const unsigned int minX = blockIdx.x * binDim.x;
+		const unsigned int minY = blockIdx.y * binDim.y;
+		const unsigned int maxX = minX + binDim.x;
+		const unsigned int maxY = minY + binDim.y;
 
-	//TODO: too much shared memory
-	constexpr unsigned int triangleSize = sizeof(OVertex) * 3 / 4;
-	GPU_SHARED_MEMORY float sharedMemoryBuffer[224 * triangleSize]; //12096 elements == 48384 bytes
+		BoundingBox bb;
+		bb.xMin = minX + threadIdx.x * pixelCoverageX;
+		bb.xMax = bb.xMin + pixelCoverageX;
+		bb.yMin = minY + threadIdx.y * pixelCoverageY;
+		bb.yMax = bb.yMin + pixelCoverageY;
 
-	//Every thread processes a NxN tile
-	const unsigned int globalTriangleIndex = threadIdx.x + blockIdx.x * blockDim.x;
-	if (!(globalTriangleIndex < numTriangles))
-		return;
+		bb.xMin = ClampFast(bb.xMin, (short)minX, (short)maxX);
+		bb.xMax = ClampFast(bb.xMax, (short)minX, (short)maxX);
+		bb.yMin = ClampFast(bb.yMin, (short)minY, (short)maxY);
+		bb.yMax = ClampFast(bb.yMax, (short)minY, (short)maxY);
 
-	const TriangleIdx triangleIdx = dev_Triangles[globalTriangleIndex];
+		for (unsigned int currQueueIdx{}; currQueueIdx < queueSize; ++currQueueIdx)
+		{
+			//TODO: sync with barrierthread in shared memory
+			const TriangleIdx triangleIdx = dev_Triangles[triangleQueueBuffer[currQueueIdx]];
+			OVertex v0 = dev_OVertices[triangleIdx.idx0];
+			OVertex v1 = dev_OVertices[triangleIdx.idx1];
+			OVertex v2 = dev_OVertices[triangleIdx.idx2];
 
-	//Shared memory is laid out in a big row-list
-	const unsigned int triangleMemoryIdx = threadIdx.x * triangleSize;
-	OVertex& v0 = reinterpret_cast<OVertex&>(sharedMemoryBuffer[triangleMemoryIdx]);
-	OVertex& v1 = reinterpret_cast<OVertex&>(sharedMemoryBuffer[triangleMemoryIdx + sizeof(OVertex) / 4]);
-	OVertex& v2 = reinterpret_cast<OVertex&>(sharedMemoryBuffer[triangleMemoryIdx + sizeof(OVertex) / 4]);
-
-	v0 = dev_OVertices[triangleIdx.idx0];
-	v1 = dev_OVertices[triangleIdx.idx1];
-	v2 = dev_OVertices[triangleIdx.idx2];
-
-	const unsigned int minX = blockIdx.x * binDim.x;
-	const unsigned int minY = blockIdx.y * binDim.y;
-	const unsigned int maxX = minX + binDim.x;
-	const unsigned int maxY = minY + binDim.y;
-
-	//every thread has a coverage boundingbox of NxN pixels
-	//Round error? round down lmao
-	const unsigned int pixelCoverageX = binDim.x / blockDim.x;
-	const unsigned int pixelCoverageY = binDim.y / blockDim.y;
-
-	//blockDim = { 16, 16 } 256 threads
-	//numBins = { 8, 6 } 48 bins
-	//binDim = { 80, 80 } 6400 pixels
-
-	BoundingBox bb;
-	bb.xMin = minX + threadIdx.x * pixelCoverageX;
-	bb.xMax = minX + threadIdx.x * pixelCoverageX + pixelCoverageX;
-	bb.yMin = minY + threadIdx.y * pixelCoverageY;
-	bb.yMax = minY + threadIdx.y * pixelCoverageY + pixelCoverageY;
-
-	bb.xMin = ClampFast(bb.xMin, (short)minX, (short)maxX);
-	bb.xMax = ClampFast(bb.xMax, (short)minX, (short)maxX);
-	bb.yMin = ClampFast(bb.yMin, (short)minY, (short)maxY);
-	bb.yMax = ClampFast(bb.yMax, (short)minY, (short)maxY);
-
-	NDCToScreenSpace(v0.p.xy, v1.p.xy, v2.p.xy, width, height);
-	//Rasterize Screenspace triangle
-	RasterizeTriangle(bb, v0, v1, v2, dev_MutexBuffer, dev_DepthBuffer, dev_PixelShadeBuffer, width, textures);
+			NDCToScreenSpace(v0.p.xy, v1.p.xy, v2.p.xy, width, height);
+			//Rasterize Screenspace triangle
+			RasterizeTriangle(bb, v0, v1, v2, dev_DepthMutexBuffer, dev_DepthBuffer, dev_PixelShadeBuffer, width, textures);
+		}
+	} while (!isFinishedBinning);
 }
 
 #pragma endregion
@@ -2068,22 +2049,30 @@ void CUDARenderer::Rasterizer(const MeshIdentifier& mi, const FVector3& camFwd, 
 	const unsigned int height = m_WindowHelper.Resolution.Height;
 	const GPUTexturesCompact& textures = mi.Textures;
 
-	constexpr unsigned int numThreadsPerBlock = 256;
-
 #ifdef BINNING
+#ifdef FINERASTER
+	const dim3 numThreadsPerBlock = { 16, 16 };
+	const dim3 numBlocks = { m_BinQueues.NumQueuesX, m_BinQueues.NumQueuesY };
+	const unsigned int numSharedMemory = m_BinQueues.QueueMaxSize * 4 + 4; //queue array + 1 queue size
+
+	//pixel coverage per thread
+	const unsigned int pixelCoverageX = m_BinDim.x / numThreadsPerBlock.x;
+	const unsigned int pixelCoverageY = m_BinDim.y / numThreadsPerBlock.y;
+	RasterizerPerBinBatchSizeKernel<<<numBlocks, numThreadsPerBlock, numSharedMemory, stream>>>(
+		dev_Triangles[mi.Idx], dev_OVertexBuffer[mi.Idx],
+		dev_PixelShadeBuffer, dev_DepthBuffer, dev_DepthMutexBuffer, textures,
+		dev_BinQueues, dev_BinQueueSizes, dev_BinQueueSizesMutexBuffer, m_BinDim,
+		m_BinQueues.QueueMaxSize, pixelCoverageX, pixelCoverageY, width, height);
+	//TODO: each block iterates through entire queue array, how about each block only does 1 triangle of 1 queue *smirk*
+#else
+	constexpr unsigned int numThreadsPerBlock = 256;
 	const dim3 numBlocks = { m_BinQueues.NumQueuesX, m_BinQueues.NumQueuesY };
 	RasterizerPerBinKernel<<<numBlocks, numThreadsPerBlock, 0, stream>>>(
 		dev_Triangles[mi.Idx], dev_OVertexBuffer[mi.Idx],
 		dev_PixelShadeBuffer, dev_DepthBuffer, dev_DepthMutexBuffer, textures,
 		dev_BinQueues, dev_BinQueueSizes, dev_BinQueueSizesMutexBuffer, m_BinDim,
 		m_BinQueues.QueueMaxSize, width, height);
-
-	//const dim3 numBlocks = { m_BinQueues.NumQueuesX, m_BinQueues.NumQueuesY };
-	//RasterizerPerBinBatchSizeKernel<<<numBlocks, numThreadsPerBlock, 0, stream>>>(
-	//	dev_Triangles[mi.Idx], dev_OVertexBuffer[mi.Idx],
-	//	dev_PixelShadeBuffer, dev_DepthBuffer, dev_DepthMutexBuffer, textures,
-	//	dev_BinQueues, dev_BinQueueSizes, dev_BinQueueSizesMutexBuffer, m_BinDim,
-	//	m_BinQueues.QueueMaxSize, width, height);
+#endif
 #else
 	const unsigned int numTriangles = mi.VisibleNumTriangles;
 	const unsigned int numBlocks = (numTriangles + (numThreadsPerBlock - 1)) / numThreadsPerBlock;
