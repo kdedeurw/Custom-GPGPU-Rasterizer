@@ -447,7 +447,7 @@ RGBColor ShadePixel(const GPUTexturesCompact& textures, const FVector2& uv, cons
 
 		// light calculations
 		float observedArea{ Dot(-finalNormal, lightDirection) };
-		Clamp(observedArea, 0.f, observedArea);
+		observedArea = ClampFast(observedArea, 0.f, observedArea);
 		observedArea /= (float)PI;
 		observedArea *= lightIntensity;
 		const RGBColor diffuseColour = diffuseSample * observedArea;
@@ -459,15 +459,15 @@ RGBColor ShadePixel(const GPUTexturesCompact& textures, const FVector2& uv, cons
 
 			// phong specular
 			const FVector3 reflectV{ Reflect(lightDirection, finalNormal) };
-			float angle{ Dot(reflectV, vd) };
-			Clamp(angle, 0.f, 1.f);
+			float angle{ Dot(vd, reflectV) };
+			angle = Clamp(angle, 0.f, 1.f);
 			const float shininess = 25.f;
 			angle = powf(angle, glossSample.r * shininess);
 			const RGBColor specularColour = specularSample * angle;
 
 			// final
 			finalColour = ambientColour + diffuseColour + specularColour;
-			finalColour.ClampColor();
+			finalColour.MaxToOne();
 		}
 		else
 		{

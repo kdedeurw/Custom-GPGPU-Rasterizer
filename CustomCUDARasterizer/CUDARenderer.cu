@@ -1863,12 +1863,12 @@ void CUDARenderer::Clear(const RGBColor& colour)
 
 	{
 		////UNNECESSARY STEP: pixelshade stage will overwrite this anyway + more kernel launch overhead
-		//const RGBA rgba{ colour };
-		//const dim3 numThreadsPerBlock{ 32, 32 };
-		//const dim3 numBlocks{ width / numThreadsPerBlock.x, height / numThreadsPerBlock.y };
+		const RGBA rgba{ colour };
+		const dim3 numThreadsPerBlock{ 32, 32 };
+		const dim3 numBlocks{ width / numThreadsPerBlock.x, height / numThreadsPerBlock.y };
 		//Needs to be called after ClearPixelShadeBufferKernel
-		//ClearScreenKernel<<<numBlocks, numThreadsPerBlock>>>
-		//	(dev_PixelShadeBuffer, width, height, rgba.colour32);
+		ClearScreenKernel<<<numBlocks, numThreadsPerBlock>>>
+			(dev_PixelShadeBuffer, width, height, rgba.colour32);
 		////Not necessary, since we overwrite the entire buffer every frame anyway
 		//ClearFrameBufferKernel<<<numBlocks, numThreadsPerBlock>>>
 		//	(dev_FrameBuffer, width, height, rgba.colour32);
