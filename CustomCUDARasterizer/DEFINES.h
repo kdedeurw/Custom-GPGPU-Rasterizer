@@ -6,13 +6,15 @@
 
 #ifdef HARDWARE_ACCELERATION
 
+//show fps in realtime
+#ifndef STATS_REALTIME
+//#define STATS_REALTIME //can comment this line
+#endif
+
+#ifndef STATS_REALTIME
 #ifndef BENCHMARK
 //#define BENCHMARK //benchmark invidual stages of hardware accelerated cudarenderer
 #endif
-
-//show fps in realtime
-#ifndef FPS_REALTIME
-//#define STATS_REALTIME //can comment this line
 #endif
 
 #ifndef BINNING
@@ -20,7 +22,7 @@
 #ifdef BINNING
 
 #ifndef FINERASTER
-//#define FINERASTER //perform fine rasterization per bin
+#define FINERASTER //perform fine rasterization per bin
 #endif
 
 #endif

@@ -85,6 +85,7 @@ private:
 	CUDAAtomicQueues<unsigned int> m_BinQueues;
 	std::vector<MeshIdentifier> m_MeshIdentifiers{};
 	std::vector<GPUTexturesCompact> m_TextureObjects{};
+	int* queue;
 
 	//-----CPU HELPER FUNCTIONS-----
 	
@@ -116,7 +117,7 @@ private:
 	void Clear(const RGBColor& colour = { 0.25f, 0.25f, 0.25f });
 	void VertexShader(const MeshIdentifier& mi);
 	void TriangleAssembler(MeshIdentifier& mi, const FVector3& camFwd, const CullingMode cm = CullingMode::BackFace, cudaStream_t stream = cudaStreamDefault);
-	void TriangleBinner(MeshIdentifier& mi, cudaStream_t stream = cudaStreamDefault);
+	void TriangleBinner(MeshIdentifier& mi, const unsigned int triangleIdxOffset = 0, cudaStream_t stream = cudaStreamDefault);
 	void TriangleAssemblerAndBinner(MeshIdentifier& mi, const FVector3& camFwd, const CullingMode cm = CullingMode::BackFace, cudaStream_t stream = cudaStreamDefault);
 	void Rasterizer(const MeshIdentifier& mi, const FVector3& camFwd, const CullingMode cm = CullingMode::BackFace, cudaStream_t stream = cudaStreamDefault);
 	void PixelShader(SampleState sampleState, bool isDepthColour);
