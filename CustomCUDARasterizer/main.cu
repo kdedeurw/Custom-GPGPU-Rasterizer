@@ -339,9 +339,9 @@ int main(int argc, char* args[])
 
 #ifdef HARDWARE_ACCELERATION
 #ifdef BINNING
-	const int binMultiplier = 1;
-	//const IPoint2 numBins = { (int)res.AspectRatio.w * binMultiplier, (int)res.AspectRatio.h * binMultiplier };
-	const IPoint2 numBins = { 40, 30 };
+	const int binMultiplier = 10;
+	const IPoint2 numBins = { (int)res.AspectRatio.w * binMultiplier, (int)res.AspectRatio.h * binMultiplier };
+	//const IPoint2 numBins = { 40, 30 };
 	const IPoint2 binDim = { (int)res.Width / numBins.x, (int)res.Height / numBins.y };
 	const IPoint2 numThreads = { 16, 16 };
 	const IPoint2 pixelCoveragePerThread = { binDim.y / numThreads.y, binDim.y / numThreads.y };

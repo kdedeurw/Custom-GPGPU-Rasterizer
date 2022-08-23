@@ -85,7 +85,6 @@ private:
 	CUDAAtomicQueues<unsigned int> m_BinQueues;
 	std::vector<MeshIdentifier> m_MeshIdentifiers{};
 	std::vector<GPUTexturesCompact> m_TextureObjects{};
-	int* queue;
 
 	//-----CPU HELPER FUNCTIONS-----
 	

@@ -88,9 +88,6 @@ CUDARenderer::CUDARenderer(const WindowHelper& windowHelper, IPoint2 numBins, IP
 	, m_BinQueues{ (unsigned int)numBins.x, (unsigned int)numBins.y, binQueueMaxSize }
 {
 	InitCUDADeviceBuffers();
-	
-	const unsigned int size = m_BinQueues.NumQueuesX * m_BinQueues.NumQueuesY;
-	queue = new int[size] {};
 }
 
 CPU_CALLABLE
@@ -98,8 +95,6 @@ CUDARenderer::~CUDARenderer()
 {
 	CheckErrorCuda(DeviceSynchroniseCuda());
 	FreeCUDADeviceBuffers();
-
-	delete[] queue;
 }
 
 #pragma region CPU HELPER FUNCTIONS
@@ -385,28 +380,27 @@ void CUDARenderer::Render(const SceneManager& sm, const Camera* pCamera)
 #endif
 #endif
 
+			//const unsigned int size = m_BinQueues.NumQueuesX * m_BinQueues.NumQueuesY;
+			//unsigned int* bufferQ = new unsigned int[size] {};
+			//CheckErrorCuda(cudaMemcpy(bufferQ, dev_BinQueueSizes, size * 4, cudaMemcpyDeviceToHost));
+			//for (int q{}; q < size; ++q)
+			//{
+			//	std::cout << bufferQ[q] << '\n';
+			//}
+			//std::cout << '\n';
+			//delete[] bufferQ;
+
 			//TODO: Rasterization happens on a per-mesh basis instead of per-scenegraph?
 
 			//---STAGE 4---: Peform Triangle Rasterization & interpolated fragment buffering
 			Rasterizer(mi, camFwd, cm);
 			CheckErrorCuda(cudaDeviceSynchronize());
 
-			const unsigned int size = m_BinQueues.NumQueuesX * m_BinQueues.NumQueuesY;
-			//unsigned int* bufferQ = new unsigned int[size]{};
-			//CheckErrorCuda(cudaMemcpy(bufferQ, dev_BinQueueSizes, size * 4, cudaMemcpyDeviceToHost));
-			//
-			//for (int q{}; q < size; ++q)
-			//{
-			//	std::cout << queue[q] << " | " << bufferQ[q] << '\n';
-			//}
-			//std::cout << '\n';
-			//memcpy(queue, bufferQ, size * 4);
-			//delete[] bufferQ;
-
 			//reset queue sizes
+			const unsigned int size = m_BinQueues.NumQueuesX * m_BinQueues.NumQueuesY;
 			CheckErrorCuda(cudaMemset(dev_BinQueueSizes, 0, size * 4));
 			//reset queues
-			//CheckErrorCuda(cudaMemset(dev_BinQueues, 0, m_BinQueues.NumQueuesX * m_BinQueues.NumQueuesY * m_BinQueues.QueueMaxSize * 4));
+			CheckErrorCuda(cudaMemset(dev_BinQueues, 0, m_BinQueues.NumQueuesX * m_BinQueues.NumQueuesY * m_BinQueues.QueueMaxSize * 4));
 
 			//cudaError_t test = cudaStreamQuery(binnerStream);
 			//while (test != cudaSuccess)
@@ -430,6 +424,7 @@ void CUDARenderer::Render(const SceneManager& sm, const Camera* pCamera)
 #endif
 		}
 	}
+
 
 #ifdef BENCHMARK
 	StartTimer();
@@ -1337,65 +1332,66 @@ void TriangleBinnerKernel(TriangleIdx* dev_Triangles, unsigned int numVisibleTri
 	//TriangleIdx can stay in local memory (registers)
 	//DEPENDS ON REGISTER USAGE
 
+	//each thread bins 1 triangle
 	const unsigned int triangleIdx = blockIdx.x * blockDim.x + threadIdx.x + triangleIdxOffset;
-	if (triangleIdx > numVisibleTriangles)
-		return;
-
-	const TriangleIdx triangle = dev_Triangles[triangleIdx];
-
-	FPoint2 p0 = dev_OVertices[triangle.idx0].p.xy;
-	FPoint2 p1 = dev_OVertices[triangle.idx1].p.xy;
-	FPoint2 p2 = dev_OVertices[triangle.idx2].p.xy;
-
-	//assign to correct bin(s), with globalTriangleIdx corresponding to its bin
-	//each bin is a part of the window (have multiple atomic buffers for each bin)
-
-	NDCToScreenSpace(p0, p1, p2, width, height);
-	const BoundingBox triangleBb = GetBoundingBox(p0, p1, p2, width, height);
-
-	int binMinX = (triangleBb.xMin) / binDim.x; //most left bin
-	int binMinY = (triangleBb.yMin) / binDim.y; //most bottom bin
-	int binMaxX = (triangleBb.xMax) / binDim.x; //most right bin
-	int binMaxY = (triangleBb.yMax) / binDim.y; //most top bin
-	binMinX = ClampFast(binMinX, 0, numBins.x);
-	binMinY = ClampFast(binMinY, 0, numBins.y);
-	binMaxX = ClampFast(binMaxX, 0, numBins.x - 1);
-	binMaxY = ClampFast(binMaxY, 0, numBins.y - 1);
-	//This creates a grid of bins that overlap with triangle boundingbox
-
-	//TODO: get all middle bin points in triangle polygon
-	//TODO: get all intersecting rectangles of bins from all 3 triangle edges
-	//https://stackoverflow.com/questions/16203760/how-to-check-if-line-segment-intersects-a-rectangle
-
-	for (int y{ binMinY }; y <= binMaxY; ++y)
+	if (triangleIdx < numVisibleTriangles)
 	{
+		const TriangleIdx triangle = dev_Triangles[triangleIdx];
+
+		FPoint2 p0 = dev_OVertices[triangle.idx0].p.xy;
+		FPoint2 p1 = dev_OVertices[triangle.idx1].p.xy;
+		FPoint2 p2 = dev_OVertices[triangle.idx2].p.xy;
+
+		//assign to correct bin(s), with globalTriangleIdx corresponding to its bin
+		//each bin is a part of the window (have multiple atomic buffers for each bin)
+
+		NDCToScreenSpace(p0, p1, p2, width, height);
+		const BoundingBox triangleBb = GetBoundingBox(p0, p1, p2, width, height);
+
+		int binMinX = (triangleBb.xMin) / binDim.x; //most left bin
+		int binMinY = (triangleBb.yMin) / binDim.y; //most bottom bin
+		int binMaxX = (triangleBb.xMax) / binDim.x; //most right bin
+		int binMaxY = (triangleBb.yMax) / binDim.y; //most top bin
+		binMinX = ClampFast(binMinX, 0, numBins.x);
+		binMinY = ClampFast(binMinY, 0, numBins.y);
+		binMaxX = ClampFast(binMaxX, 0, numBins.x - 1);
+		binMaxY = ClampFast(binMaxY, 0, numBins.y - 1);
+		//This creates a grid of bins that overlap with triangle boundingbox
+
+		//TODO: get all middle bin points in triangle polygon
+		//TODO: get all intersecting rectangles of bins from all 3 triangle edges
+		//https://stackoverflow.com/questions/16203760/how-to-check-if-line-segment-intersects-a-rectangle
+
 		for (int x{ binMinX }; x <= binMaxX; ++x)
 		{
-			//atomically add triangle to bin queue
-			const unsigned int binIdx = x + y * numBins.x;
-	
-			bool isDone = false;
-			do
+			for (int y{ binMinY }; y <= binMaxY; ++y)
 			{
-				isDone = (atomicCAS(&dev_BinQueueSizesMutexBuffer[binIdx], 0, 1) == 0);
-				if (isDone)
+				//atomically add triangle to bin queue
+				const unsigned int binIdx = x + y * numBins.x;
+
+				bool isDone = false;
+				do
 				{
-					//critical section
-					const unsigned int currQueueSize = dev_BinQueueSizes[binIdx];
-
-					if (currQueueSize < binQueueMaxSize)
+					isDone = (atomicCAS(&dev_BinQueueSizesMutexBuffer[binIdx], 0, 1) == 0);
+					if (isDone)
 					{
-						//insert triangle Idx in queue
-						dev_BinQueues[binIdx * binQueueMaxSize + currQueueSize] = triangleIdx;
-						//increase bin's queue size
-						++dev_BinQueueSizes[binIdx];
+						//critical section
+						const unsigned int currQueueSize = dev_BinQueueSizes[binIdx];
 
-						//dev_BinQueueSizesMutexBuffer[binIdx] = 0; //release lock
+						if (currQueueSize < binQueueMaxSize)
+						{
+							//insert triangle Idx in queue
+							dev_BinQueues[binIdx * binQueueMaxSize + currQueueSize] = triangleIdx;
+							//increase bin's queue size
+							++dev_BinQueueSizes[binIdx];
+
+							//dev_BinQueueSizesMutexBuffer[binIdx] = 0; //release lock
+						}
+						dev_BinQueueSizesMutexBuffer[binIdx] = 0; //release lock
+						//end of critical section
 					}
-					dev_BinQueueSizesMutexBuffer[binIdx] = 0; //release lock
-					//end of critical section
-				}
-			} while (!isDone);
+				} while (!isDone);
+			}
 		}
 	}
 }
@@ -1414,34 +1410,40 @@ void RasterizerPerBinKernel(const TriangleIdx* __restrict__ const dev_Triangles,
 
 	//each block processes 1 bin
 	const unsigned int binIdx = blockIdx.x + blockIdx.y * gridDim.x;
-	//each thread processes 1 triangle
-	const unsigned int triangleIdx = dev_BinQueues[binIdx * binQueueMaxSize + threadIdx.x];
 
-	const TriangleIdx triangle = dev_Triangles[triangleIdx];
-	OVertex v0 = dev_OVertices[triangle.idx0];
-	OVertex v1 = dev_OVertices[triangle.idx1];
-	OVertex v2 = dev_OVertices[triangle.idx2];
+	const unsigned int queueSize = dev_BinQueueSizes[binIdx];
+	if (threadIdx.x < queueSize)
+	{
 
-	//3: rasterize triangle with binned bounding box (COARSE)
+		//each thread processes 1 triangle
+		const unsigned int triangleIdx = dev_BinQueues[binIdx * binQueueMaxSize + threadIdx.x];
 
-	NDCToScreenSpace(v0.p.xy, v1.p.xy, v2.p.xy, width, height);
-	const unsigned int minX = blockIdx.x * binDim.x;
-	const unsigned int minY = blockIdx.y * binDim.y;
-	const unsigned int maxX = minX + binDim.x;
-	const unsigned int maxY = minY + binDim.y;
-	const BoundingBox bb = GetBoundingBoxTiled(v0.p.xy, v1.p.xy, v2.p.xy, minX, minY, maxX, maxY);
-	RasterizeTriangle(bb, v0, v1, v2, dev_DepthMutexBuffer, dev_DepthBuffer, dev_PixelShadeBuffer, width, textures);
+		const TriangleIdx triangle = dev_Triangles[triangleIdx];
+		OVertex v0 = dev_OVertices[triangle.idx0];
+		OVertex v1 = dev_OVertices[triangle.idx1];
+		OVertex v2 = dev_OVertices[triangle.idx2];
 
-	//BoundingBox bb;
-	//bb.xMin = blockIdx.x * binDim.x;
-	//bb.yMin = blockIdx.y * binDim.y;
-	//bb.xMax = bb.xMin + binDim.x;
-	//bb.yMax = bb.yMin + binDim.y;
-	//RasterizeTriangle(bb, v0, v1, v2, dev_DepthMutexBuffer, dev_DepthBuffer, dev_PixelShadeBuffer, width, textures);
+		//3: rasterize triangle with binned bounding box (COARSE)
 
-	//TODO: every thread in CTA processes a NxN tile of triangle in bin (fine rasterizer)
-	//4: each thread in block does a 8x8 pixel area of triangle
-	//each thread block does 1 triangle instead of each block does sizeofbinqueue triangles
+		NDCToScreenSpace(v0.p.xy, v1.p.xy, v2.p.xy, width, height);
+		const unsigned int minX = blockIdx.x * binDim.x;
+		const unsigned int minY = blockIdx.y * binDim.y;
+		const unsigned int maxX = minX + binDim.x;
+		const unsigned int maxY = minY + binDim.y;
+		const BoundingBox bb = GetBoundingBoxTiled(v0.p.xy, v1.p.xy, v2.p.xy, minX, minY, maxX, maxY);
+		RasterizeTriangle(bb, v0, v1, v2, dev_DepthMutexBuffer, dev_DepthBuffer, dev_PixelShadeBuffer, width, textures);
+
+		//BoundingBox bb;
+		//bb.xMin = blockIdx.x * binDim.x;
+		//bb.yMin = blockIdx.y * binDim.y;
+		//bb.xMax = bb.xMin + binDim.x;
+		//bb.yMax = bb.yMin + binDim.y;
+		//RasterizeTriangle(bb, v0, v1, v2, dev_DepthMutexBuffer, dev_DepthBuffer, dev_PixelShadeBuffer, width, textures);
+
+		//TODO: every thread in CTA processes a NxN tile of triangle in bin (fine rasterizer)
+		//4: each thread in block does a 8x8 pixel area of triangle
+		//each thread block does 1 triangle instead of each block does sizeofbinqueue triangles
+	}
 }
 
 GPU_KERNEL
@@ -1479,7 +1481,6 @@ void RasterizerPerTileKernel(const TriangleIdx* __restrict__ const dev_Triangles
 
 	for (unsigned int currQueueIdx{}; currQueueIdx < queueSize; ++currQueueIdx)
 	{
-		//const unsigned int triangleIdx = dev_BinQueues[binIdx * binQueueMaxSize];
 		const unsigned int triangleIdx = dev_BinQueues[binIdx * binQueueMaxSize + currQueueIdx];
 		const TriangleIdx triangle = dev_Triangles[triangleIdx];
 		OVertex v0 = dev_OVertices[triangle.idx0];
@@ -1983,12 +1984,12 @@ void CUDARenderer::Rasterizer(const MeshIdentifier& mi, const FVector3& camFwd, 
 #ifdef FINERASTER
 	const dim3 numThreadsPerBlock = { 16, 16 };
 	const dim3 numBlocks = { m_BinQueues.NumQueuesX, m_BinQueues.NumQueuesY };
-	const unsigned int numSharedMemory = m_BinQueues.QueueMaxSize * 4 + 4; //queue array + 1 queue size
+	//const unsigned int numSharedMemory = m_BinQueues.QueueMaxSize * 4 + 4; //queue array + 1 queue size
 
 	//pixel coverage per thread
 	const unsigned int pixelCoverageX = m_BinDim.x / numThreadsPerBlock.x;
 	const unsigned int pixelCoverageY = m_BinDim.y / numThreadsPerBlock.y;
-	RasterizerPerTileKernel<<<numBlocks, numThreadsPerBlock, numSharedMemory, stream>>>(
+	RasterizerPerTileKernel<<<numBlocks, numThreadsPerBlock, 0, stream>>>(
 		dev_Triangles[mi.Idx], dev_OVertexBuffer[mi.Idx],
 		dev_PixelShadeBuffer, dev_DepthBuffer, dev_DepthMutexBuffer, textures,
 		dev_BinQueues, dev_BinQueueSizes, dev_BinQueueSizesMutexBuffer, m_BinDim,
