@@ -8,10 +8,11 @@
 
 //Project includes
 #include "ETimer.h"
-#include "ERenderer.h"
 #include "EventManager.h"
 #include "ObjParser.h"
 #include "DirectionalLight.h"
+#include "CUDATexture.h"
+#include "CUDATextureManager.h"
 
 //Project CUDA includes
 #include "CUDARenderer.h"
@@ -19,13 +20,14 @@
 #include <curand_kernel.h>
 #include <curand.h>
 
-void CreateScenes(SceneManager& sm)
+void CreateScenes(SceneManager& sm, CUDATextureManager& tm)
 {
 	std::vector<SceneGraph*> pSceneGraphs{};
 	ObjParser parser{};
-	std::vector<IVertex> vertexBuffer{};
-	std::vector<unsigned int> indexBuffer{};
-	short vertexType{};
+	IVertex* pVertexBuffer{};
+	unsigned int* pIndexBuffer{};
+	unsigned int numVertices{}, numIndices{};
+	short vertexType{ -1 }, vertexStride{ -1 };
 
 	//{
 	//	// SceneGraph 1
@@ -59,24 +61,38 @@ void CreateScenes(SceneManager& sm)
 	//	SceneGraph* pSceneGraph = new SceneGraph{};
 	//	short vertexType{};
 	//	vertexType |= (int)VertexType::Uv;
-	//	const std::string texPaths[4]{ "Resources/uv_grid_2.png", "", "", "" };
+	//	const std::string uvGridTexPath = "Resources/uv_grid_2.png";
+	//	CUDATexture* pUVGridTexture = new CUDATexture{ uvGridTexPath };
+	//	if (!pUVGridTexture->IsAllocated())
 	//	{
+	//		throw std::runtime_error{ "CreateScenes > pUVGridTexture was unable to allocate" };
+	//	}
+	//	const int uvGridTextureId = tm.AddCUDATexture(pUVGridTexture);
+	//	{
+	//		numVertices = 9;
+	//		numIndices = 24;
 	//		// Mesh 1 // TriangleList Quad
-	//		std::vector<IVertex> vertices = {
-	//			{FPoint3{-3, 3, -2}, FVector2{0, 0}}, {FPoint3{0, 3, -2}, FVector2{0.5f, 0}}, {FPoint3{3, 3, -2}, FVector2{1, 0}},
-	//			{FPoint3{-3, 0, -2}, FVector2{0, 0.5f}}, {FPoint3{0, 0, -2}, FVector2{0.5f, 0.5f}}, {FPoint3{3, 0, -2}, FVector2{1, 0.5f}},
-	//			{FPoint3{-3, -3, -2}, FVector2{0, 1}}, {FPoint3{0, -3, -2}, FVector2{0.5f, 1}}, {FPoint3{3, -3, -2}, FVector2{1, 1}} };
-	//		std::vector<unsigned int> indices = {
-	//									0, 3, 1,
-	//									3, 4, 1,
-	//									1, 4, 2,
-	//									4, 5, 2,
-	//									3, 6, 4,
-	//									6, 7, 4,
-	//									4, 7, 5,
-	//									7, 8, 5, }; // obviously a list
-	//		Mesh* pTriangleListQuad = new Mesh{ vertices, indices, PrimitiveTopology::TriangleList };
-	//		pTriangleListQuad->LoadTextures(texPaths);
+	//		IVertex* pVertices = new IVertex[numVertices];
+	//		pVertices[0] = { FPoint3{-3, 3, -2}, FVector2{0, 0} }; 
+	//		pVertices[1] = { FPoint3{ 0, 3, -2 }, FVector2{ 0.5f, 0 } };
+	//		pVertices[2] = { FPoint3{ 3, 3, -2 }, FVector2{ 1, 0 } };
+	//		pVertices[3] = { FPoint3{ -3, 0, -2 }, FVector2{ 0, 0.5f } };
+	//		pVertices[4] = { FPoint3{ 0, 0, -2 }, FVector2{ 0.5f, 0.5f } };
+	//		pVertices[5] = { FPoint3{ 3, 0, -2 }, FVector2{ 1, 0.5f } };
+	//		pVertices[6] = { FPoint3{ -3, -3, -2 }, FVector2{ 0, 1 } };
+	//		pVertices[7] = { FPoint3{ 0, -3, -2 }, FVector2{ 0.5f, 1 } };
+	//		pVertices[8] = { FPoint3{ 3, -3, -2 }, FVector2{ 1, 1 } };
+	//		unsigned int* pIndices = new unsigned int[numIndices];
+	//		pIndices[0] = 0; pIndices[1] = 3; pIndices[2] = 1;
+	//		pIndices[3] = 3; pIndices[4] = 4; pIndices[5] = 1;
+	//		pIndices[6] = 1; pIndices[7] = 4; pIndices[8] = 2;
+	//		pIndices[9] = 4; pIndices[10] = 5; pIndices[11] = 2;
+	//		pIndices[12] = 3; pIndices[13] = 6; pIndices[14] = 4;
+	//		pIndices[15] = 6; pIndices[16] = 7; pIndices[17] = 4;
+	//		pIndices[18] = 4; pIndices[19] = 7; pIndices[20] = 5;
+	//		pIndices[21] = 7; pIndices[22] = 8; pIndices[23] = 5;
+	//		Mesh* pTriangleListQuad = new Mesh{ pVertices, numVertices, vertexStride, vertexType, pIndices, numIndices, PrimitiveTopology::TriangleList };
+	//		pTriangleListQuad->SetTextureId(uvGridTextureId, Mesh::TextureID::Diffuse);
 	//		pSceneGraph->AddMesh(pTriangleListQuad);
 	//	}
 	//	//{
@@ -113,38 +129,37 @@ void CreateScenes(SceneManager& sm)
 	//
 	//}
 
-	//{
-	//	// SceneGraph 4 // Bunny
-	//	SceneGraph* pSceneGraph = new SceneGraph{};
-	//	{
-	//		// Mesh 1 // Bunny 
-	//		short vertexType{};
-	//		parser.OpenFile("Resources/lowpoly_bunny.obj");
-	//		parser.ReadFromObjFile(vertexBuffer, indexBuffer, vertexType);
-	//		Mesh* pBunnyMesh = new Mesh{ vertexBuffer, indexBuffer, PrimitiveTopology::TriangleList };
-	//		pSceneGraph->AddMesh(pBunnyMesh);
-	//	}
-	//	pSceneGraph->AddLight(new DirectionalLight{ RGBColor{1.f, 1.f, 1.f}, 2.f, FVector3{ 0.577f, -0.577f, -0.577f } });
-	//	pSceneGraphs.push_back(pSceneGraph);
-	//}
-	
 	{
-		// SceneGraph 5 // Vehicle
+		// SceneGraph 4 // Bunny
 		SceneGraph* pSceneGraph = new SceneGraph{};
 		{
-			// Mesh 1 // Vehicle
-			short vertexType{};
-			parser.OpenFile("Resources/vehicle.obj");
-			parser.SetInvertYAxis(true);
-			parser.ReadFromObjFile(vertexBuffer, indexBuffer, vertexType);
-			const std::string texPaths[4]{ "Resources/vehicle_diffuse.png", "Resources/vehicle_normal.png", "Resources/vehicle_specular.png", "Resources/vehicle_gloss.png" };
-			Mesh* pVehicleMesh = new Mesh{ vertexBuffer, indexBuffer, PrimitiveTopology::TriangleList };
-			pVehicleMesh->LoadTextures(texPaths);
-			pSceneGraph->AddMesh(pVehicleMesh);
+			// Mesh 1 // Bunny 
+			parser.OpenFile("Resources/lowpoly_bunny.obj");
+			parser.ReadFromObjFile(pVertexBuffer, numVertices, pIndexBuffer, numIndices, vertexType);
+			Mesh* pBunnyMesh = new Mesh{ pVertexBuffer, numVertices, vertexStride, vertexType, pIndexBuffer, numIndices, PrimitiveTopology::TriangleList };
+			pSceneGraph->AddMesh(pBunnyMesh);
 		}
 		pSceneGraph->AddLight(new DirectionalLight{ RGBColor{1.f, 1.f, 1.f}, 2.f, FVector3{ 0.577f, -0.577f, -0.577f } });
 		pSceneGraphs.push_back(pSceneGraph);
 	}
+	
+	//{
+	//	// SceneGraph 5 // Vehicle
+	//	SceneGraph* pSceneGraph = new SceneGraph{};
+	//	{
+	//		// Mesh 1 // Vehicle
+	//		short vertexType{};
+	//		parser.OpenFile("Resources/vehicle.obj");
+	//		parser.SetInvertYAxis(true);
+	//		parser.ReadFromObjFile(vertexBuffer, indexBuffer, vertexType);
+	//		const std::string texPaths[4]{ "Resources/vehicle_diffuse.png", "Resources/vehicle_normal.png", "Resources/vehicle_specular.png", "Resources/vehicle_gloss.png" };
+	//		Mesh* pVehicleMesh = new Mesh{ vertexBuffer, indexBuffer, PrimitiveTopology::TriangleList };
+	//		pVehicleMesh->LoadTextures(texPaths);
+	//		pSceneGraph->AddMesh(pVehicleMesh);
+	//	}
+	//	pSceneGraph->AddLight(new DirectionalLight{ RGBColor{1.f, 1.f, 1.f}, 2.f, FVector3{ 0.577f, -0.577f, -0.577f } });
+	//	pSceneGraphs.push_back(pSceneGraph);
+	//}
 
 	//{
 	//	// SceneGraph 6 // Cube
@@ -204,6 +219,51 @@ void ShutDown(SDL_Window* pWindow)
 {
 	SDL_DestroyWindow(pWindow);
 	SDL_Quit();
+}
+
+void UpdateCamera(Camera& cam, float elapsedSec)
+{
+	const float moveSpeed = cam.GetMoveSpeed();
+	const float rotSpeed = cam.GetRotationSpeed();
+	const MouseInformation mi = EventManager::GetMouseInformation();
+
+	if (mi.scrollwheel != 0)
+	{
+		cam.SetMoveSpeed(moveSpeed + (float)mi.scrollwheel);
+		cam.SetRotationSpeed(rotSpeed + (mi.scrollwheel / 10.f));
+	}
+
+	if (mi.lmb && mi.rmb)
+	{
+		cam.TranslateY(mi.y * moveSpeed * elapsedSec);
+	}
+	else if (mi.lmb && !mi.rmb)
+	{
+		cam.TranslateZ(mi.y * moveSpeed * elapsedSec);
+		cam.Yaw(mi.x * rotSpeed);
+	}
+	else if (!mi.lmb && mi.rmb)
+	{
+		cam.Yaw(-mi.x * rotSpeed);
+		cam.Pitch(-mi.y * rotSpeed);
+	}
+
+	if (EventManager::IsKeyDown(SDL_SCANCODE_W))
+	{
+		cam.TranslateZ(-moveSpeed * elapsedSec);
+	}
+	else if (EventManager::IsKeyDown(SDL_SCANCODE_S))
+	{
+		cam.TranslateZ(moveSpeed * elapsedSec);
+	}
+	if (EventManager::IsKeyDown(SDL_SCANCODE_A))
+	{
+		cam.TranslateX(-moveSpeed * elapsedSec);
+	}
+	else if (EventManager::IsKeyDown(SDL_SCANCODE_D))
+	{
+		cam.TranslateX(moveSpeed * elapsedSec);
+	}
 }
 
 int GetFPSImmediate(float ms)
@@ -291,18 +351,18 @@ void DisplayResolutionDetails(const Resolution& res)
 	std::cout << "------------------------------\n";
 }
 
+//TODO: CUDA runtime error: invalid argument
+//Due to Texturing!
+
 int main(int argc, char* args[])
 {
-	//CUDACheckBankConflicts(19);
-	//return;
+	//Unreferenced parameters
+	(void)argc;
+	(void)args;
 
 	//Single-GPU setup
 	const int deviceId = 0;
 	CheckErrorCuda(SetDeviceCuda(deviceId));
-
-	//Unreferenced parameters
-	(void)argc;
-	(void)args;
 
 	//Create window + surfaces
 	SDL_Init(SDL_INIT_VIDEO);
@@ -321,8 +381,13 @@ int main(int argc, char* args[])
 
 	//Initialize framework
 	SceneManager sm{};
-	Camera camera{ FPoint3{ 0.f, 5.f, 65.f }, 45.f };
-	//Camera camera{ FPoint3{ 0.f, 1.f, 5.f }, 45.f };
+	CUDATextureManager tm{};
+
+	//Camera Setup
+	//const FPoint3 camPos = { 0.f, 5.f, 65.f };
+	const FPoint3 camPos = { 0.f, 1.f, 5.f };
+	const float fov = 45.f;
+	Camera camera{ camPos, fov };
 	camera.SetAspectRatio(float(res.Width), float(res.Height));
 	Elite::Timer* pTimer = new Elite::Timer();
 
@@ -333,11 +398,10 @@ int main(int argc, char* args[])
 	windowHelper.pBackBufferPixels = (unsigned int*)windowHelper.pBackBuffer->pixels;
 	windowHelper.Resolution = res;
 
-	CreateScenes(sm);
+	CreateScenes(sm, tm);
 
 	DisplayResolutionDetails(res);
 
-#ifdef HARDWARE_ACCELERATION
 #ifdef BINNING
 	const int binMultiplier = 10;
 	const IPoint2 numBins = { (int)res.AspectRatio.w * binMultiplier, (int)res.AspectRatio.h * binMultiplier };
@@ -350,12 +414,9 @@ int main(int argc, char* args[])
 #else
 	CUDARenderer* pCudaRenderer = new CUDARenderer{ windowHelper };
 #endif
-	pCudaRenderer->LoadScene(sm.GetSceneGraph());
+	SceneGraph* pSceneGraph = sm.GetSceneGraph();
+	pCudaRenderer->LoadScene(pSceneGraph, tm);
 	pCudaRenderer->DisplayGPUSpecs();
-#else
-	Elite::Renderer* pRenderer = new Elite::Renderer(pWindow);
-	pRenderer->SetCamera(&camera);
-#endif
 
 	std::cout << "------------------------------\n";
 	std::cout << "Custom CUDA Rasterizer v2.0\n";
@@ -383,14 +444,13 @@ int main(int argc, char* args[])
 		EventManager::ProcessInputs(isLooping, takeScreenshot, elapsedSec);
 
 		//--------- Update camera ---------
-		camera.Update(elapsedSec);
+		UpdateCamera(camera, elapsedSec);
 
 		//--------- Render ---------
-#ifdef HARDWARE_ACCELERATION
 #ifdef STATS_REALTIME
 		pCudaRenderer->StartTimer();
 #endif
-		pCudaRenderer->RenderAuto(sm, &camera);
+		pCudaRenderer->RenderAuto(sm, tm, &camera);
 #ifdef STATS_REALTIME
 		const unsigned int totalNumVisTris = pCudaRenderer->GetTotalNumVisibleTriangles();
 		const unsigned int totalNumTris = pCudaRenderer->GetTotalNumTriangles();
@@ -401,12 +461,10 @@ int main(int argc, char* args[])
 		std::cout << "FPS: " << GetFPSImmediate(ms);
 		std::cout << " (" << ms << " ms)\r";
 #endif
-#else
-		pRenderer->Render(sm);
-#endif
 
 		//--------- Timer ---------
 		pTimer->Update();
+
 #ifndef STATS_REALTIME
 		printTimer += elapsedSec;
 		if (printTimer >= 1.f)
@@ -420,21 +478,17 @@ int main(int argc, char* args[])
 		}
 #endif
 
-		//--------- Update Meshes ---------
+		//--------- Update Scenes ---------
 		sm.Update(elapsedSec);
 	}
 	pTimer->Stop();
 
 	//Shutdown framework
-#ifdef HARDWARE_ACCELERATION
 	CheckErrorCuda(DeviceSynchroniseCuda());
 	if (pCudaRenderer)
 		delete pCudaRenderer;
 	CheckErrorCuda(DeviceResetCuda());
-#else
-	if (pRenderer)
-		delete pRenderer;
-#endif
+
 	if (pTimer)
 		delete pTimer;
 

@@ -5,7 +5,7 @@
 //https://docs.nvidia.com/cuda/pdf/CUDA_Math_API.pdf
 
 //Project CUDA includes
-#include "GPUTextureSampler.cuh"
+#include "CUDATextureSampler.cuh"
 
 BOTH_CALLABLE static
 float GetMinElement(float val0, float val1, float val2)
@@ -257,7 +257,7 @@ void PerformDepthTestAtomic(int* dev_DepthBuffer, int* dev_DepthMutexBuffer, con
 
 GPU_CALLABLE static
 void RasterizePixel(const FPoint2& pixel, const OVertex& v0, const OVertex& v1, const OVertex& v2,
-	int* dev_DepthBuffer, PixelShade* dev_PixelShadeBuffer, unsigned int width, const GPUTexturesCompact& textures)
+	int* dev_DepthBuffer, PixelShade* dev_PixelShadeBuffer, unsigned int width, const CUDATexturesCompact& textures)
 {
 	const float v0InvDepth = 1.f / v0.p.w;
 	const float v1InvDepth = 1.f / v1.p.w;
@@ -333,7 +333,7 @@ void RasterizePixel(const FPoint2& pixel, const OVertex& v0, const OVertex& v1, 
 
 GPU_CALLABLE static
 void RasterizePixelAtomic(const FPoint2& pixel, const OVertex& v0, const OVertex& v1, const OVertex& v2,
-	int* dev_DepthBuffer, int* dev_DepthMutexBuffer, PixelShade* dev_PixelShadeBuffer, unsigned int width, const GPUTexturesCompact& textures)
+	int* dev_DepthBuffer, int* dev_DepthMutexBuffer, PixelShade* dev_PixelShadeBuffer, unsigned int width, const CUDATexturesCompact& textures)
 {
 	const float v0InvDepth = 1.f / v0.p.w;
 	const float v1InvDepth = 1.f / v1.p.w;
@@ -405,7 +405,7 @@ void RasterizePixelAtomic(const FPoint2& pixel, const OVertex& v0, const OVertex
 
 GPU_CALLABLE static
 void RasterizeTriangle(const BoundingBox& bb, const OVertex& v0, const OVertex& v1, const OVertex& v2,
-	int* dev_DepthMutexBuffer, int* dev_DepthBuffer, PixelShade* dev_PixelShadeBuffer, unsigned int width, const GPUTexturesCompact& textures)
+	int* dev_DepthMutexBuffer, int* dev_DepthBuffer, PixelShade* dev_PixelShadeBuffer, unsigned int width, const CUDATexturesCompact& textures)
 {
 	//Loop over all pixels in bounding box
 	for (unsigned short y = bb.yMin; y < bb.yMax; ++y)
@@ -419,7 +419,7 @@ void RasterizeTriangle(const BoundingBox& bb, const OVertex& v0, const OVertex& 
 }
 
 GPU_CALLABLE GPU_INLINE static
-RGBColor ShadePixel(const GPUTexturesCompact& textures, const FVector2& uv, const FVector3& n, const FVector3& tan, const FVector3& vd,
+RGBColor ShadePixel(const CUDATexturesCompact& textures, const FVector2& uv, const FVector3& n, const FVector3& tan, const FVector3& vd,
 	SampleState sampleState, bool isFlipGreenChannel = false)
 {
 	RGBColor finalColour{};
@@ -430,11 +430,11 @@ RGBColor ShadePixel(const GPUTexturesCompact& textures, const FVector2& uv, cons
 	const float lightIntensity = 7.0f;
 
 	// texture sampling
-	const RGBColor diffuseSample = GPUTextureSampler::Sample(textures.Diff, textures.w, textures.h, uv, sampleState);
+	const RGBColor diffuseSample = CUDATextureSampler::Sample(textures.Diff, uv, sampleState);
 
 	if (textures.Norm.dev_pTex != 0)
 	{
-		const RGBColor normalSample = GPUTextureSampler::Sample(textures.Norm, textures.w, textures.h, uv, sampleState);
+		const RGBColor normalSample = CUDATextureSampler::Sample(textures.Norm, uv, sampleState);
 
 		// normal mapping
 		FVector3 binormal = Cross(tan, n);
@@ -454,8 +454,8 @@ RGBColor ShadePixel(const GPUTexturesCompact& textures, const FVector2& uv, cons
 
 		if (textures.Spec.dev_pTex != 0 && textures.Gloss.dev_pTex != 0)
 		{
-			const RGBColor specularSample = GPUTextureSampler::Sample(textures.Spec, textures.w, textures.h, uv, sampleState);
-			const RGBColor glossSample = GPUTextureSampler::Sample(textures.Gloss, textures.w, textures.h, uv, sampleState);
+			const RGBColor specularSample = CUDATextureSampler::Sample(textures.Spec, uv, sampleState);
+			const RGBColor glossSample = CUDATextureSampler::Sample(textures.Gloss, uv, sampleState);
 
 			// phong specular
 			const FVector3 reflectV{ Reflect(lightDirection, finalNormal) };

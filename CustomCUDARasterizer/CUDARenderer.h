@@ -1,9 +1,9 @@
 #pragma once
 #include <vector>
+#include <functional>
 
 #include "Math.h"
 #include "RGBColor.h"
-#include "GPUTextures.h"
 #include "CullingMode.h"
 #include "CUDABenchMarker.h"
 #include "CUDAAtomicQueue.cuh"
@@ -12,12 +12,14 @@ struct WindowHelper;
 class Camera;
 class Mesh;
 struct IVertex;
-struct IVertex_Point4;
 struct OVertex;
 struct BoundingBox;
 enum class SampleState;
 class SceneManager;
 class SceneGraph;
+class CUDATextureManager;
+struct CUDATexturesCompact;
+class CUDAMesh;
 
 //////////////////////////////
 //-----RAII Wrapper Class-----
@@ -41,16 +43,16 @@ public:
 
 	//Preload and store scene in persistent memory
 	//This will eliminate overhead by loading mesh data and accessing global memory
-	void LoadScene(const SceneGraph* pSceneGraph);
+	void LoadScene(const SceneGraph* pSceneGraph, const CUDATextureManager& tm);
 
 	//Lock backbuffer surface and call Clear
 	int EnterValidRenderingState();
 	//function that launches the kernels and outputs to buffers
-	void Render(const SceneManager& sm, const Camera* pCamera);
+	void Render(const SceneManager& sm, const CUDATextureManager& tm, const Camera* pCamera);
 	//Update window screen
 	void Present();
 	//function that launches the kernels and directly outputs to window
-	void RenderAuto(const SceneManager& sm, const Camera* pCamera);
+	void RenderAuto(const SceneManager& sm, const CUDATextureManager& tm, const Camera* pCamera);
 
 	unsigned int GetTotalNumVisibleTriangles() const { return m_TotalVisibleNumTriangles; }
 	unsigned int GetTotalNumTriangles() const { return m_TotalNumTriangles; }
@@ -65,43 +67,28 @@ public:
 	float StopTimer();
 	CUDABenchMarker& GetBenchMarker() { return m_BenchMarker; }
 
-	struct MeshIdentifier
-	{
-		unsigned int Idx; //<READ ONLY>
-		unsigned int TotalNumTriangles; //<READ ONLY>
-		unsigned int VisibleNumTriangles; //<READ/WRITE>
-		const Mesh* pMesh; //<READ ONLY>
-		GPUTexturesCompact Textures; //<READ ONLY>
-	};
 private:
 	//-----MEMBER VARIABLES-----
 
 	const WindowHelper& m_WindowHelper;
 	unsigned int m_TotalNumTriangles{};
 	unsigned int m_TotalVisibleNumTriangles{};
-	unsigned int* m_h_pFrameBuffer{};
+	//unsigned int* m_h_pFrameBuffer{};
 	IPoint2 m_BinDim;
 	CUDABenchMarker m_BenchMarker{};
 	CUDAAtomicQueues<unsigned int> m_BinQueues;
-	std::vector<MeshIdentifier> m_MeshIdentifiers{};
-	std::vector<GPUTexturesCompact> m_TextureObjects{};
+	std::vector<CUDAMesh*> m_pCUDAMeshes{};
 
 	//-----CPU HELPER FUNCTIONS-----
 	
-	//function that allocates all output buffers for a mesh (idx)
-	void AllocateMeshBuffers(const size_t numVertices, const size_t numIndices, const size_t numTriangles, unsigned int stride, size_t meshIdx = 0);
-	//function that copies raw input buffers for a mesh (idx)
-	void CopyMeshBuffers(const float* vertexBuffer, unsigned int numVertices, short stride, const unsigned int* indexBuffer, unsigned int numIndices, size_t meshIdx = 0);
-	//function that preloads GPU textures in device's texture memory
-	GPUTexturesCompact LoadMeshTextures(const std::string texturePaths[4], size_t meshIdx = 0);
-	//function that loads GPU textures in device's texture memory
-	GPUTexture LoadGPUTexture(const std::string texturePath, unsigned int textureIdx);
-	//function that frees all texture objects
-	void FreeTextures();
-	//function that frees all mesh buffers
-	void FreeMeshBuffers();
 	//function that allocates device buffers
-	void InitCUDADeviceBuffers();
+	void AllocateCUDADeviceBuffers();
+	//function that allocates and copies host mesh buffers to device
+	CUDAMesh* AllocateCUDAMeshBuffers(const Mesh* pMesh);
+	//function that frees all device mesh buffers
+	void FreeAllCUDAMeshBuffers();
+	//function that frees a device mesh buffers
+	void FreeCUDAMeshBuffers(CUDAMesh* pCudaMesh);
 	//function that frees device buffers
 	void FreeCUDADeviceBuffers();
 
@@ -109,15 +96,24 @@ private:
 	void UpdateCameraDataAsync(const FPoint3& camPos, const FVector3& camFwd);
 	//function that updates mesh's worldmatrix
 	void UpdateWorldMatrixDataAsync(const FMatrix4& worldMatrix, const FMatrix4& wvpMat, const FMatrix3& rotationMat);
+	//function that pre-stores a mesh's textures
+	void UpdateCUDAMeshTextures(CUDAMesh* pCudaMesh, const CUDATextureManager& tm);
+	//function that fetches a mesh's textures
+	CUDATexturesCompact GetCUDAMeshTextures(const int* texIds, const CUDATextureManager& tm);
+
+	//function that blocks host calls until stream has finished
+	void WaitForStream(cudaStream_t stream);
+	//function that checks whether stream has finished without blocking host
+	bool IsStreamFinished(cudaStream_t stream);
 
 	//-----KERNEL LAUNCHERS-----
 
 	//Reset depth buffer, mutex buffer and pixelshadebuffer
 	void Clear(const RGBColor& colour = { 0.25f, 0.25f, 0.25f });
-	void VertexShader(const MeshIdentifier& mi);
-	void TriangleAssembler(MeshIdentifier& mi, const FVector3& camFwd, const CullingMode cm = CullingMode::BackFace, cudaStream_t stream = cudaStreamDefault);
-	void TriangleBinner(MeshIdentifier& mi, const unsigned int triangleIdxOffset = 0, cudaStream_t stream = cudaStreamDefault);
-	void TriangleAssemblerAndBinner(MeshIdentifier& mi, const FVector3& camFwd, const CullingMode cm = CullingMode::BackFace, cudaStream_t stream = cudaStreamDefault);
-	void Rasterizer(const MeshIdentifier& mi, const FVector3& camFwd, const CullingMode cm = CullingMode::BackFace, cudaStream_t stream = cudaStreamDefault);
+	void VertexShader(const CUDAMesh* pCudaMesh);
+	void TriangleAssembler(const CUDAMesh* pCudaMesh, const FVector3& camFwd, const CullingMode cm = CullingMode::BackFace, cudaStream_t stream = cudaStreamDefault);
+	void TriangleBinner(const CUDAMesh* pCudaMesh, const unsigned int triangleIdxOffset = 0, cudaStream_t stream = cudaStreamDefault);
+	void TriangleAssemblerAndBinner(const CUDAMesh* pCudaMesh, const FVector3& camFwd, const CullingMode cm = CullingMode::BackFace, cudaStream_t stream = cudaStreamDefault);
+	void Rasterizer(const CUDAMesh* pCudaMesh, const FVector3& camFwd, const CullingMode cm = CullingMode::BackFace, cudaStream_t stream = cudaStreamDefault);
 	void PixelShader(SampleState sampleState, bool isDepthColour);
 };

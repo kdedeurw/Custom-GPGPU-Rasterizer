@@ -24,10 +24,9 @@ SceneManager::~SceneManager()
 	m_pSceneGraphs.clear();
 }
 
-SceneGraph* SceneManager::AddSceneGraph(SceneGraph* pSceneGraph)
+void SceneManager::AddSceneGraph(SceneGraph* pSceneGraph)
 {
 	m_pSceneGraphs.push_back(pSceneGraph);
-	return m_pSceneGraphs.back();
 }
 
 SceneGraph* SceneManager::GetSceneGraph() const
@@ -113,6 +112,7 @@ void SceneManager::ToggleCullingMode()
 	m_CullingMode = CullingMode((int)m_CullingMode + 1);
 	if ((int)m_CullingMode > 2)
 		m_CullingMode = CullingMode::BackFace;
+
 	switch (m_CullingMode)
 	{
 	case CullingMode::BackFace:

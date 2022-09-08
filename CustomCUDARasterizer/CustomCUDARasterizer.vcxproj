@@ -124,7 +124,7 @@ xcopy "$(SolutionDir)3rdParty\lib\vld\x64\Microsoft.DTfW.DHL.manifest" "$(OutDir
     </CudaLink>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <CudaCompile Include="main.cu" />
+    <CudaCompile Include="main.cpp" />
     <CudaCompile Include="CUDARenderer.cu">
       <FileType>Document</FileType>
     </CudaCompile>
@@ -133,10 +133,11 @@ xcopy "$(SolutionDir)3rdParty\lib\vld\x64\Microsoft.DTfW.DHL.manifest" "$(OutDir
   <ItemGroup>
     <ClCompile Include="Camera.cpp" />
     <ClCompile Include="CUDABenchMarker.cpp" />
+    <ClCompile Include="CUDAMesh.cpp" />
     <ClCompile Include="DirectionalLight.cpp" />
-    <ClCompile Include="ERenderer.cpp" />
     <ClCompile Include="ETimer.cpp" />
     <ClCompile Include="EventManager.cpp" />
+    <ClCompile Include="CUDATexture.cpp" />
     <ClCompile Include="Light.cpp" />
     <ClCompile Include="Mesh.cpp" />
     <ClCompile Include="ObjParser.cpp" />
@@ -149,7 +150,8 @@ xcopy "$(SolutionDir)3rdParty\lib\vld\x64\Microsoft.DTfW.DHL.manifest" "$(OutDir
     <ClCompile Include="SceneGraph.cpp" />
     <ClCompile Include="SceneManager.cpp" />
     <ClCompile Include="Texture.cpp" />
-    <ClCompile Include="Triangle.cpp" />
+    <ClCompile Include="CUDATextureManager.cpp" />
+    <ClCompile Include="TriangleOps.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="BoundingBox.h" />
@@ -159,14 +161,15 @@ xcopy "$(SolutionDir)3rdParty\lib\vld\x64\Microsoft.DTfW.DHL.manifest" "$(OutDir
     <ClInclude Include="CUDAMatrixMath.cuh">
       <FileType>Document</FileType>
     </ClInclude>
+    <ClInclude Include="CUDAMesh.h" />
+    <ClInclude Include="CUDAStructs.h" />
+    <ClInclude Include="CUDATexture.h" />
     <ClInclude Include="CullingMode.h" />
     <ClInclude Include="DEFINES.h" />
     <ClInclude Include="DirectionalLight.h" />
-    <ClInclude Include="ERenderer.h" />
     <ClInclude Include="ETimer.h" />
     <ClInclude Include="EventManager.h" />
     <ClInclude Include="GPUHelpers.h" />
-    <ClInclude Include="GPUTextures.h" />
     <ClInclude Include="Light.h" />
     <ClInclude Include="Math.h" />
     <ClInclude Include="MathUtilities.h" />
@@ -191,11 +194,12 @@ xcopy "$(SolutionDir)3rdParty\lib\vld\x64\Microsoft.DTfW.DHL.manifest" "$(OutDir
     <ClInclude Include="SampleState.h" />
     <ClInclude Include="SceneGraph.h" />
     <ClInclude Include="SceneManager.h" />
-    <ClInclude Include="GPUTextureSampler.cuh" />
+    <ClInclude Include="CUDATextureSampler.cuh" />
     <ClInclude Include="Structs.h" />
     <ClInclude Include="Texture.h" />
+    <ClInclude Include="CUDATextureManager.h" />
     <ClInclude Include="Textures.h" />
-    <ClInclude Include="Triangle.h" />
+    <ClInclude Include="TriangleOps.h" />
     <ClInclude Include="Vector.h" />
     <ClInclude Include="Vector2.h" />
     <ClInclude Include="Vector3.h" />

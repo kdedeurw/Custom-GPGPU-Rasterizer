@@ -3,30 +3,11 @@
 #include <vector>
 
 //Project CUDA includes
-#include "GPUTextureSampler.cuh"
+#include "CUDATextureSampler.cuh"
 #include "CUDAMatrixMath.cuh"
 #include "RasterizerOperations.cu"
-
-#pragma region STRUCT DECLARATIONS
-
-struct CUDAMeshBuffers // size == 12
-{
-	FPoint4* pPositions;
-	union
-	{
-		OVertexData* pVertexDatas;
-		struct
-		{
-			FVector2* pUVs;
-			FVector3* pNormals;
-			FVector3* pTangents;
-			FVector3* pViewDirections;
-			RGBColor* pColours;
-		};
-	};
-};
-
-#pragma endregion
+#include "CUDAStructs.h"
+#include "CUDATextureManager.h"
 
 #pragma region GLOBAL VARIABLES
 
@@ -44,18 +25,11 @@ GPU_CONST_MEMORY float dev_ConstMemory[ConstMemorySize];
 //GPU_CONST_MEMORY float dev_WorldMatrix_const[sizeof(FMatrix4) / sizeof(float)];
 //GPU_CONST_MEMORY float dev_RotationMatrix_const[sizeof(FMatrix3) / sizeof(float)];
 
-constexpr int NumTextures = 4;
-
 //DEVICE MEMORY - Does have to be allocated and freed
 static unsigned int* dev_FrameBuffer{};
 static int* dev_DepthBuffer{}; //defined as INTEGER type for atomicCAS to work properly
 static int* dev_DepthMutexBuffer{};
 static PixelShade* dev_PixelShadeBuffer{}; //(== fragmentbuffer)
-static std::vector<IVertex*> dev_IVertexBuffer{};
-static std::vector<unsigned int*> dev_IndexBuffer{};
-static std::vector<OVertex*> dev_OVertexBuffer{};
-static std::vector<TriangleIdx*> dev_Triangles{};
-static std::vector<unsigned int*> dev_TextureData{};
 static unsigned int* dev_NumVisibleTriangles{};
 static unsigned int* dev_BinQueueSizes{};
 static unsigned int* dev_BinQueues{};
@@ -80,14 +54,13 @@ CUDARenderer::CUDARenderer(const WindowHelper& windowHelper, IPoint2 numBins, IP
 	: m_WindowHelper{ windowHelper }
 	, m_TotalNumTriangles{}
 	, m_TotalVisibleNumTriangles{}
-	, m_h_pFrameBuffer{}
-	, m_MeshIdentifiers{}
-	, m_TextureObjects{}
+	//, m_h_pFrameBuffer{}
 	, m_BenchMarker{}
 	, m_BinDim{ binDim }
 	, m_BinQueues{ (unsigned int)numBins.x, (unsigned int)numBins.y, binQueueMaxSize }
+	, m_pCUDAMeshes{}
 {
-	InitCUDADeviceBuffers();
+	AllocateCUDADeviceBuffers();
 }
 
 CPU_CALLABLE
@@ -220,7 +193,7 @@ void CUDARenderer::DisplayGPUSpecs(int deviceId)
 }
 
 CPU_CALLABLE
-void CUDARenderer::LoadScene(const SceneGraph* pSceneGraph)
+void CUDARenderer::LoadScene(const SceneGraph* pSceneGraph, const CUDATextureManager& tm)
 {
 	if (!pSceneGraph)
 	{
@@ -228,52 +201,19 @@ void CUDARenderer::LoadScene(const SceneGraph* pSceneGraph)
 		return;
 	}
 	m_TotalNumTriangles = 0;
-	FreeMeshBuffers();
+	FreeAllCUDAMeshBuffers();
 	const std::vector<Mesh*>& pMeshes = pSceneGraph->GetMeshes();
 	for (const Mesh* pMesh : pMeshes)
 	{
-		MeshIdentifier mi{};
-		mi.Idx = m_MeshIdentifiers.size();
-		mi.pMesh = pMesh;
-		size_t numTriangles{};
-
-		const std::vector<IVertex> vertexBuffer = pMesh->GetVertexBuffer();
-		const std::vector<unsigned int> indexBuffer = pMesh->GetIndexBuffer();
-		const unsigned int numVertices = pMesh->GetVertexAmount();
-		const unsigned int numIndices = pMesh->GetIndexAmount();
-		const PrimitiveTopology topology = pMesh->GetTopology();
-		const short stride = pMesh->GetVertexStride();
-		const FMatrix4& worldMat = pMesh->GetWorldMatrix();
-
-		switch (topology)
-		{
-		case PrimitiveTopology::TriangleList:
-			numTriangles += numIndices / 3;
-			break;
-		case PrimitiveTopology::TriangleStrip:
-			numTriangles += numIndices - 2;
-			break;
-		}
-		mi.TotalNumTriangles = numTriangles;
-
-		AllocateMeshBuffers(numVertices, numIndices, numTriangles, stride, mi.Idx);
-		const float* pVertices = reinterpret_cast<const float*>(vertexBuffer.data());
-		const unsigned int* pIndices = reinterpret_cast<const unsigned int*>(indexBuffer.data());
-		CopyMeshBuffers(pVertices, numVertices, stride, pIndices, numIndices, mi.Idx);
-		if (!pMesh->GetTexPaths()->empty())
-		{
-			GPUTexturesCompact gpuTextures = LoadMeshTextures(pMesh->GetTexPaths(), mi.Idx);
-			m_TextureObjects[mi.Idx] = gpuTextures;
-			mi.Textures = gpuTextures;
-		}
-
-		m_TotalNumTriangles += numTriangles;
-		m_MeshIdentifiers.push_back(mi);
+		CUDAMesh* pCudaMesh = AllocateCUDAMeshBuffers(pMesh);
+		UpdateCUDAMeshTextures(pCudaMesh, tm);
+		m_pCUDAMeshes.push_back(pCudaMesh);
+		m_TotalNumTriangles += pCudaMesh->GetTotalNumTriangles();
 	}
 }
 
 CPU_CALLABLE
-void CUDARenderer::Render(const SceneManager& sm, const Camera* pCamera)
+void CUDARenderer::Render(const SceneManager& sm, const CUDATextureManager& tm, const Camera* pCamera)
 {
 	//Render Data
 	const bool isDepthColour = sm.IsDepthColour();
@@ -281,18 +221,13 @@ void CUDARenderer::Render(const SceneManager& sm, const Camera* pCamera)
 	const CullingMode cm = sm.GetCullingMode();
 
 	//Camera Data
-	const FPoint3& camPos = pCamera->GetPos();
+	const FPoint3& camPos = pCamera->GetPosition();
 	const FVector3& camFwd = pCamera->GetForward();
-	const FMatrix4 lookatMatrix = pCamera->GetLookAtMatrix();
-	const FMatrix4 viewMatrix = pCamera->GetViewMatrix(lookatMatrix);
-	const FMatrix4 projectionMatrix = pCamera->GetProjectionMatrix();
+	const FMatrix4 viewMatrix = pCamera->GetViewMatrix();
+	const FMatrix4& projectionMatrix = pCamera->GetProjectionMatrix();
 	const FMatrix4 viewProjectionMatrix = projectionMatrix * viewMatrix;
 
 	UpdateCameraDataAsync(camPos, camFwd);
-
-	//SceneGraph Data
-	const SceneGraph* pSceneGraph = sm.GetSceneGraph();
-	const std::vector<Mesh*>& pMeshes = pSceneGraph->GetMeshes();
 
 #ifdef BENCHMARK
 	float VertexShadingMs{};
@@ -305,19 +240,13 @@ void CUDARenderer::Render(const SceneManager& sm, const Camera* pCamera)
 #endif
 
 	m_TotalVisibleNumTriangles = 0;
-	for (MeshIdentifier& mi : m_MeshIdentifiers)
+	for (CUDAMesh* pCudaMesh : m_pCUDAMeshes)
 	{
 		//Mesh Data
-		const Mesh* pMesh = pMeshes[mi.Idx];
-		//Transpose when using shared memory
-		//const FMatrix4 worldMat = Transpose(pMesh->GetWorldMatrix());
-		//const FMatrix4 worldViewProjectionMatrix = Transpose(viewProjectionMatrix * worldMat);
-		//const FMatrix3 rotationMatrix = Transpose(pMesh->GetRotationMatrix());
-		
-		//Use normal when using Elite Math Library
-		const FMatrix4 worldMat = pMesh->GetWorldMatrix();
+		const Mesh* pMesh = pCudaMesh->GetMesh();
+		const FMatrix4& worldMat = pMesh->GetWorldConst();
 		const FMatrix4 worldViewProjectionMatrix = viewProjectionMatrix * worldMat;
-		const FMatrix3 rotationMatrix = pMesh->GetRotationMatrix();
+		const FMatrix3& rotationMatrix = pMesh->GetRotationMatrix();
 
 		//Update const data
 		UpdateWorldMatrixDataAsync(worldMat, worldViewProjectionMatrix, rotationMatrix);
@@ -331,7 +260,7 @@ void CUDARenderer::Render(const SceneManager& sm, const Camera* pCamera)
 #endif
 
 		//---STAGE 1---:  Perform Output Vertex Assembling
-		VertexShader(mi);
+		VertexShader(pCudaMesh);
 		CheckErrorCuda(cudaDeviceSynchronize());
 		//---END STAGE 1---
 
@@ -346,12 +275,13 @@ void CUDARenderer::Render(const SceneManager& sm, const Camera* pCamera)
 		//CheckErrorCuda(cudaMemcpyToSymbol(dev_ConstMemory, &binnerStatus, sizeof(int), IsFinishedBinningIdx * 4));
 
 		//---STAGE 2---:  Perform Triangle Assembling
-		TriangleAssembler(mi, camFwd, cm);
+		TriangleAssembler(pCudaMesh, camFwd, cm);
 		CheckErrorCuda(cudaDeviceSynchronize());
 		//---END STAGE 2---
 
-		CheckErrorCuda(cudaMemcpy(&mi.VisibleNumTriangles, dev_NumVisibleTriangles, 4, cudaMemcpyDeviceToHost));
-		m_TotalVisibleNumTriangles += mi.VisibleNumTriangles;
+		unsigned int& visibleNumTriangles = pCudaMesh->GetVisibleNumTriangles();
+		CheckErrorCuda(cudaMemcpy(&visibleNumTriangles, dev_NumVisibleTriangles, 4, cudaMemcpyDeviceToHost));
+		m_TotalVisibleNumTriangles += visibleNumTriangles;
 
 #ifdef BENCHMARK
 		TriangleAssemblingMs += StopTimer();
@@ -359,7 +289,7 @@ void CUDARenderer::Render(const SceneManager& sm, const Camera* pCamera)
 
 		//TODO: too many kernel launches
 		//persistent kernel approach + global atomic flag value set in host
-		const unsigned int numLoops = (mi.VisibleNumTriangles + (m_BinQueues.QueueMaxSize - 1)) / m_BinQueues.QueueMaxSize;
+		const unsigned int numLoops = (visibleNumTriangles + (m_BinQueues.QueueMaxSize - 1)) / m_BinQueues.QueueMaxSize;
 		for (unsigned int i{}; i < numLoops; ++i)
 		{
 
@@ -370,7 +300,7 @@ void CUDARenderer::Render(const SceneManager& sm, const Camera* pCamera)
 #endif
 
 			//---STAGE 3---:  Perform Output Vertex Assembling
-			TriangleBinner(mi, i * m_BinQueues.QueueMaxSize);
+			TriangleBinner(pCudaMesh, i * m_BinQueues.QueueMaxSize);
 			CheckErrorCuda(cudaDeviceSynchronize());
 			//---END STAGE 3---
 
@@ -380,20 +310,10 @@ void CUDARenderer::Render(const SceneManager& sm, const Camera* pCamera)
 #endif
 #endif
 
-			//const unsigned int size = m_BinQueues.NumQueuesX * m_BinQueues.NumQueuesY;
-			//unsigned int* bufferQ = new unsigned int[size] {};
-			//CheckErrorCuda(cudaMemcpy(bufferQ, dev_BinQueueSizes, size * 4, cudaMemcpyDeviceToHost));
-			//for (int q{}; q < size; ++q)
-			//{
-			//	std::cout << bufferQ[q] << '\n';
-			//}
-			//std::cout << '\n';
-			//delete[] bufferQ;
-
 			//TODO: Rasterization happens on a per-mesh basis instead of per-scenegraph?
 
 			//---STAGE 4---: Peform Triangle Rasterization & interpolated fragment buffering
-			Rasterizer(mi, camFwd, cm);
+			Rasterizer(pCudaMesh, camFwd, cm);
 			CheckErrorCuda(cudaDeviceSynchronize());
 
 			//reset queue sizes
@@ -402,16 +322,8 @@ void CUDARenderer::Render(const SceneManager& sm, const Camera* pCamera)
 			//reset queues
 			CheckErrorCuda(cudaMemset(dev_BinQueues, 0, m_BinQueues.NumQueuesX * m_BinQueues.NumQueuesY * m_BinQueues.QueueMaxSize * 4));
 
-			//cudaError_t test = cudaStreamQuery(binnerStream);
-			//while (test != cudaSuccess)
-			//{
-			//	std::cout << "Waiting for Binner\n";
-			//	CheckErrorCuda(test);
-			//	test = cudaStreamQuery(binnerStream);
-			//}
-
 			////TODO: measure time from binnerstream with event
-			//CheckErrorCuda(cudaStreamSynchronize(binnerStream));
+			//WaitForStream(binnerStream);
 			////IF BINNER STAGE HAS FINISHED, SET DIRTY FLAG
 			//binnerStatus = 1;
 			//CheckErrorCuda(cudaMemcpyToSymbol(dev_ConstMemory, &binnerStatus, sizeof(int), IsFinishedBinningIdx * 4));
@@ -448,7 +360,7 @@ void CUDARenderer::Render(const SceneManager& sm, const Camera* pCamera)
 }
 
 CPU_CALLABLE
-void CUDARenderer::RenderAuto(const SceneManager& sm, const Camera* pCamera)
+void CUDARenderer::RenderAuto(const SceneManager& sm, const CUDATextureManager& tm, const Camera* pCamera)
 {
 #ifdef _DEBUG
 	if (EnterValidRenderingState())
@@ -457,7 +369,7 @@ void CUDARenderer::RenderAuto(const SceneManager& sm, const Camera* pCamera)
 	EnterValidRenderingState();
 #endif
 
-	Render(sm, pCamera);
+	Render(sm, tm, pCamera);
 
 	//TODO: parallel copies (streams & async)
 	//Swap out buffers and update window
@@ -503,7 +415,7 @@ float CUDARenderer::StopTimer()
 #pragma region PRIVATE FUNCTIONS
 
 CPU_CALLABLE
-void CUDARenderer::InitCUDADeviceBuffers()
+void CUDARenderer::AllocateCUDADeviceBuffers()
 {
 	size_t size{};
 	const unsigned int width = m_WindowHelper.Resolution.Width;
@@ -611,232 +523,32 @@ void CUDARenderer::InitCUDADeviceBuffers()
 }
 
 CPU_CALLABLE
-void CUDARenderer::AllocateMeshBuffers(const size_t numVertices, const size_t numIndices, const size_t numTriangles, unsigned int stride, size_t meshIdx)
+CUDAMesh* CUDARenderer::AllocateCUDAMeshBuffers(const Mesh* pMesh)
 {
-	const size_t newSize = meshIdx + 1;
-	if (newSize > dev_IVertexBuffer.capacity())
-	{
-		//TODO: reserve
-		dev_IVertexBuffer.resize(newSize);
-		dev_IndexBuffer.resize(newSize);
-		dev_OVertexBuffer.resize(newSize);
-		dev_Triangles.resize(newSize);
-	}
-	else
-	{
-		//Free unwanted memory
-		CheckErrorCuda(cudaFree(dev_IVertexBuffer[meshIdx]));
-		CheckErrorCuda(cudaFree(dev_IndexBuffer[meshIdx]));
-		CheckErrorCuda(cudaFree(dev_OVertexBuffer[meshIdx]));
-		CheckErrorCuda(cudaFree(dev_Triangles[meshIdx]));
-	}
-
-	//Allocate Input Vertex Buffer
-	IVertex* pDevIVertexBuffer;
-	CheckErrorCuda(cudaMalloc((void**)&pDevIVertexBuffer, numVertices * stride));
-	dev_IVertexBuffer[meshIdx] = pDevIVertexBuffer;
-	//Allocate Index Buffer
-	unsigned int* pDevIndexBuffer;
-	CheckErrorCuda(cudaMalloc((void**)&pDevIndexBuffer, numIndices * sizeof(unsigned int)));
-	dev_IndexBuffer[meshIdx] = pDevIndexBuffer;
-	//Allocate Ouput Vertex Buffer
-	OVertex* pDevOVertexBuffer;
-	CheckErrorCuda(cudaMalloc((void**)&pDevOVertexBuffer, numVertices * sizeof(OVertex)));
-	dev_OVertexBuffer[meshIdx] = pDevOVertexBuffer;
-	//Allocate device memory for entire range of triangles
-	TriangleIdx* pDevTriangleIdxBuffer;
-	CheckErrorCuda(cudaMalloc((void**)&pDevTriangleIdxBuffer, numTriangles * sizeof(TriangleIdx)));
-	dev_Triangles[meshIdx] = pDevTriangleIdxBuffer;
+	const unsigned int meshIdx = (unsigned int)m_pCUDAMeshes.size();
+	CUDAMesh* pCudaMesh = new CUDAMesh{ meshIdx, pMesh };
+	return pCudaMesh;
 }
 
 CPU_CALLABLE
-void CUDARenderer::CopyMeshBuffers(const float* vertexBuffer, unsigned int numVertices, short stride, const unsigned int* indexBuffer, unsigned int numIndices, size_t meshIdx)
+void CUDARenderer::FreeAllCUDAMeshBuffers()
 {
-	//Copy Input Vertex Buffer
-	CheckErrorCuda(cudaMemcpy(dev_IVertexBuffer[meshIdx], vertexBuffer, numVertices * stride, cudaMemcpyHostToDevice));
-	//Copy Index Buffer
-	CheckErrorCuda(cudaMemcpy(dev_IndexBuffer[meshIdx], indexBuffer, numIndices * sizeof(unsigned int), cudaMemcpyHostToDevice));
+	for (CUDAMesh* pCudaMesh : m_pCUDAMeshes)
+	{
+		FreeCUDAMeshBuffers(pCudaMesh);
+	}
+	m_pCUDAMeshes.clear();
 }
 
 CPU_CALLABLE
-GPUTexturesCompact CUDARenderer::LoadMeshTextures(const std::string texturePaths[4], size_t meshIdx)
+void CUDARenderer::FreeCUDAMeshBuffers(CUDAMesh* pCudaMesh)
 {
-	const size_t newSize = (meshIdx + 1);
-	if (newSize > m_TextureObjects.size())
-	{
-		m_TextureObjects.resize(newSize);
-	}
-	if (newSize * NumTextures > dev_TextureData.size())
-	{
-		dev_TextureData.resize(newSize * NumTextures);
-	}
+	const auto it = std::find(m_pCUDAMeshes.cbegin(), m_pCUDAMeshes.cend(), pCudaMesh);
+	if (it == m_pCUDAMeshes.cend())
+		return;
 
-	GPUTexturesCompact gpuTextures{};
-
-	//0 DIFFUSE > 1 NORMAL > 2 SPECULAR > 3 GLOSSINESS
-	for (int i{}; i < NumTextures; ++i)
-	{
-		if (texturePaths[i].empty())
-			continue;
-
-		GPUTextureCompact* gpuTexture;
-		switch (i)
-		{
-		case 0:
-			gpuTexture = &gpuTextures.Diff;
-			break;
-		case 1:
-			gpuTexture = &gpuTextures.Norm;
-			break;
-		case 2:
-			gpuTexture = &gpuTextures.Spec;
-			break;
-		case 3:
-			gpuTexture = &gpuTextures.Gloss;
-			break;
-		}
-
-		const unsigned int textureIdx = meshIdx * NumTextures + i;
-		const GPUTexture tex = LoadGPUTexture(texturePaths[i], textureIdx);
-
-		gpuTextures.w = tex.w;
-		gpuTextures.h = tex.h;
-		gpuTexture->dev_pTex = tex.dev_pTex;
-		gpuTexture->dev_TextureData = tex.dev_TextureData;
-	}
-	return gpuTextures;
-}
-
-CPU_CALLABLE
-GPUTexture CUDARenderer::LoadGPUTexture(const std::string texturePath, unsigned int textureIdx)
-{
-	GPUTexture gpuTexture{};
-
-	SDL_Surface* pSurface = IMG_Load(texturePath.c_str());
-	if (pSurface)
-	{
-		const unsigned int width = pSurface->w;
-		const unsigned int height = pSurface->h;
-		const unsigned int* pixels = (unsigned int*)pSurface->pixels;
-		const int bpp = pSurface->format->BytesPerPixel;
-		//const size_t sizeInBytes = width * height * bpp;
-
-		//copy texture data to device
-		CheckErrorCuda(cudaFree(dev_TextureData[textureIdx]));
-		size_t pitch{};
-		CheckErrorCuda(cudaMallocPitch((void**)&dev_TextureData[textureIdx], &pitch, width * bpp, height)); //2D array
-		CheckErrorCuda(cudaMemcpy2D(dev_TextureData[textureIdx], pitch, pixels, pitch, width * bpp, height, cudaMemcpyHostToDevice));
-
-		//cudaChannelFormatDesc formatDesc = cudaCreateChannelDesc<unsigned int>();
-
-		cudaResourceDesc resDesc{};
-		resDesc.resType = cudaResourceTypePitch2D;
-		resDesc.res.pitch2D.devPtr = dev_TextureData[textureIdx];
-		resDesc.res.pitch2D.desc.f = cudaChannelFormatKindUnsigned;
-		resDesc.res.pitch2D.desc.x = pSurface->format->BitsPerPixel;
-		resDesc.res.pitch2D.width = width;
-		resDesc.res.pitch2D.height = height;
-
-		cudaTextureDesc texDesc{};
-		texDesc.normalizedCoords = true; //able to sample texture with normalized uv coordinates
-		texDesc.filterMode = cudaFilterModePoint; //linear only supports float (and double) type
-		texDesc.readMode = cudaReadModeElementType;
-
-		cudaTextureObject_t dev_TextureObject{};
-		CheckErrorCuda(cudaCreateTextureObject(&dev_TextureObject, &resDesc, &texDesc, nullptr));
-
-		/*{
-			cudaArray* dev_array;
-			cudaChannelFormatDesc formatDesc{};
-			formatDesc.f = cudaChannelFormatKindUnsigned;
-			formatDesc.x = 32;
-
-			cudaMallocArray(&dev_array, &formatDesc, width, height, cudaArrayTextureGather); //2D array
-			cudaMallocArray(&dev_array, &formatDesc, width * height, 1, cudaArrayTextureGather); //1D array
-			cudaMemcpyToArray(dev_array, 0, 0, dev_TextureData[textureIdx], width * height * bpp, cudaMemcpyHostToDevice);
-
-			cudaResourceDesc desc{};
-			desc.resType = cudaResourceTypeArray;
-			desc.res.array.array = dev_array;
-
-			cudaTextureObject_t dev_TextureObject{};
-			CheckErrorCuda(cudaCreateTextureObject(&dev_TextureObject, &desc, &texDesc, nullptr));
-
-
-			cudaFreeArray(dev_array);
-		}*/
-
-		gpuTexture.dev_pTex = dev_TextureObject;
-		gpuTexture.w = width;
-		gpuTexture.h = height;
-		gpuTexture.dev_TextureData = dev_TextureData[textureIdx];
-
-		/*DEPRECATED
-			//bind texture
-			textureReference texRef{};
-			texRef.normalized = false;
-			texRef.channelDesc = cudaCreateChannelDesc<unsigned int>();
-			texRef.channelDesc.x = bpp * 8;
-			texRef.channelDesc.f = cudaChannelFormatKindUnsigned; //unsigned int
-
-			size_t offset{};
-			CUDA32bTexture2D texRef{}; //IN STATIC GLOBAL MEMORY!
-			CheckErrorCuda(cudaBindTexture2D(&offset, &texRef, dev_texData2D, &texRef.channelDesc, width, height, pitch * bpp));
-
-			if (offset != 0)
-			{
-				std::cout << "Texture Offset : " << offset << '\n';
-				return;
-			}
-		*/
-
-		//free data
-		SDL_FreeSurface(pSurface);
-		//!DO NOT FREE TEXTURE DATA, as this will render the texture object invalid!
-	}
-
-	return gpuTexture;
-}
-
-CPU_CALLABLE
-void CUDARenderer::FreeTextures()
-{
-	//destroy all texture objects
-	for (const GPUTexturesCompact& textures : m_TextureObjects)
-	{
-		CheckErrorCuda(cudaDestroyTextureObject(textures.Diff.dev_pTex));
-		CheckErrorCuda(cudaDestroyTextureObject(textures.Norm.dev_pTex));
-		CheckErrorCuda(cudaDestroyTextureObject(textures.Spec.dev_pTex));
-		CheckErrorCuda(cudaDestroyTextureObject(textures.Gloss.dev_pTex));
-	}
-	m_TextureObjects.clear();
-	//free texture data
-	for (unsigned int* dev_texData : dev_TextureData)
-	{
-		CheckErrorCuda(cudaFree(dev_texData));
-	}
-	dev_TextureData.clear();
-}
-
-CPU_CALLABLE
-void CUDARenderer::FreeMeshBuffers()
-{
-	for (size_t i{}; i < m_MeshIdentifiers.size(); ++i)
-	{
-		CheckErrorCuda(cudaFree(dev_IVertexBuffer[i]));
-		dev_IVertexBuffer[i] = nullptr;
-		CheckErrorCuda(cudaFree(dev_IndexBuffer[i]));
-		dev_IndexBuffer[i] = nullptr;
-		CheckErrorCuda(cudaFree(dev_OVertexBuffer[i]));
-		dev_OVertexBuffer[i] = nullptr;
-		CheckErrorCuda(cudaFree(dev_Triangles[i]));
-		dev_Triangles[i] = nullptr;
-	}
-	m_MeshIdentifiers.clear();
-	dev_IVertexBuffer.clear();
-	dev_IndexBuffer.clear();
-	dev_OVertexBuffer.clear();
-	dev_Triangles.clear();
+	m_pCUDAMeshes.erase(it);
+	delete pCudaMesh;
 }
 
 CPU_CALLABLE
@@ -868,11 +580,10 @@ void CUDARenderer::FreeCUDADeviceBuffers()
 	dev_PixelShadeBuffer = nullptr;
 
 	//not allocated, but extra safety
-	CheckErrorCuda(cudaFreeHost(m_h_pFrameBuffer));
-	m_h_pFrameBuffer = nullptr;
+	//CheckErrorCuda(cudaFreeHost(m_h_pFrameBuffer));
+	//m_h_pFrameBuffer = nullptr;
 
-	FreeMeshBuffers();
-	FreeTextures();
+	FreeAllCUDAMeshBuffers();
 }
 
 CPU_CALLABLE
@@ -888,6 +599,54 @@ void CUDARenderer::UpdateWorldMatrixDataAsync(const FMatrix4& worldMatrix, const
 	CheckErrorCuda(cudaMemcpyToSymbol(dev_ConstMemory, worldMatrix.data, sizeof(worldMatrix), WorldMatIdx * 4));
 	CheckErrorCuda(cudaMemcpyToSymbol(dev_ConstMemory, wvpMat.data, sizeof(wvpMat), WVPMatIdx * 4));
 	CheckErrorCuda(cudaMemcpyToSymbol(dev_ConstMemory, rotationMat.data, sizeof(rotationMat), RotMatIdx * 4));
+}
+
+CPU_CALLABLE
+void CUDARenderer::UpdateCUDAMeshTextures(CUDAMesh* pCudaMesh, const CUDATextureManager& tm)
+{
+	const Mesh* pMesh = pCudaMesh->GetMesh();
+	const int* texIds = pMesh->GetTextureIds();
+	CUDATexturesCompact& textures = pCudaMesh->GetTextures();
+	textures = GetCUDAMeshTextures(texIds, tm);
+}
+
+CPU_CALLABLE
+CUDATexturesCompact CUDARenderer::GetCUDAMeshTextures(const int* texIds, const CUDATextureManager& tm)
+{
+	//Preload textures and fetch instead of creating a TexturesCompact object every frame in Render()
+	//Instead of textures being fetched, alter them in CUDAMesh object
+	//The actual TexuresCompact object gets copied to the kernel anyway (POD GPU data and ptrs)
+	const CUDATexture* pDiff = tm.GetCUDATexture(texIds[Mesh::TextureID::Diffuse]);
+	const CUDATexture* pNorm = tm.GetCUDATexture(texIds[Mesh::TextureID::Normal]);
+	const CUDATexture* pSpec = tm.GetCUDATexture(texIds[Mesh::TextureID::Specular]);
+	const CUDATexture* pGloss = tm.GetCUDATexture(texIds[Mesh::TextureID::Glossiness]);
+	CUDATexturesCompact textures{};
+	if (pDiff)
+	{
+		textures.Diff = *pDiff;
+		if (pNorm)
+		{
+			textures.Norm = *pNorm;
+			if (pSpec)
+				textures.Spec = *pSpec;
+			if (pGloss)
+				textures.Gloss = *pGloss;
+		}
+	}
+	return textures;
+}
+
+CPU_CALLABLE
+void CUDARenderer::WaitForStream(cudaStream_t stream)
+{
+	cudaStreamSynchronize(stream);
+}
+
+CPU_CALLABLE
+bool CUDARenderer::IsStreamFinished(cudaStream_t stream)
+{
+	const cudaError_t query = cudaStreamQuery(stream);
+	return query == cudaSuccess;
 }
 
 #pragma endregion
@@ -1060,14 +819,14 @@ void TriangleAssemblerKernel(TriangleIdx* dev_Triangles, const unsigned int* __r
 		const float cullingValue = Dot(camFwd, faceNormal);
 		if (cullingValue <= 0.f)
 		{
-			return;
+			return; //cull triangle
 		}
 	}
 	else if (cm == CullingMode::FrontFace)
 	{
 		const FVector3 faceNormal = GetNormalized(Cross(FVector3{ p1 - p0 }, FVector3{ p2 - p0 }));
 		const float cullingValue = Dot(camFwd, faceNormal);
-		if (cullingValue >= 0.f)
+		if (cullingValue <= 0.f)
 		{
 			return; //cull triangle
 		}
@@ -1082,11 +841,11 @@ void TriangleAssemblerKernel(TriangleIdx* dev_Triangles, const unsigned int* __r
 		return;
 	}
 	
-	const float totalArea = abs(Cross(p0.xy - p1.xy, p2.xy - p0.xy));
-	if (totalArea <= 0.f)
-	{
-		return; //cull away triangle
-	}
+	//const float totalArea = abs(Cross(p0.xy - p1.xy, p2.xy - p0.xy));
+	//if (totalArea <= 0.f)
+	//{
+	//	return; //cull away triangle
+	//}
 
 	const unsigned int triangleIdx = atomicAdd(dev_NumVisibleTriangles, 1); //returns old value
 	memcpy(&dev_Triangles[triangleIdx], &triangle, sizeof(TriangleIdx));
@@ -1095,7 +854,7 @@ void TriangleAssemblerKernel(TriangleIdx* dev_Triangles, const unsigned int* __r
 GPU_KERNEL
 void RasterizerPerTriangleKernel(const TriangleIdx* __restrict__ const dev_Triangles, const OVertex* __restrict__ const dev_OVertices, 
 	unsigned int numTriangles, PixelShade* dev_PixelShadeBuffer, int* dev_DepthBuffer, int* dev_DepthMutexBuffer, 
-	GPUTexturesCompact textures, const unsigned int width, const unsigned int height)
+	CUDATexturesCompact textures, const unsigned int width, const unsigned int height)
 {
 	//constexpr unsigned int triangleSize = sizeof(OVertex) * 3 / 4;
 	//extern GPU_SHARED_MEMORY float sharedMemoryBuffer[];
@@ -1146,14 +905,15 @@ void PixelShaderKernel(unsigned int* dev_FrameBuffer, const PixelShade* __restri
 		{
 			rgba.r8 = 0; //For SDL: R and B values are swapped
 			rgba.g8 = 0;
-			rgba.b8 = (unsigned char)(Remap(dev_PixelShadeBuffer[pixelIdx].zInterpolated, 0.99f, 1.f) * 255);
+			rgba.b8 = (unsigned char)(Remap(dev_PixelShadeBuffer[pixelIdx].zInterpolated, 0.985f, 1.f) * 255);
 			rgba.a8 = 0;
 			dev_FrameBuffer[pixelIdx] = rgba.colour32;
 		}
 		else
 		{
 			const PixelShade& pixelShade = dev_PixelShadeBuffer[pixelIdx];
-			if (pixelShade.textures.Diff.dev_pTex != 0)
+			const CUDATexturesCompact& textures = pixelShade.textures;
+			if (textures.Diff.dev_pTex != 0)
 			{
 				RGBColor colour = ShadePixel(pixelShade.textures, pixelShade.uv, pixelShade.n, pixelShade.tan, pixelShade.vd, sampleState);
 				rgba = colour; //== GetRGBAFromColour()
@@ -1398,7 +1158,7 @@ void TriangleBinnerKernel(TriangleIdx* dev_Triangles, unsigned int numVisibleTri
 
 GPU_KERNEL
 void RasterizerPerBinKernel(const TriangleIdx* __restrict__ const dev_Triangles, const OVertex* __restrict__ const dev_OVertices,
-	PixelShade* dev_PixelShadeBuffer, int* dev_DepthBuffer, int* dev_DepthMutexBuffer, GPUTexturesCompact textures,
+	PixelShade* dev_PixelShadeBuffer, int* dev_DepthBuffer, int* dev_DepthMutexBuffer, CUDATexturesCompact textures,
 	unsigned int* dev_BinQueues, unsigned int* dev_BinQueueSizes, int* dev_BinQueueSizesMutexBuffer,
 	IPoint2 binDim, unsigned int binQueueMaxSize, const unsigned int width, const unsigned int height)
 {
@@ -1448,7 +1208,7 @@ void RasterizerPerBinKernel(const TriangleIdx* __restrict__ const dev_Triangles,
 
 GPU_KERNEL
 void RasterizerPerTileKernel(const TriangleIdx* __restrict__ const dev_Triangles, const OVertex* __restrict__ const dev_OVertices,
-	PixelShade* dev_PixelShadeBuffer, int* dev_DepthBuffer, int* dev_DepthMutexBuffer, GPUTexturesCompact textures,
+	PixelShade* dev_PixelShadeBuffer, int* dev_DepthBuffer, int* dev_DepthMutexBuffer, CUDATexturesCompact textures,
 	unsigned int* dev_BinQueues, unsigned int* dev_BinQueueSizes, int* dev_BinQueueSizesMutexBuffer, IPoint2 binDim, unsigned int binQueueMaxSize, 
 	const unsigned int pixelCoverageX, const unsigned int pixelCoverageY, const unsigned int width, const unsigned int height)
 {
@@ -1645,7 +1405,7 @@ void TriangleAssemblerKernelOld(TriangleIdx* dev_Triangles, const unsigned int* 
 
 GPU_KERNEL
 void RasterizerPerPixelKernel(const TriangleIdx* __restrict__ dev_Triangles, const OVertex* __restrict__ const dev_OVertices, unsigned int numTriangles,
-	PixelShade* dev_PixelShadeBuffer, int* dev_DepthBuffer, GPUTexturesCompact textures,
+	PixelShade* dev_PixelShadeBuffer, int* dev_DepthBuffer, CUDATexturesCompact textures,
 	const unsigned int width, const unsigned int height)
 {
 	//TODO: each thread represents a pixel
@@ -1692,10 +1452,10 @@ void RasterizerPerPixelKernel(const TriangleIdx* __restrict__ dev_Triangles, con
 
 GPU_KERNEL
 void RasterizerPerTriangleKernelOld(const TriangleIdx* __restrict__ const dev_Triangles, const OVertex* __restrict__ const dev_OVertices, unsigned int numTriangles,
-	PixelShade* dev_PixelShadeBuffer, int* dev_DepthBuffer, int* dev_MutexBuffer, GPUTexturesCompact textures,
+	PixelShade* dev_PixelShadeBuffer, int* dev_DepthBuffer, int* dev_MutexBuffer, CUDATexturesCompact textures,
 	const FVector3 camFwd, const CullingMode cm, const unsigned int width, const unsigned int height)
 {
-	constexpr unsigned int triangleSize = sizeof(OVertex) * 3 / 4;
+	//constexpr unsigned int triangleSize = sizeof(OVertex) * 3 / 4;
 	extern GPU_SHARED_MEMORY float sharedMemoryBuffer[];
 
 	//Every thread processes 1 single triangle for now
@@ -1778,7 +1538,7 @@ void RasterizerPerTriangleKernelOld(const TriangleIdx* __restrict__ const dev_Tr
 #pragma region TESTING
 
 GPU_KERNEL
-void TextureTestKernel(unsigned int* dev_FrameBuffer, GPUTexture texture, const unsigned int width, const unsigned int height)
+void TextureTestKernel(unsigned int* dev_FrameBuffer, CUDATextureCompact texture, const unsigned int width, const unsigned int height)
 {
 	const unsigned int x = (blockIdx.x * blockDim.x) + threadIdx.x;
 	const unsigned int y = (blockIdx.y * blockDim.y) + threadIdx.y;
@@ -1804,7 +1564,7 @@ void TextureTestKernel(unsigned int* dev_FrameBuffer, GPUTexture texture, const 
 }
 
 GPU_KERNEL
-void DrawTextureGlobalKernel(unsigned int* dev_FrameBuffer, GPUTexture texture, bool isStretchedToWindow,
+void DrawTextureGlobalKernel(unsigned int* dev_FrameBuffer, CUDATextureCompact texture, bool isStretchedToWindow,
 	SampleState sampleState, const unsigned int width, const unsigned int height)
 {
 	const unsigned int x = (blockIdx.x * blockDim.x) + threadIdx.x;
@@ -1826,7 +1586,7 @@ void DrawTextureGlobalKernel(unsigned int* dev_FrameBuffer, GPUTexture texture, 
 			uv.x /= texture.w;
 			uv.y /= texture.h;
 		}
-		RGBColor sample = GPUTextureSampler::Sample(texture, uv, sampleState);
+		RGBColor sample = CUDATextureSampler::Sample(texture, uv, sampleState);
 		RGBA rgba = sample;
 		dev_FrameBuffer[pixelIdx] = rgba.colour32;
 	}
@@ -1884,9 +1644,13 @@ void CUDARenderer::Clear(const RGBColor& colour)
 }
 
 CPU_CALLABLE
-void CUDARenderer::VertexShader(const MeshIdentifier& mi)
+void CUDARenderer::VertexShader(const CUDAMesh* pCudaMesh)
 {
-	const unsigned int numVertices = mi.pMesh->GetVertexAmount();
+	const Mesh* pMesh = pCudaMesh->GetMesh();
+	const unsigned int numVertices = pMesh->GetNumVertices();
+
+	const IVertex* dev_IVertexBuffer = pCudaMesh->GetDevIVertexBuffer();
+	OVertex* dev_OVertexBuffer = pCudaMesh->GetDevOVertexBuffer();
 
 	//constexpr unsigned int paddedSizeOfIVertex = sizeof(OVertex) / 4 + 1;
 	//constexpr unsigned int sharedMemoryNeededPerThread = paddedSizeOfIVertex * 4;
@@ -1895,7 +1659,7 @@ void CUDARenderer::VertexShader(const MeshIdentifier& mi)
 	const unsigned int numBlocks = (numVertices + (numThreadsPerBlock - 1)) / numThreadsPerBlock;
 	//const unsigned int numSharedMemory = numThreadsPerBlock * sharedMemoryNeededPerThread;
 	VertexShaderKernelNaive<<<numBlocks, numThreadsPerBlock>>>(
-		dev_IVertexBuffer[mi.Idx], dev_OVertexBuffer[mi.Idx], numVertices);
+		dev_IVertexBuffer, dev_OVertexBuffer, numVertices);
 
 	//NOTE: NOT FOR COMPUTE CAPABILITY 6.1, stats may be higher
 	//Max amount of shared memory per block: 49152 (48Kbs)
@@ -1916,20 +1680,25 @@ void CUDARenderer::VertexShader(const MeshIdentifier& mi)
 }
 
 CPU_CALLABLE
-void CUDARenderer::TriangleAssembler(MeshIdentifier& mi, const FVector3& camFwd, const CullingMode cm, cudaStream_t stream)
+void CUDARenderer::TriangleAssembler(const CUDAMesh* pCudaMesh, const FVector3& camFwd, const CullingMode cm, cudaStream_t stream)
 {
 	const unsigned int width = m_WindowHelper.Resolution.Width;
 	const unsigned int height = m_WindowHelper.Resolution.Height;
 
-	const unsigned int numTriangles = mi.TotalNumTriangles;
-	const unsigned int numIndices = mi.pMesh->GetIndexAmount();
-	const PrimitiveTopology topology = mi.pMesh->GetTopology();
+	const unsigned int numTriangles = pCudaMesh->GetTotalNumTriangles();
+	const Mesh* pMesh = pCudaMesh->GetMesh();
+	const unsigned int numIndices = pMesh->GetNumIndices();
+	const PrimitiveTopology topology = pMesh->GetTopology();
+
+	const unsigned int* dev_IndexBuffer = pCudaMesh->GetDevIndexBuffer();
+	const OVertex* dev_OVertexBuffer = pCudaMesh->GetDevOVertexBuffer();
+	TriangleIdx* dev_TriangleBuffer = pCudaMesh->GetDevTriangleBuffer();
 
 	const unsigned int numThreadsPerBlock = 256;
 	const unsigned int numBlocks = (numTriangles + (numThreadsPerBlock - 1)) / numThreadsPerBlock;
 	TriangleAssemblerKernel<<<numBlocks, numThreadsPerBlock, 0, stream>>>(
-		dev_Triangles[mi.Idx], dev_IndexBuffer[mi.Idx], numIndices, dev_NumVisibleTriangles,
-		dev_OVertexBuffer[mi.Idx], topology, cm, camFwd,
+		dev_TriangleBuffer, dev_IndexBuffer, numIndices, dev_NumVisibleTriangles,
+		dev_OVertexBuffer, topology, cm, camFwd,
 		width, height);
 
 	//TriangleAssemblerKernelOld<<<numBlocks, numThreadsPerBlock>>>(
@@ -1938,47 +1707,57 @@ void CUDARenderer::TriangleAssembler(MeshIdentifier& mi, const FVector3& camFwd,
 }
 
 CPU_CALLABLE
-void CUDARenderer::TriangleBinner(MeshIdentifier& mi, const unsigned int triangleIdxOffset, cudaStream_t stream)
+void CUDARenderer::TriangleBinner(const CUDAMesh* pCudaMesh, const unsigned int triangleIdxOffset, cudaStream_t stream)
 {
 	const unsigned int width = m_WindowHelper.Resolution.Width;
 	const unsigned int height = m_WindowHelper.Resolution.Height;
-	const unsigned int numTriangles = mi.VisibleNumTriangles;
+	const unsigned int numVisibleTriangles = pCudaMesh->GetVisibleNumTrianglesConst();
 	const IPoint2 numBins = { (int)m_BinQueues.NumQueuesX, (int)m_BinQueues.NumQueuesY };
+
+	const OVertex* dev_OVertexBuffer = pCudaMesh->GetDevOVertexBuffer();
+	TriangleIdx* dev_TriangleBuffer = pCudaMesh->GetDevTriangleBuffer();
 
 	const unsigned int numThreadsPerBlock = m_BinQueues.QueueMaxSize;
 	const unsigned int numBlocks = 1;
 	TriangleBinnerKernel<<<numBlocks, numThreadsPerBlock, 0, stream>>>(
-		dev_Triangles[mi.Idx], mi.VisibleNumTriangles, triangleIdxOffset,
+		dev_TriangleBuffer, numVisibleTriangles, triangleIdxOffset,
 		dev_BinQueueSizes, dev_BinQueues, dev_BinQueueSizesMutexBuffer,
-		dev_OVertexBuffer[mi.Idx],
+		dev_OVertexBuffer,
 		numBins, m_BinDim, m_BinQueues.QueueMaxSize, width, height);
 }
 
 CPU_CALLABLE
-void CUDARenderer::TriangleAssemblerAndBinner(MeshIdentifier& mi, const FVector3& camFwd, const CullingMode cm, cudaStream_t stream)
+void CUDARenderer::TriangleAssemblerAndBinner(const CUDAMesh* pCudaMesh, const FVector3& camFwd, const CullingMode cm, cudaStream_t stream)
 {
 	const unsigned int width = m_WindowHelper.Resolution.Width;
 	const unsigned int height = m_WindowHelper.Resolution.Height;
-	const unsigned int numIndices = mi.pMesh->GetIndexAmount();
-	const PrimitiveTopology topology = mi.pMesh->GetTopology();
-	const unsigned int numTriangles = mi.TotalNumTriangles;
+	const Mesh* pMesh = pCudaMesh->GetMesh();
+	const unsigned int numIndices = pMesh->GetNumIndices();
+	const PrimitiveTopology topology = pMesh->GetTopology();
+	const unsigned int numTriangles = pCudaMesh->GetTotalNumTriangles();
 	const IPoint2 numBins = { (int)m_BinQueues.NumQueuesX, (int)m_BinQueues.NumQueuesY };
+
+	const unsigned int* dev_IndexBuffer = pCudaMesh->GetDevIndexBuffer();
+	const OVertex* dev_OVertexBuffer = pCudaMesh->GetDevOVertexBuffer();
+	TriangleIdx* dev_TriangleBuffer = pCudaMesh->GetDevTriangleBuffer();
 
 	const unsigned int numThreadsPerBlock = 256;
 	const unsigned int numBlocks = (numTriangles + (numThreadsPerBlock - 1)) / numThreadsPerBlock;
 	TriangleAssemblerAndBinnerKernel<<<numBlocks, numThreadsPerBlock, 0, stream>>>(
-		dev_Triangles[mi.Idx], dev_IndexBuffer[mi.Idx], numIndices, dev_NumVisibleTriangles,
+		dev_TriangleBuffer, dev_IndexBuffer, numIndices, dev_NumVisibleTriangles,
 		dev_BinQueueSizes, dev_BinQueues, dev_BinQueueSizesMutexBuffer,
-		dev_OVertexBuffer[mi.Idx], topology, cm, camFwd, 
+		dev_OVertexBuffer, topology, cm, camFwd,
 		numBins, m_BinDim, m_BinQueues.QueueMaxSize, width, height);
 }
 
 CPU_CALLABLE
-void CUDARenderer::Rasterizer(const MeshIdentifier& mi, const FVector3& camFwd, const CullingMode cm, cudaStream_t stream)
+void CUDARenderer::Rasterizer(const CUDAMesh* pCudaMesh, const FVector3& camFwd, const CullingMode cm, cudaStream_t stream)
 {
 	const unsigned int width = m_WindowHelper.Resolution.Width;
 	const unsigned int height = m_WindowHelper.Resolution.Height;
-	const GPUTexturesCompact& textures = mi.Textures;
+	const OVertex* dev_OVertexBuffer = pCudaMesh->GetDevOVertexBuffer();
+	const CUDATexturesCompact& textures = pCudaMesh->GetTexturesConst();
+	TriangleIdx* dev_TriangleBuffer = pCudaMesh->GetDevTriangleBuffer();
 
 #ifdef BINNING
 #ifdef FINERASTER
@@ -1990,7 +1769,7 @@ void CUDARenderer::Rasterizer(const MeshIdentifier& mi, const FVector3& camFwd, 
 	const unsigned int pixelCoverageX = m_BinDim.x / numThreadsPerBlock.x;
 	const unsigned int pixelCoverageY = m_BinDim.y / numThreadsPerBlock.y;
 	RasterizerPerTileKernel<<<numBlocks, numThreadsPerBlock, 0, stream>>>(
-		dev_Triangles[mi.Idx], dev_OVertexBuffer[mi.Idx],
+		dev_TriangleBuffer, dev_OVertexBuffer,
 		dev_PixelShadeBuffer, dev_DepthBuffer, dev_DepthMutexBuffer, textures,
 		dev_BinQueues, dev_BinQueueSizes, dev_BinQueueSizesMutexBuffer, m_BinDim,
 		m_BinQueues.QueueMaxSize, pixelCoverageX, pixelCoverageY, width, height);
@@ -2061,93 +1840,41 @@ void CUDARenderer::PixelShader(SampleState sampleState, bool isDepthColour)
 CPU_CALLABLE
 void CUDARenderer::DrawTexture(char* tP)
 {
-	SDL_Surface* pS = IMG_Load(tP);
-
-	int w = pS->w;
-	int h = pS->h;
-	int bpp = pS->format->BytesPerPixel;
-	unsigned int* buffer;
-	size_t pitch{};
-	CheckErrorCuda(cudaMallocPitch((void**)&buffer, &pitch, w * bpp, h)); //2D array
-	CheckErrorCuda(cudaMemcpy2D(buffer, pitch, buffer, pitch, w * bpp, h, cudaMemcpyHostToDevice));
-
-	//cudaChannelFormatDesc formatDesc = cudaCreateChannelDesc<unsigned int>();
-
-	cudaResourceDesc resDesc{};
-	resDesc.resType = cudaResourceTypePitch2D;
-	resDesc.res.pitch2D.devPtr = buffer;
-	resDesc.res.pitch2D.desc.f = cudaChannelFormatKindUnsigned;
-	resDesc.res.pitch2D.desc.x = pS->format->BitsPerPixel;
-	resDesc.res.pitch2D.width = w;
-	resDesc.res.pitch2D.height = h;
-	resDesc.res.pitch2D.pitchInBytes = pitch;
-
-	cudaTextureDesc texDesc{};
-	texDesc.normalizedCoords = true; //able to sample texture with normalized uv coordinates
-	texDesc.filterMode = cudaFilterModePoint; //linear only supports float (and double) type
-	texDesc.readMode = cudaReadModeElementType;
-
-	cudaTextureObject_t tex{};
-	CheckErrorCuda(cudaCreateTextureObject(&tex, &resDesc, &texDesc, nullptr));
-
-	GPUTexture texture{};
-	texture.dev_pTex = tex;
-	texture.w = w;
-	texture.h = h;
-	texture.dev_TextureData = buffer;
+	CUDATexture texture{};
+	texture.Create(tP);
 
 	EnterValidRenderingState();
+
+	const CUDATextureCompact texCompact{ texture };
 
 	const unsigned int width = m_WindowHelper.Resolution.Width;
 	const unsigned int height = m_WindowHelper.Resolution.Height;
 	const dim3 numThreadsPerBlock{ 16, 16 };
 	const dim3 numBlocks{ width / numThreadsPerBlock.x, height / numThreadsPerBlock.y };
-	TextureTestKernel<<<numBlocks, numThreadsPerBlock>>>(dev_FrameBuffer, texture, width, height);
+	TextureTestKernel<<<numBlocks, numThreadsPerBlock>>>(dev_FrameBuffer, texCompact, width, height);
 
 	Present();
-
-	//destroy texture object
-	CheckErrorCuda(cudaDestroyTextureObject(tex));
-
-	SDL_FreeSurface(pS);
-
-	//do not free buffer if it is meant to be reused
-	CheckErrorCuda(cudaFree(buffer));
 }
 
 CPU_CALLABLE
 void CUDARenderer::DrawTextureGlobal(char* tp, bool isStretchedToWindow, SampleState sampleState)
 {
-	SDL_Surface* pS = IMG_Load(tp);
-
-	int w = pS->w;
-	int h = pS->h;
-	int N = w * h;
-	unsigned int* buffer;
-	cudaMalloc(&buffer, N * sizeof(unsigned int));
-	cudaMemcpy(buffer, pS->pixels, N * sizeof(unsigned int), cudaMemcpyHostToDevice);
+	CUDATexture texture{};
+	texture.Create(tp);
 
 	EnterValidRenderingState();
 
-	GPUTexture gpuTexture{};
-	gpuTexture.dev_pTex = 0; //none
-	gpuTexture.dev_TextureData = buffer;
-	gpuTexture.w = w;
-	gpuTexture.h = h;
+	const CUDATextureCompact texCompact{ texture };
 
 	const unsigned int width = m_WindowHelper.Resolution.Width;
 	const unsigned int height = m_WindowHelper.Resolution.Height;
 	const dim3 numThreadsPerBlock{ 16, 16 };
 	const dim3 numBlocks{ width / numThreadsPerBlock.x, height / numThreadsPerBlock.y };
 	DrawTextureGlobalKernel<<<numBlocks, numThreadsPerBlock>>>(
-		dev_FrameBuffer, gpuTexture, isStretchedToWindow, 
+		dev_FrameBuffer, texCompact, isStretchedToWindow,
 		sampleState, width, height);
 
 	Present();
-
-	SDL_FreeSurface(pS);
-
-	cudaFree(buffer);
 }
 
 CPU_CALLABLE

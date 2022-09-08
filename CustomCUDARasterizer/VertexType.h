@@ -3,10 +3,9 @@
 enum class VertexType : short
 {
 	Pos = 0,
-	Pos4 = 1,
-	Uv = 2,
-	Col = 4,
-	Norm = 8,
-	Tan = 16,
-	Vd = 32,
+	Uv = 1,
+	Col = 2,
+	Norm = 4,
+	Tan = 8,
+	Vd = 16,
 };

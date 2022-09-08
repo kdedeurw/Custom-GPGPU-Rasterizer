@@ -25,9 +25,12 @@
     <Filter Include="Helpers\CUDA">
       <UniqueIdentifier>{5071df48-f904-44c8-a67f-059a6c47ddee}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Helpers\FrameWork">
+      <UniqueIdentifier>{eafcfcd9-00d3-4791-80a1-1b562c612e73}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
-    <CudaCompile Include="main.cu" />
+    <CudaCompile Include="main.cpp" />
     <CudaCompile Include="RasterizerOperations.cu">
       <Filter>Helpers\CUDA</Filter>
     </CudaCompile>
@@ -37,15 +40,6 @@
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="PCH.cpp" />
-    <ClCompile Include="Camera.cpp">
-      <Filter>Helpers</Filter>
-    </ClCompile>
-    <ClCompile Include="ETimer.cpp">
-      <Filter>Helpers</Filter>
-    </ClCompile>
-    <ClCompile Include="ObjParser.cpp">
-      <Filter>Helpers</Filter>
-    </ClCompile>
     <ClCompile Include="SceneGraph.cpp">
       <Filter>Helpers\Managers</Filter>
     </ClCompile>
@@ -64,10 +58,7 @@
     <ClCompile Include="DirectionalLight.cpp">
       <Filter>Renderer\Objects\Lights</Filter>
     </ClCompile>
-    <ClCompile Include="Triangle.cpp">
-      <Filter>Renderer\Objects</Filter>
-    </ClCompile>
-    <ClCompile Include="Mesh.cpp">
+    <ClCompile Include="TriangleOps.cpp">
       <Filter>Renderer\Objects</Filter>
     </ClCompile>
     <ClCompile Include="Texture.cpp">
@@ -76,24 +67,33 @@
     <ClCompile Include="CUDABenchMarker.cpp">
       <Filter>Helpers\CUDA</Filter>
     </ClCompile>
-    <ClCompile Include="ERenderer.cpp">
-      <Filter>Renderer</Filter>
-    </ClCompile>
     <ClCompile Include="Resolution.cpp">
       <Filter>Helpers</Filter>
+    </ClCompile>
+    <ClCompile Include="Camera.cpp">
+      <Filter>Helpers\FrameWork</Filter>
+    </ClCompile>
+    <ClCompile Include="ETimer.cpp">
+      <Filter>Helpers\FrameWork</Filter>
+    </ClCompile>
+    <ClCompile Include="ObjParser.cpp">
+      <Filter>Helpers\FrameWork</Filter>
+    </ClCompile>
+    <ClCompile Include="CUDATextureManager.cpp">
+      <Filter>Helpers\Managers</Filter>
+    </ClCompile>
+    <ClCompile Include="CUDATexture.cpp">
+      <Filter>Helpers\CUDA</Filter>
+    </ClCompile>
+    <ClCompile Include="Mesh.cpp">
+      <Filter>Renderer\Objects</Filter>
+    </ClCompile>
+    <ClCompile Include="CUDAMesh.cpp">
+      <Filter>Helpers\CUDA</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="PCH.h" />
-    <ClInclude Include="Camera.h">
-      <Filter>Helpers</Filter>
-    </ClInclude>
-    <ClInclude Include="ETimer.h">
-      <Filter>Helpers</Filter>
-    </ClInclude>
-    <ClInclude Include="ObjParser.h">
-      <Filter>Helpers</Filter>
-    </ClInclude>
     <ClInclude Include="SceneManager.h">
       <Filter>Helpers\Managers</Filter>
     </ClInclude>
@@ -112,7 +112,7 @@
     <ClInclude Include="DirectionalLight.h">
       <Filter>Renderer\Objects\Lights</Filter>
     </ClInclude>
-    <ClInclude Include="Triangle.h">
+    <ClInclude Include="TriangleOps.h">
       <Filter>Renderer\Objects</Filter>
     </ClInclude>
     <ClInclude Include="Mesh.h">
@@ -125,9 +125,6 @@
       <Filter>Renderer\Shading</Filter>
     </ClInclude>
     <ClInclude Include="BoundingBox.h">
-      <Filter>Helpers</Filter>
-    </ClInclude>
-    <ClInclude Include="WindowHelper.h">
       <Filter>Helpers</Filter>
     </ClInclude>
     <ClInclude Include="Math.h">
@@ -175,32 +172,20 @@
     <ClInclude Include="GPUHelpers.h">
       <Filter>Helpers</Filter>
     </ClInclude>
-    <ClInclude Include="RGBColor.h">
-      <Filter>Helpers</Filter>
-    </ClInclude>
     <ClInclude Include="SampleState.h">
       <Filter>Renderer\Shading</Filter>
-    </ClInclude>
-    <ClInclude Include="GPUTextures.h">
-      <Filter>Helpers</Filter>
     </ClInclude>
     <ClInclude Include="CUDARenderer.h">
       <Filter>Helpers\CUDA</Filter>
     </ClInclude>
-    <ClInclude Include="GPUTextureSampler.cuh">
+    <ClInclude Include="CUDATextureSampler.cuh">
       <Filter>Helpers\CUDA</Filter>
     </ClInclude>
     <ClInclude Include="Textures.h">
       <Filter>Renderer\Shading</Filter>
     </ClInclude>
-    <ClInclude Include="RGBRaw.h">
-      <Filter>Helpers</Filter>
-    </ClInclude>
     <ClInclude Include="CullingMode.h">
       <Filter>Renderer</Filter>
-    </ClInclude>
-    <ClInclude Include="DEFINES.h">
-      <Filter>Helpers</Filter>
     </ClInclude>
     <ClInclude Include="CUDABenchMarker.h">
       <Filter>Helpers\CUDA</Filter>
@@ -212,12 +197,6 @@
       <Filter>Renderer</Filter>
     </ClInclude>
     <ClInclude Include="MemoryConversionStrings.h" />
-    <ClInclude Include="ERenderer.h">
-      <Filter>Renderer</Filter>
-    </ClInclude>
-    <ClInclude Include="Structs.h">
-      <Filter>Helpers</Filter>
-    </ClInclude>
     <ClInclude Include="CUDAMatrixMath.cuh">
       <Filter>Helpers\CUDA</Filter>
     </ClInclude>
@@ -226,6 +205,42 @@
     </ClInclude>
     <ClInclude Include="Resolution.h">
       <Filter>Helpers</Filter>
+    </ClInclude>
+    <ClInclude Include="Camera.h">
+      <Filter>Helpers\FrameWork</Filter>
+    </ClInclude>
+    <ClInclude Include="DEFINES.h">
+      <Filter>Helpers\FrameWork</Filter>
+    </ClInclude>
+    <ClInclude Include="ETimer.h">
+      <Filter>Helpers\FrameWork</Filter>
+    </ClInclude>
+    <ClInclude Include="ObjParser.h">
+      <Filter>Helpers\FrameWork</Filter>
+    </ClInclude>
+    <ClInclude Include="RGBColor.h">
+      <Filter>Helpers\FrameWork</Filter>
+    </ClInclude>
+    <ClInclude Include="RGBRaw.h">
+      <Filter>Helpers\FrameWork</Filter>
+    </ClInclude>
+    <ClInclude Include="Structs.h">
+      <Filter>Helpers\FrameWork</Filter>
+    </ClInclude>
+    <ClInclude Include="WindowHelper.h">
+      <Filter>Helpers\FrameWork</Filter>
+    </ClInclude>
+    <ClInclude Include="CUDATextureManager.h">
+      <Filter>Helpers\Managers</Filter>
+    </ClInclude>
+    <ClInclude Include="CUDAStructs.h">
+      <Filter>Helpers\CUDA</Filter>
+    </ClInclude>
+    <ClInclude Include="CUDATexture.h">
+      <Filter>Helpers\CUDA</Filter>
+    </ClInclude>
+    <ClInclude Include="CUDAMesh.h">
+      <Filter>Helpers\CUDA</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>

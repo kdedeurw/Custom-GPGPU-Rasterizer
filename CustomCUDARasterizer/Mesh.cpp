@@ -1,72 +1,37 @@
 #include "PCH.h"
 #include "Mesh.h"
-#include "Texture.h"
 
-Mesh::Mesh(std::vector<IVertex>& vertexBuffer, std::vector<unsigned int>& indexBuffer,
-	PrimitiveTopology pT, const FPoint3& position)
-	: m_VertexBuffer{}
-	, m_IndexBuffer{}
-	, m_TexturePaths{}
-	, m_Topology{ pT }
-	, m_pTextures{}
+Mesh::Mesh(IVertex* pVertexBuffer, unsigned int numVertices, short stride, short type, unsigned int* pIndexBuffer, unsigned int numIndices,
+	PrimitiveTopology topology, const FPoint3& pos)
+	: m_VertexType{ type }
+	, m_VertexStride{ stride }
+	, m_Topology{ topology }
+	, m_NumVertices{ numVertices }
+	, m_NumIndices{ numIndices }
+	, m_Position{ reinterpret_cast<FPoint3&>(m_WorldSpace[3][0]) }
+	, m_pVertexBuffer{ pVertexBuffer }
+	, m_pIndexBuffer{ pIndexBuffer }
+	, m_TextureIds{ -1, -1, -1, -1 }
 	, m_WorldSpace{ FMatrix4::Identity() }
 {
-	m_WorldSpace.data[0][0] += position.x;
-	m_WorldSpace.data[1][1] += position.y;
-	m_WorldSpace.data[2][2] += position.z;
-
-	m_VertexBuffer.swap(vertexBuffer);
-	m_IndexBuffer.swap(indexBuffer);
-	m_VertexBuffer.shrink_to_fit();
-	m_IndexBuffer.shrink_to_fit();
+	m_Position += reinterpret_cast<const FVector3&>(pos);
 }
 
 Mesh::~Mesh()
 {
-	if (m_pTextures.pDiff)
-	{
-		delete m_pTextures.pDiff;
-		m_pTextures.pDiff = nullptr;
-	}
-	if (m_pTextures.pNorm)
-	{
-		delete m_pTextures.pNorm;
-		m_pTextures.pNorm = nullptr;
-	}
-	if (m_pTextures.pSpec)
-	{
-		delete m_pTextures.pSpec;
-		m_pTextures.pSpec = nullptr;
-	}
-	if (m_pTextures.pGloss)
-	{
-		delete m_pTextures.pGloss;
-		m_pTextures.pGloss = nullptr;
-	}
+	delete[] m_pVertexBuffer;
+	delete[] m_pIndexBuffer;
 }
 
-void Mesh::Update(float elapsedSec)
+void Mesh::SetTextureIds(int diff, int norm, int spec, int gloss)
 {
-	constexpr float rotateSpeed = 0.f;
-	m_WorldSpace *= (FMatrix4)MakeRotationY(rotateSpeed * elapsedSec);
+	m_TextureIds[0] = diff;
+	m_TextureIds[1] = norm;
+	m_TextureIds[2] = spec;
+	m_TextureIds[3] = gloss;
 }
 
-void Mesh::LoadTextures(const std::string texPaths[4])
+void Mesh::SetTextureId(int id, TextureID texID)
 {
-	m_TexturePaths[0] = texPaths[0];
-	m_TexturePaths[1] = texPaths[1];
-	m_TexturePaths[2] = texPaths[2];
-	m_TexturePaths[3] = texPaths[3];
-
-	if (!m_pTextures.pDiff && texPaths[0] != "")
-		m_pTextures.pDiff = new Texture{ texPaths[0].c_str() };
-
-	if (!m_pTextures.pNorm && texPaths[1] != "")
-		m_pTextures.pNorm = new Texture{ texPaths[1].c_str() };
-
-	if (!m_pTextures.pSpec && texPaths[2] != "")
-		m_pTextures.pSpec = new Texture{ texPaths[2].c_str() };
-
-	if (!m_pTextures.pGloss && texPaths[3] != "")
-		m_pTextures.pGloss = new Texture{ texPaths[3].c_str() };
+	m_TextureIds[texID] = id;
 }

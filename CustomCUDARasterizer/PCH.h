@@ -2,6 +2,7 @@
 //CUDA includes
 #include "GPUHelpers.h"
 #include "CUDABenchMarker.h"
+#include "CUDAStructs.h"
 
 //Standard includes
 #include <stdio.h>
@@ -30,10 +31,13 @@
 #include "Structs.h"
 #include "PrimitiveTopology.h"
 #include "BoundingBox.h"
-#include "GPUTextures.h"
 #include "Light.h"
-#include "GPUTextures.h"
+#include "CUDATextureManager.h"
+#include "CUDATexture.h"
 #include "CullingMode.h"
+#include "CUDAMesh.h"
+
+constexpr int NumTextures = 4;
 
 // Convenience function for checking CUDA runtime API results
 // can be wrapped around any runtime API call. No-op in release builds.

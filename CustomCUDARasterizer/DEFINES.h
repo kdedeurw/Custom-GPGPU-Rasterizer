@@ -1,11 +1,5 @@
 #pragma once
 
-#ifndef HARDWARE_ACCELERATION
-#define HARDWARE_ACCELERATION //enable hardware accelerated CUDA rasterizer
-#endif
-
-#ifdef HARDWARE_ACCELERATION
-
 //show fps in realtime
 #ifndef STATS_REALTIME
 //#define STATS_REALTIME //can comment this line
@@ -26,6 +20,4 @@
 #endif
 
 #endif
-#endif
-
 #endif

@@ -2,16 +2,21 @@
 #include <SDL.h>
 #include <vector>
 
+struct MouseInformation
+{
+	int x, y, scrollwheel;
+	bool lmb, rmb, mouse3;
+};
+
 class EventManager final
 {
 public:
 	static void ProcessInputs(bool& isLooping, bool& takeScreenshot, float elapsedSec);
-	static void GetMouseButtonStates(bool& isLmb, bool& isRmb);
-	static void GetRelativeMouseValues(float& x, float& y);
-	static void GetScrollWheelValue(int& scrollWheelValue);
+	static MouseInformation GetMouseInformation();
 
 	static bool IsInput(SDL_EventType type, SDL_Keycode key);
 	static bool IsKeyPressed(SDL_Keycode key);
+	static bool IsKeyDown(SDL_Scancode key);
 
 private:
 	EventManager() = delete;

@@ -13,7 +13,7 @@ public:
 
 	void Update(float elapsedSec);
 
-	SceneGraph* AddSceneGraph(SceneGraph* pSceneGraph);
+	void AddSceneGraph(SceneGraph* pSceneGraph);
 
 	bool IsDepthColour() const { return m_IsDepthColour; };
 	SceneGraph* GetSceneGraph() const;

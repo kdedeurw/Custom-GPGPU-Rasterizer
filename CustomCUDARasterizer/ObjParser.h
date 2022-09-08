@@ -5,6 +5,7 @@
 #include "Math.h"
 #include "Vertex.h"
 
+struct Mesh;
 class ObjParser
 {
 	static const char* OBJ_EXTENSION;
@@ -20,7 +21,9 @@ public:
 	bool OpenFile(const std::string& filePath);
 	void CloseFile();
 
+	void ReadFromObjFile(IVertex*& pVertexBuffer, unsigned int& numVertices, unsigned int*& pIndexBuffer, unsigned int& numIndices, short& vertexType);
 	void ReadFromObjFile(std::vector<IVertex>& vertexBuffer, std::vector<unsigned int>& indexBuffer, short& vertexType);
+	Mesh* ReadFromObjFile(short& vertexType);
 
 	void SetInvertYAxis(bool value);
 
@@ -42,6 +45,8 @@ private:
 	void GetFirstSecondThird(std::stringstream& fst, std::string& first, std::string& second, std::string& third);
 
 	void ParseData();
+	void AssignVertices(IVertex*& pVertexBuffer, unsigned int& numVertices, unsigned int*& pIndexBuffer, unsigned int& numIndices, short& vertexType);
 	void AssignVertices(std::vector<IVertex>& vertexBuffer, std::vector<unsigned int>& indexBuffer, short& vertexType);
+	Mesh* AssignVertices(short& vertexType);
 	void ClearData();
 };

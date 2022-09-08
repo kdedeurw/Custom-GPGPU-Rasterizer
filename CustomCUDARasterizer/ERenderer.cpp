@@ -49,10 +49,10 @@ void Elite::Renderer::Render(const SceneManager& sm)
 	//SceneGraph
 	SceneGraph* pSceneGraph = sm.GetSceneGraph();
 	const std::vector<Mesh*>& pObjects = pSceneGraph->GetMeshes();
-	const FVector3& camFwd{ m_pCamera->GetForward() };
-	const FMatrix4 lookatMatrix = m_pCamera->GetLookAtMatrix();
-	const FMatrix4 viewMatrix{ m_pCamera->GetViewMatrix(lookatMatrix) };
-	const FMatrix4 projectionMatrix{ m_pCamera->GetProjectionMatrix() };
+	const FVector3& camFwd = m_pCamera->GetForward();
+	//const FMatrix4& lookatMatrix = m_pCamera->GetLookAtMatrix();
+	const FMatrix4 viewMatrix = m_pCamera->GetViewMatrix();
+	const FMatrix4& projectionMatrix = m_pCamera->GetProjectionMatrix();
 	const FMatrix4 viewProjectionMatrix = projectionMatrix * viewMatrix;
 
 	//Render frame by looping over all objects
@@ -203,7 +203,7 @@ OVertex Elite::Renderer::GetNDCVertexDeprecated(const IVertex& vertex, const FMa
 
 	const FPoint3 corrVertex{ screenspaceVertexX, screenspaceVertexY, screenspaceVertexZ };
 
-	const FPoint3& camPos = m_pCamera->GetPos();
+	const FPoint3& camPos = m_pCamera->GetPosition();
 	const FPoint3 worldPosition{ worldMatrix * FPoint4{ vertex.p } };
 	const FVector3 viewDirection{ GetNormalized(worldPosition - camPos) };
 	const FVector3 worldNormal{ (FMatrix3)worldMatrix * vertex.n };
@@ -231,7 +231,7 @@ OVertex Elite::Renderer::GetNDCVertex(const IVertex& vertex, const FMatrix4& vie
 	//NDCspace.y = ((1 - NDCspace.y) / 2) * m_Height;
 	// !DONE AFTER FRUSTUMTEST!
 
-	const FPoint3 camPos = m_pCamera->GetPos();
+	const FPoint3 camPos = m_pCamera->GetPosition();
 	//const FMatrix3 rotationMatrix = (FMatrix3)worldMatrix;
 	const FPoint3 worldPosition{ worldMatrix * FPoint4{ vertex.p } };
 	const FVector3 viewDirection{ GetNormalized(worldPosition - camPos) };

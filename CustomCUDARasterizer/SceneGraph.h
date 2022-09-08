@@ -1,7 +1,7 @@
 #pragma once
 #include <vector>
 
-class Mesh;
+struct Mesh;
 class Light;
 class SceneGraph
 {
@@ -10,7 +10,7 @@ public:
 	virtual ~SceneGraph();
 
 	void AddMesh(Mesh* pMesh);
-	Light* AddLight(Light* pLight);
+	void AddLight(Light* pLight);
 
 	const std::vector<Mesh*>& GetMeshes() const { return m_pMeshes; }
 	const std::vector<Light*>& GetLights() const { return m_pLights; }

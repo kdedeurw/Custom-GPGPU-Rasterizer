@@ -22,13 +22,19 @@ void SceneGraph::AddMesh(Mesh* pMesh)
 	m_pMeshes.push_back(pMesh);
 }
 
-Light* SceneGraph::AddLight(Light* pLight)
+void SceneGraph::AddLight(Light* pLight)
 {
 	m_pLights.push_back(pLight);
-	return pLight;
 }
 
 void SceneGraph::Update(float elapsedSec)
 {
-	std::for_each(m_pMeshes.begin(), m_pMeshes.end(), [elapsedSec](Mesh* pMesh) { pMesh->Update(elapsedSec); });
+	//TODO: refactor this code
+	constexpr float rotateSpeed = 1.f;
+	const FMatrix4 rotationMatrix = (FMatrix4)MakeRotationY(rotateSpeed * elapsedSec);
+	for (Mesh* pMesh : m_pMeshes)
+	{
+		FMatrix4& world = pMesh->GetWorld();
+		world *= rotationMatrix;
+	}
 }

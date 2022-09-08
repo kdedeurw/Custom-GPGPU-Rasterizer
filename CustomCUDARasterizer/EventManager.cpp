@@ -1,8 +1,6 @@
 #include "PCH.h"
 #include "EventManager.h"
 
-#include "Camera.h"
-
 int EventManager::m_ScrollWheelValue{};
 std::vector<SDL_Event> EventManager::m_Events{};
 
@@ -94,25 +92,15 @@ void EventManager::MouseWheelEvent(const SDL_MouseWheelEvent & e)
 	m_ScrollWheelValue = e.y;
 }
 
-void EventManager::GetMouseButtonStates(bool& isLmb, bool& isRmb)
+MouseInformation EventManager::GetMouseInformation()
 {
-	int x, y;
-	const Uint32 buttons = SDL_GetMouseState(&x, &y);
-	isLmb = buttons & SDL_BUTTON_LMASK;
-	isRmb = buttons & SDL_BUTTON_RMASK;
-}
-
-void EventManager::GetRelativeMouseValues(float& xValue, float& yValue)
-{
-	int x, y;
-	const Uint32 buttons = SDL_GetRelativeMouseState(&x, &y);
-	xValue = float(x);
-	yValue = float(y);
-}
-
-void EventManager::GetScrollWheelValue(int& scrollWheelValue)
-{
-	scrollWheelValue = m_ScrollWheelValue;
+	MouseInformation mi{};
+	const Uint32 buttons = SDL_GetRelativeMouseState(&mi.x, &mi.y);
+	mi.lmb = buttons & SDL_BUTTON_LMASK;
+	mi.rmb = buttons & SDL_BUTTON_RMASK;
+	mi.mouse3 = buttons & SDL_BUTTON_MMASK;
+	mi.scrollwheel = m_ScrollWheelValue;
+	return mi;
 }
 
 bool EventManager::IsInput(SDL_EventType type, SDL_Keycode key)
@@ -138,4 +126,10 @@ bool EventManager::IsKeyPressed(SDL_Keycode key)
 		}
 	}
 	return false;
+}
+
+bool EventManager::IsKeyDown(SDL_Scancode key)
+{
+	const uint8_t* pKeyboardState = SDL_GetKeyboardState(0);
+	return pKeyboardState[key];
 }

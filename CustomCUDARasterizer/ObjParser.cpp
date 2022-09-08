@@ -34,7 +34,9 @@ void ObjParser::ParseData()
 		while (std::getline(m_ReadFile, line))
 		{
 			++lineCount;
-			if (line.empty() || line.front() == '#') continue; // skip empty and comment lines
+			if (line.empty() || line.front() == '#')
+				continue; // skip empty and comment lines
+
 			std::string prefix{};
 			std::getline(std::stringstream{ line }, prefix, ' '); // prefix always in front, delimited by space(s)
 			if (prefix == "v")
@@ -76,6 +78,17 @@ void ObjParser::ParseData()
 	}
 }
 
+void ObjParser::ReadFromObjFile(IVertex*& pVertexBuffer, unsigned int& numVertices, unsigned int*& pIndexBuffer, unsigned int& numIndices, short& vertexType)
+{
+	ParseData();
+
+	std::cout << "\n!Creating vertices based on parsed info!\n";
+	// create vertices, filled with positions, normals, UV coords (and colours?) all at once (store them all in vertex)
+	AssignVertices(pVertexBuffer, numVertices, pIndexBuffer, numIndices, vertexType);
+
+	std::cout << "\n!All done!\n";
+}
+
 void ObjParser::ReadFromObjFile(std::vector<IVertex>& vertexBuffer, std::vector<unsigned int>& indexBuffer, short& vertexType)
 {
 	ParseData();
@@ -85,6 +98,19 @@ void ObjParser::ReadFromObjFile(std::vector<IVertex>& vertexBuffer, std::vector<
 	AssignVertices(vertexBuffer, indexBuffer, vertexType);
 
 	std::cout << "\n!All done!\n";
+}
+
+Mesh* ObjParser::ReadFromObjFile(short& vertexType)
+{
+	ParseData();
+
+	std::cout << "\n!Creating vertices based on parsed info!\n";
+	// create vertices, filled with positions, normals, UV coords (and colours?) all at once (store them all in vertex)
+	Mesh* pMesh = AssignVertices(vertexType);
+
+	std::cout << "\n!All done!\n";
+
+	return pMesh;
 }
 
 void ObjParser::StorePosition(std::stringstream& position)
@@ -186,11 +212,12 @@ void ObjParser::GetFirstSecondThird(std::stringstream& fst, std::string& first, 
 	// third now contains 3.000
 }
 
-void ObjParser::AssignVertices(std::vector<IVertex>& vertexBuffer, std::vector<unsigned int>& indexBuffer, short& vertexType)
+void ObjParser::AssignVertices(IVertex*& pVertexBuffer, unsigned int& numVertices, unsigned int*& pIndexBuffer, unsigned int& numIndices, short& vertexType)
 {
-	vertexBuffer.clear();
-	indexBuffer.clear();
-	vertexBuffer.reserve(m_Positions.size());
+	numVertices = (unsigned int)m_Positions.size();
+	numIndices = (unsigned int)m_PositionIndices.size();
+	pVertexBuffer = new IVertex[numVertices];
+	pIndexBuffer = new unsigned int[numIndices];
 
 	const bool isUVs{ (bool)m_UVs.size() };
 	const bool isNormals{ (bool)m_Normals.size() };
@@ -204,7 +231,173 @@ void ObjParser::AssignVertices(std::vector<IVertex>& vertexBuffer, std::vector<u
 	if (isUVs && isNormals)
 	{
 		vertexType |= (int)VertexType::Tan;
-		for (size_t i{}; i < m_PositionIndices.size(); ++i) // every possible face
+		for (unsigned int i{}; i < numIndices; ++i) // every possible face
+		{
+			bool isUnique{ true };
+			Indexed index{};
+
+			for (Indexed& bl : blackList) // check for blacklisted vertices
+			{
+				if (bl.v == m_PositionIndices[i]) // v[?] == v[i]
+				{
+					// same vertex
+					if (bl.vt == m_UVIndices[i]) // vt[?] == vt[i]
+					{
+						// same uv
+						if (m_Normals[bl.vn] == m_Normals[m_NormalIndices[i]]) // vn[?] == vn[i]
+						{
+							// same normal
+							index.idx = bl.idx; // save indexCounter
+							isUnique = false;
+							break;
+						}
+					}
+				}
+			}
+
+			if (isUnique)
+			{
+				IVertex& v = pVertexBuffer[indexCounter];
+				v.p = m_Positions[m_PositionIndices[i]];
+				v.uv = m_UVs[m_UVIndices[i]];
+				v.n = m_Normals[m_NormalIndices[i]];
+				index.v = m_PositionIndices[i];
+				index.vt = m_UVIndices[i];
+				index.vn = m_NormalIndices[i];
+				index.idx = indexCounter;
+				blackList.push_back(index);
+				++indexCounter;
+			}
+			pIndexBuffer[i] = index.idx;
+		}
+
+		for (unsigned int i{}; i < numIndices; i += 3)
+		{
+			const unsigned int idx0 = pIndexBuffer[i];
+			const unsigned int idx1 = pIndexBuffer[i + 1];
+			const unsigned int idx2 = pIndexBuffer[i + 2];
+
+			const FPoint3& p0 = pVertexBuffer[idx0].p;
+			const FPoint3& p1 = pVertexBuffer[idx1].p;
+			const FPoint3& p2 = pVertexBuffer[idx2].p;
+			const FVector2& uv0 = pVertexBuffer[idx0].uv;
+			const FVector2& uv1 = pVertexBuffer[idx1].uv;
+			const FVector2& uv2 = pVertexBuffer[idx2].uv;
+
+			const FVector3 edge0 = FVector3{ p1 - p0 };
+			const FVector3 edge1 = FVector3{ p2 - p0 };
+			const FVector2 diffX = FVector2{ uv1.x - uv0.x, uv2.x - uv0.x };
+			const FVector2 diffY = FVector2{ uv1.y - uv0.y, uv2.y - uv0.y };
+			const float r = 1.f / Cross(diffX, diffY);
+
+			const FVector3 tangent = (edge0 * diffY.y - edge1 * diffY.x) * r;
+			pVertexBuffer[idx0].tan += tangent;
+			pVertexBuffer[idx1].tan += tangent;
+			pVertexBuffer[idx2].tan += tangent;
+		}
+		for (unsigned int i{}; i < numVertices; ++i)
+		{
+			IVertex& v = pVertexBuffer[i];
+			v.tan = GetNormalized(Reject(v.tan, v.n));
+		}
+	}
+	else if (isUVs && !isNormals)
+	{
+		for (unsigned int i{}; i < numIndices; ++i) // every possible face
+		{
+			bool isUnique{ true };
+			Indexed index{};
+			int changes{};
+
+			for (Indexed& bl : blackList) // check for blacklisted vertices
+			{
+				if (bl.v == m_PositionIndices[i]) // v[?] == v[i]
+				{
+					// same vertex
+					if (bl.vt == m_UVIndices[i]) // vt[?] == vt[i]
+					{
+						// same uv
+						index.idx = bl.idx; // save indexCounter
+						isUnique = false;
+						++changes;
+						break;
+					}
+				}
+			}
+
+			if (isUnique)
+			{
+				IVertex& v = pVertexBuffer[indexCounter];
+				v.p = m_Positions[m_PositionIndices[i]];
+				v.uv = m_UVs[m_UVIndices[i]];
+				v.n = m_Normals[m_NormalIndices[i]];
+				index.v = m_PositionIndices[i];
+				index.vt = m_UVIndices[i];
+				index.vn = m_NormalIndices[i];
+				index.idx = indexCounter;
+				blackList.push_back(index);
+				++indexCounter;
+			}
+			pIndexBuffer[i] = index.idx;
+		}
+	}
+	else if (!isUVs && !isNormals)
+	{
+		for (unsigned int i{}; i < numIndices; ++i) // every possible face
+		{
+			bool isUnique{ true };
+			Indexed index{};
+
+			for (Indexed& bl : blackList) // check for blacklisted vertices
+			{
+				if (bl.v == m_PositionIndices[i]) // v[?] == v[i]
+				{
+					// same vertex
+					index.idx = bl.idx; // save indexCounter
+					isUnique = false;
+					break;
+				}
+			}
+
+			if (isUnique)
+			{
+				IVertex& v = pVertexBuffer[indexCounter];
+				v.p = m_Positions[m_PositionIndices[i]];
+				v.uv = FVector2{};
+				v.c = { 1.f, 1.f, 1.f };
+				index.v = m_PositionIndices[i];
+				index.idx = indexCounter;
+				blackList.push_back(index);
+				++indexCounter;
+			}
+			pIndexBuffer[i] = index.idx;
+		}
+	}
+}
+
+void ObjParser::AssignVertices(std::vector<IVertex>& vertexBuffer, std::vector<unsigned int>& indexBuffer, short& vertexType)
+{
+	//const size_t numVertices = m_Positions.size();
+	const size_t numIndices = m_PositionIndices.size();
+
+	vertexBuffer.clear();
+	indexBuffer.clear();
+	vertexBuffer.reserve(m_Positions.size());
+	indexBuffer.reserve(m_PositionIndices.size());
+
+	const bool isUVs{ (bool)m_UVs.size() };
+	const bool isNormals{ (bool)m_Normals.size() };
+
+	vertexType |= isUVs * (int)VertexType::Uv;
+	vertexType |= isNormals * (int)VertexType::Norm;
+
+	unsigned int indexCounter{};
+	std::vector<Indexed> blackList{};
+
+	if (isUVs && isNormals)
+	{
+		vertexType |= (int)VertexType::Tan;
+		for (size_t i{}; i < numIndices; ++i) // every possible face
 		{
 			bool isUnique{ true };
 			Indexed index{};
@@ -247,26 +440,26 @@ void ObjParser::AssignVertices(std::vector<IVertex>& vertexBuffer, std::vector<u
 			indexBuffer.push_back(index.idx);
 		}
 
-		for (uint32_t i{}; i < indexBuffer.size(); i += 3)
+		for (unsigned int i{}; i < numIndices; i += 3)
 		{
-			uint32_t idx0{ uint32_t(indexBuffer[i]) };
-			uint32_t idx1{ uint32_t(indexBuffer[i + 1]) };
-			uint32_t idx2{ uint32_t(indexBuffer[i + 2]) };
+			const unsigned int idx0 = indexBuffer[i];
+			const unsigned int idx1 = indexBuffer[i + 1];
+			const unsigned int idx2 = indexBuffer[i + 2];
 
-			const FPoint3 p0{ vertexBuffer[idx0].p };
-			const FPoint3 p1{ vertexBuffer[idx1].p };
-			const FPoint3 p2{ vertexBuffer[idx2].p };
-			const FVector3 uv0{ vertexBuffer[idx0].uv };
-			const FVector3 uv1{ vertexBuffer[idx1].uv };
-			const FVector3 uv2{ vertexBuffer[idx2].uv };
+			const FPoint3& p0 = vertexBuffer[idx0].p;
+			const FPoint3& p1 = vertexBuffer[idx1].p;
+			const FPoint3& p2 = vertexBuffer[idx2].p;
+			const FVector2& uv0 = vertexBuffer[idx0].uv;
+			const FVector2& uv1 = vertexBuffer[idx1].uv;
+			const FVector2& uv2 = vertexBuffer[idx2].uv;
 
-			const FVector3 edge0{ p1 - p0 };
-			const FVector3 edge1{ p2 - p0 };
-			const FVector2 diffX{ FVector2{uv1.x - uv0.x, uv2.x - uv0.x} };
-			const FVector2 diffY{ FVector2{uv1.y - uv0.y, uv2.y - uv0.y} };
-			float r{ 1.f / Cross(diffX, diffY) };
+			const FVector3 edge0 = FVector3{ p1 - p0 };
+			const FVector3 edge1 = FVector3{ p2 - p0 };
+			const FVector2 diffX = FVector2{uv1.x - uv0.x, uv2.x - uv0.x};
+			const FVector2 diffY = FVector2{uv1.y - uv0.y, uv2.y - uv0.y};
+			const float r = 1.f / Cross(diffX, diffY);
 
-			FVector3 tangent{ (edge0 * diffY.y - edge1 * diffY.x) * r };
+			const FVector3 tangent = (edge0 * diffY.y - edge1 * diffY.x) * r;
 			vertexBuffer[idx0].tan += tangent;
 			vertexBuffer[idx1].tan += tangent;
 			vertexBuffer[idx2].tan += tangent;
@@ -278,7 +471,7 @@ void ObjParser::AssignVertices(std::vector<IVertex>& vertexBuffer, std::vector<u
 	}
 	else if (isUVs && !isNormals)
 	{
-		for (size_t i{}; i < m_PositionIndices.size(); ++i) // every possible face
+		for (size_t i{}; i < numIndices; ++i) // every possible face
 		{
 			bool isUnique{ true };
 			Indexed index{};
@@ -319,7 +512,7 @@ void ObjParser::AssignVertices(std::vector<IVertex>& vertexBuffer, std::vector<u
 	}
 	else if (!isUVs && !isNormals)
 	{
-		for (size_t i{}; i < m_PositionIndices.size(); ++i) // every possible face
+		for (size_t i{}; i < numIndices; ++i) // every possible face
 		{
 			bool isUnique{ true };
 			Indexed index{};
@@ -350,6 +543,18 @@ void ObjParser::AssignVertices(std::vector<IVertex>& vertexBuffer, std::vector<u
 			indexBuffer.push_back(index.idx);
 		}
 	}
+}
+
+Mesh* ObjParser::AssignVertices(short& vertexType)
+{
+	unsigned int numVertices;
+	unsigned int numIndices;
+	IVertex* pVertexBuffer;
+	unsigned int* pIndexBuffer;
+	AssignVertices(pVertexBuffer, numVertices, pIndexBuffer, numIndices, vertexType);
+	short stride = sizeof(IVertex);
+	Mesh* pMesh = new Mesh{ pVertexBuffer, numVertices, stride, vertexType, pIndexBuffer, numIndices, PrimitiveTopology::TriangleList };
+	return pMesh;
 }
 
 void ObjParser::ClearData()
