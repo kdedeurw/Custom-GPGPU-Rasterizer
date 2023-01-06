@@ -14,6 +14,8 @@ public:
 		Glossiness,
 	};
 	Mesh() = default;
+	Mesh(const std::vector<IVertex>& vertexBuffer, short stride, short type, 
+		const std::vector<unsigned int>& pIndexBuffer, PrimitiveTopology topology, const FPoint3& pos = {});
 	Mesh(IVertex* pVertexBuffer, unsigned int numVertices, short stride, short type, unsigned int* pIndexBuffer, unsigned int numIndices,
 		PrimitiveTopology topology, const FPoint3& pos = {});
 	virtual ~Mesh();

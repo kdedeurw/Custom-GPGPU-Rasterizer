@@ -6,6 +6,7 @@
 #include "CUDATexture.h"
 #include "RGBRaw.h"
 #include "SampleState.h"
+#include "CUDAROPs.cuh"
 
 namespace CUDATextureSampler
 {
@@ -87,6 +88,11 @@ RGBColor CUDATextureSampler::SamplePoint(const unsigned int* pixels, unsigned in
 	// Transform coordinates
 	const int u{ int(uv.x * w + 0.5f) };
 	const int v{ int(uv.y * h + 0.5f) };
+
+	//TODO: FastClamp instead of if statement
+	//int newU = ClampFast(u, 0, int(w - 1));
+	//int newV = ClampFast(v, 0, int(h - 1));
+
 	if (u < 0 || v < 0 || u >= w || v >= h)
 		return RGBColor{ 1.f, 0.f, 1.f };
 	const int sampleIdx = u + v * w;

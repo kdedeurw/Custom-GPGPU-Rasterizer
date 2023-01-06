@@ -5,14 +5,13 @@
 #include "Math.h"
 #include "Vertex.h"
 
-struct Mesh;
 class ObjParser
 {
 	static const char* OBJ_EXTENSION;
 	struct Indexed
 	{
-		unsigned int v{}, vt{}, vn{};
-		unsigned int idx{};
+		unsigned int posIdx{}, uvIdx{}, normIdx{};
+		unsigned int vertexIdx{};
 	};
 public:
 	ObjParser();
@@ -23,7 +22,6 @@ public:
 
 	void ReadFromObjFile(IVertex*& pVertexBuffer, unsigned int& numVertices, unsigned int*& pIndexBuffer, unsigned int& numIndices, short& vertexType);
 	void ReadFromObjFile(std::vector<IVertex>& vertexBuffer, std::vector<unsigned int>& indexBuffer, short& vertexType);
-	Mesh* ReadFromObjFile(short& vertexType);
 
 	void SetInvertYAxis(bool value);
 
@@ -44,9 +42,8 @@ private:
 	void StoreUV(std::stringstream& uv);
 	void GetFirstSecondThird(std::stringstream& fst, std::string& first, std::string& second, std::string& third);
 
-	void ParseData();
-	void AssignVertices(IVertex*& pVertexBuffer, unsigned int& numVertices, unsigned int*& pIndexBuffer, unsigned int& numIndices, short& vertexType);
-	void AssignVertices(std::vector<IVertex>& vertexBuffer, std::vector<unsigned int>& indexBuffer, short& vertexType);
-	Mesh* AssignVertices(short& vertexType);
+	unsigned int ParseData();
+	void AssignVertices(unsigned int faceCount, IVertex*& pVertexBuffer, unsigned int& numVertices, unsigned int*& pIndexBuffer, unsigned int& numIndices, short& vertexType);
+	void AssignVertices(unsigned int faceCount, std::vector<IVertex>& vertexBuffer, std::vector<unsigned int>& indexBuffer, short& vertexType);
 	void ClearData();
 };

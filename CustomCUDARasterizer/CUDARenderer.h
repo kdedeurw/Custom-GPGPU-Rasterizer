@@ -7,6 +7,7 @@
 #include "CullingMode.h"
 #include "CUDABenchMarker.h"
 #include "CUDAAtomicQueue.cuh"
+#include "CUDAWindowHelper.h"
 
 struct WindowHelper;
 class Camera;
@@ -20,6 +21,7 @@ class SceneGraph;
 class CUDATextureManager;
 struct CUDATexturesCompact;
 class CUDAMesh;
+struct PixelShade;
 
 //////////////////////////////
 //-----RAII Wrapper Class-----
@@ -28,7 +30,7 @@ class CUDAMesh;
 class CUDARenderer final
 {
 public:
-	CUDARenderer(const WindowHelper& windowHelper, IPoint2 numBins = {}, IPoint2 binDim = {}, unsigned int binQueueMaxSize = 0);
+	CUDARenderer(const WindowHelper& windowHelper);
 	~CUDARenderer() noexcept;
 
 	CUDARenderer(const CUDARenderer&) = delete;
@@ -44,6 +46,9 @@ public:
 	//Preload and store scene in persistent memory
 	//This will eliminate overhead by loading mesh data and accessing global memory
 	void LoadScene(const SceneGraph* pSceneGraph, const CUDATextureManager& tm);
+
+	//Inits the binner object which handles its internal binning buffers on the GPU
+	void SetupBins(const IPoint2& numBins, const IPoint2& binDim, unsigned int binQueueMaxSize);
 
 	//Lock backbuffer surface and call Clear
 	int EnterValidRenderingState();
@@ -70,14 +75,25 @@ public:
 private:
 	//-----MEMBER VARIABLES-----
 
-	const WindowHelper& m_WindowHelper;
 	unsigned int m_TotalNumTriangles{};
 	unsigned int m_TotalVisibleNumTriangles{};
-	//unsigned int* m_h_pFrameBuffer{};
+	const WindowHelper& m_WindowHelper;
+	unsigned int* m_Dev_NumVisibleTriangles{};
 	IPoint2 m_BinDim;
 	CUDABenchMarker m_BenchMarker{};
 	CUDAAtomicQueues<unsigned int> m_BinQueues;
+	CUDAWindowHelper<PixelShade> m_CUDAWindowHelper;
 	std::vector<CUDAMesh*> m_pCUDAMeshes{};
+	/*
+	//DEPRECATED
+	//Texture references have to be statically declared in global memory and bound to CUDA texture memory
+	//They cannot be referenced in functions, nor used in arrays
+	typedef texture<unsigned int, cudaTextureType2D, cudaReadModeElementType> CUDA32bTexture2D;
+	static CUDA32bTexture2D dev_DiffuseTextureReference{};
+	static CUDA32bTexture2D dev_NormalTextureReference{};
+	static CUDA32bTexture2D dev_SpecularTextureReference{};
+	static CUDA32bTexture2D dev_GlossinessTextureReference{};
+	*/
 
 	//-----CPU HELPER FUNCTIONS-----
 	

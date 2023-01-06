@@ -7,36 +7,6 @@
 //Project CUDA includes
 #include "CUDATextureSampler.cuh"
 
-BOTH_CALLABLE static
-float GetMinElement(float val0, float val1, float val2)
-{
-	float min = val0;
-	if (val1 < min)
-		min = val1;
-	if (val2 < min)
-		min = val2;
-	return min;
-}
-
-BOTH_CALLABLE static
-float GetMaxElement(float val0, float val1, float val2)
-{
-	float max = val0;
-	if (val1 > max)
-		max = val1;
-	if (val2 > max)
-		max = val2;
-	return max;
-}
-
-template <typename T>
-BOTH_CALLABLE static
-T ClampFast(T val, T min, T max)
-{
-	const T clamp = val < min ? min : val;
-	return clamp > max ? max : clamp;
-}
-
 GPU_CALLABLE GPU_INLINE static
 float EdgeFunction(const FPoint2& v, const FVector2& edge, const FPoint2& pixel)
 {
@@ -45,48 +15,48 @@ float EdgeFunction(const FPoint2& v, const FVector2& edge, const FPoint2& pixel)
 	return Cross(vertexToPixel, edge);
 }
 
-GPU_CALLABLE static
-bool IsPixelInTriangle(const FPoint4& v0, const FPoint4& v1, const FPoint4& v2, const FPoint2& pixel, float weights[3])
+GPU_CALLABLE GPU_INLINE static
+bool IsPixelInTriangle(const FPoint2& v0, const FPoint2& v1, const FPoint2& v2, const FPoint2& pixel, float weights[3])
 {
-	const FVector2 edgeA{ v1.xy - v0.xy };
-	const FVector2 edgeB{ v2.xy - v1.xy };
-	const FVector2 edgeC{ v0.xy - v2.xy };
+	const FVector2 edgeA{ v1 - v0 };
+	const FVector2 edgeB{ v2 - v1 };
+	const FVector2 edgeC{ v0 - v2 };
 	// clockwise
 	//const FVector2 edgeA{ v0.xy - v1.xy };
 	//const FVector2 edgeB{ v1.xy - v2.xy };
 	//const FVector2 edgeC{ v2.xy - v0.xy };
 	// counter-clockwise
 
-	weights[2] = EdgeFunction(v0.xy, edgeA, pixel);
-	weights[0] = EdgeFunction(v1.xy, edgeB, pixel);
-	weights[1] = EdgeFunction(v2.xy, edgeC, pixel);
+	weights[2] = EdgeFunction(v0, edgeA, pixel);
+	weights[0] = EdgeFunction(v1, edgeB, pixel);
+	weights[1] = EdgeFunction(v2, edgeC, pixel);
 
 	return weights[0] >= 0.f && weights[1] >= 0.f && weights[2] >= 0.f;
 }
 
 GPU_CALLABLE static
-bool IsAllXOutsideFrustum(const FPoint4& v0, const FPoint4& v1, const FPoint4& v2)
+bool IsAllXOutsideFrustum(const FPoint3& v0, const FPoint3& v1, const FPoint3& v2)
 {
 	return	(v0.x < -1.f && v1.x < -1.f && v2.x < -1.f) ||
 		(v0.x > 1.f && v1.x > 1.f && v2.x > 1.f);
 }
 
 GPU_CALLABLE static
-bool IsAllYOutsideFrustum(const FPoint4& v0, const FPoint4& v1, const FPoint4& v2)
+bool IsAllYOutsideFrustum(const FPoint3& v0, const FPoint3& v1, const FPoint3& v2)
 {
 	return	(v0.y < -1.f && v1.y < -1.f && v2.y < -1.f) ||
 		(v0.y > 1.f && v1.y > 1.f && v2.y > 1.f);
 }
 
 GPU_CALLABLE static
-bool IsAllZOutsideFrustum(const FPoint4& v0, const FPoint4& v1, const FPoint4& v2)
+bool IsAllZOutsideFrustum(const FPoint3& v0, const FPoint3& v1, const FPoint3& v2)
 {
 	return	(v0.z < 0.f && v1.z < 0.f && v2.z < 0.f) ||
 		(v0.z > 1.f && v1.z > 1.f && v2.z > 1.f);
 }
 
 GPU_CALLABLE static
-bool IsTriangleVisible(const FPoint4& v0, const FPoint4& v1, const FPoint4& v2)
+bool IsTriangleVisible(const FPoint3& v0, const FPoint3& v1, const FPoint3& v2)
 {
 	// Solution to FrustumCulling bug
 	//	   if (all x values are < -1.f or > 1.f) AT ONCE, cull
@@ -98,7 +68,7 @@ bool IsTriangleVisible(const FPoint4& v0, const FPoint4& v1, const FPoint4& v2)
 }
 
 GPU_CALLABLE static
-bool IsVertexInFrustum(const FPoint4& NDC)
+bool IsVertexInFrustum(const FPoint3& NDC)
 {
 	return!((NDC.x < -1.f || NDC.x > 1.f) ||
 		(NDC.y < -1.f || NDC.y > 1.f) ||
@@ -106,7 +76,7 @@ bool IsVertexInFrustum(const FPoint4& NDC)
 }
 
 GPU_CALLABLE static
-bool IsTriangleInFrustum(const FPoint4& v0, const FPoint4& v1, const FPoint4& v2)
+bool IsTriangleInFrustum(const FPoint3& v0, const FPoint3& v1, const FPoint3& v2)
 {
 	return(IsVertexInFrustum(v0)
 		|| IsVertexInFrustum(v1)
@@ -127,7 +97,7 @@ BoundingBox GetBoundingBox(const FPoint2& v0, const FPoint2& v1, const FPoint2& 
 	bb.yMin = ClampFast(bb.yMin, (short)0, (short)height);
 	bb.xMax = ClampFast(bb.xMax, (short)0, (short)width);
 	bb.yMax = ClampFast(bb.yMax, (short)0, (short)height);
-	
+
 	//if (bb.xMin < 0) bb.xMin = 0; //clamp minX to Left of screen
 	//if (bb.yMin < 0) bb.yMin = 0; //clamp minY to Bottom of screen
 	//if (bb.xMax > width) bb.xMax = width; //clamp maxX to Right of screen
@@ -168,57 +138,47 @@ OVertex GetNDCVertex(const IVertex& __restrict__ iVertex, const FMatrix4& wvpMat
 	return oVertex;
 }
 
-#pragma region DEPRECATED
-
-GPU_CALLABLE static
-bool IsPixelInTriangle(const RasterTriangle& triangle, const FPoint2& pixel, float weights[3])
+GPU_CALLABLE GPU_INLINE static
+float InterpolateElement(const float v0, const float v1, const float v2, const float weights[3], const float invDepths[3])
 {
-	return IsPixelInTriangle(triangle.v0, triangle.v1, triangle.v2, pixel, weights);
+	return weights[0] * (v0 * invDepths[0]) + weights[1] * (v1 * invDepths[1]) + weights[2] * (v2 * invDepths[2]);
 }
 
-GPU_CALLABLE static
-bool IsAllXOutsideFrustum(const RasterTriangle& triangle)
+GPU_CALLABLE GPU_INLINE static
+FVector2 InterpolateVector(const FVector2& v0, const FVector2& v1, const FVector2& v2, const float weights[3], const float invDepths[3])
 {
-	return IsAllXOutsideFrustum(triangle.v0, triangle.v1, triangle.v2);
+	return FVector2{
+		weights[0] * (v0.x * invDepths[0]) + weights[1] * (v1.x * invDepths[1]) + weights[2] * (v2.x * invDepths[2]),
+		weights[0] * (v0.y * invDepths[0]) + weights[1] * (v1.y * invDepths[1]) + weights[2] * (v2.y * invDepths[2]) };
+
+	//Actually using this makes it slower, due to copying the elements for each function call
+	//return FVector2{
+	//	InterpolateElement(v0.x, v1.x, v2.x, weights, invDepths),
+	//	InterpolateElement(v0.y, v1.y, v2.y, weights, invDepths) };
 }
 
-GPU_CALLABLE static
-bool IsAllYOutsideFrustum(const RasterTriangle& triangle)
+GPU_CALLABLE GPU_INLINE static
+FVector3 InterpolateVector(const FVector3& v0, const FVector3& v1, const FVector3& v2, const float weights[3], const float invDepths[3])
 {
-	return IsAllYOutsideFrustum(triangle.v0, triangle.v1, triangle.v2);
+	return FVector3{
+		weights[0] * (v0.x * invDepths[0]) + weights[1] * (v1.x * invDepths[1]) + weights[2] * (v2.x * invDepths[2]),
+		weights[0] * (v0.y * invDepths[0]) + weights[1] * (v1.y * invDepths[1]) + weights[2] * (v2.y * invDepths[2]),
+		weights[0] * (v0.z * invDepths[0]) + weights[1] * (v1.z * invDepths[1]) + weights[2] * (v2.z * invDepths[2]) };
+
+	//Actually using this makes it slower, due to copying the elements for each function call
+	//return FVector3{ InterpolateVector(v0.xy, v1.xy, v2.xy, weights, invDepths), 
+	//	InterpolateElement(v0.z, v1.z, v2.z, weights, invDepths) };
 }
 
-GPU_CALLABLE static
-bool IsAllZOutsideFrustum(const RasterTriangle& triangle)
+GPU_CALLABLE GPU_INLINE static
+RGBColor InterpolateColour(const RGBColor& v0, const RGBColor& v1, const RGBColor& v2, const float weights[3], const float invDepths[3])
 {
-	return IsAllZOutsideFrustum(triangle.v0, triangle.v1, triangle.v2);
+	return reinterpret_cast<RGBColor&>(InterpolateVector(
+		reinterpret_cast<const FVector3&>(v0),
+		reinterpret_cast<const FVector3&>(v1),
+		reinterpret_cast<const FVector3&>(v2),
+		weights, invDepths));
 }
-
-GPU_CALLABLE static
-bool IsTriangleVisible(const RasterTriangle& triangle)
-{
-	return IsTriangleVisible(triangle.v0, triangle.v1, triangle.v2);
-}
-
-GPU_CALLABLE static
-bool IsTriangleInFrustum(const RasterTriangle& triangle)
-{
-	return IsTriangleInFrustum(triangle.v0, triangle.v1, triangle.v2);
-}
-
-GPU_CALLABLE static
-void NDCToScreenSpace(RasterTriangle& triangle, const unsigned int width, const unsigned int height)
-{
-	NDCToScreenSpace(triangle.v0.xy, triangle.v1.xy, triangle.v2.xy, width, height);
-}
-
-GPU_CALLABLE static
-BoundingBox GetBoundingBox(const RasterTriangle& triangle, const unsigned int width, const unsigned int height)
-{
-	return GetBoundingBox(triangle.v0.xy, triangle.v1.xy, triangle.v2.xy, width, height);
-}
-
-#pragma endregion
 
 GPU_CALLABLE static
 bool IsPixelInBoundingBox(const FPoint2& pixel, const BoundingBox& bb)
@@ -226,8 +186,8 @@ bool IsPixelInBoundingBox(const FPoint2& pixel, const BoundingBox& bb)
 	return pixel.x < bb.xMin || pixel.x > bb.xMax || pixel.y < bb.yMin || pixel.y > bb.yMax;
 }
 
-GPU_CALLABLE GPU_INLINE static
-unsigned int GetStridedIdxByOffset(unsigned int globalDataIdx, unsigned int vertexStride, unsigned int valueStride, unsigned int offset = 0)
+GPU_CALLABLE static
+unsigned int GetStridedIdxByOffset(unsigned int globalDataIdx, unsigned int vertexStride, unsigned int valueStride, unsigned int offset)
 {
 	//what value in row of [0, valueStride] + what vertex globally + element offset
 	return (threadIdx.x % valueStride) + (globalDataIdx / valueStride) * vertexStride + offset;
@@ -264,7 +224,7 @@ void RasterizePixel(const FPoint2& pixel, const OVertex& v0, const OVertex& v1, 
 	const float v2InvDepth = 1.f / v2.p.w;
 
 	float weights[3];
-	if (IsPixelInTriangle(v0.p, v1.p, v2.p, pixel, weights))
+	if (IsPixelInTriangle(v0.p.xy, v1.p.xy, v2.p.xy, pixel, weights))
 	{
 		const float totalArea = abs(Cross(v0.p.xy - v1.p.xy, v0.p.xy - v2.p.xy));
 		weights[0] /= totalArea;
@@ -313,7 +273,7 @@ void RasterizePixel(const FPoint2& pixel, const OVertex& v0, const OVertex& v1, 
 			weights[0] * v0.c.r + weights[1] * v1.c.r + weights[2] * v2.c.r,
 			weights[0] * v0.c.g + weights[1] * v1.c.g + weights[2] * v2.c.g,
 			weights[0] * v0.c.b + weights[1] * v1.c.b + weights[2] * v2.c.b };
-		pixelShade.colour = RGBA::GetRGBAFromColour(interpolatedColour).colour32;
+		pixelShade.colour32 = RGBA::GetRGBAFromColour(interpolatedColour).colour32;
 
 		//store textures
 		pixelShade.textures = textures;
@@ -335,12 +295,8 @@ GPU_CALLABLE static
 void RasterizePixelAtomic(const FPoint2& pixel, const OVertex& v0, const OVertex& v1, const OVertex& v2,
 	int* dev_DepthBuffer, int* dev_DepthMutexBuffer, PixelShade* dev_PixelShadeBuffer, unsigned int width, const CUDATexturesCompact& textures)
 {
-	const float v0InvDepth = 1.f / v0.p.w;
-	const float v1InvDepth = 1.f / v1.p.w;
-	const float v2InvDepth = 1.f / v2.p.w;
-
 	float weights[3];
-	if (IsPixelInTriangle(v0.p, v1.p, v2.p, pixel, weights))
+	if (IsPixelInTriangle(v0.p.xy, v1.p.xy, v2.p.xy, pixel, weights))
 	{
 		const float totalArea = abs(Cross(v0.p.xy - v1.p.xy, v0.p.xy - v2.p.xy));
 		weights[0] /= totalArea;
@@ -353,7 +309,12 @@ void RasterizePixelAtomic(const FPoint2& pixel, const OVertex& v0, const OVertex
 		if (zInterpolated < 0 || zInterpolated > 1.f)
 			return;
 
-		const float wInterpolated = 1.f / (v0InvDepth * weights[0] + v1InvDepth * weights[1] + v2InvDepth * weights[2]);
+		const float invDepths[3] = {
+			1.f / v0.p.w,
+			1.f / v1.p.w,
+			1.f / v2.p.w };
+
+		const float wInterpolated = 1.f / (invDepths[0] * weights[0] + invDepths[1] * weights[1] + invDepths[2] * weights[2]);
 
 		//create pixelshade object (== fragment)
 		PixelShade pixelShade;
@@ -363,33 +324,25 @@ void RasterizePixelAtomic(const FPoint2& pixel, const OVertex& v0, const OVertex
 		pixelShade.wInterpolated = wInterpolated;
 
 		//uv
-		pixelShade.uv.x = weights[0] * (v0.uv.x * v0InvDepth) + weights[1] * (v1.uv.x * v1InvDepth) + weights[2] * (v2.uv.x * v2InvDepth);
-		pixelShade.uv.y = weights[0] * (v0.uv.y * v0InvDepth) + weights[1] * (v1.uv.y * v1InvDepth) + weights[2] * (v2.uv.y * v2InvDepth);
+		pixelShade.uv = InterpolateVector(v0.uv, v1.uv, v2.uv, weights, invDepths);
 		pixelShade.uv *= wInterpolated;
 
+		InterpolateColour(v0.c, v1.c, v2.c, weights, invDepths);
+
 		//normal
-		pixelShade.n.x = weights[0] * (v0.n.x * v0InvDepth) + weights[1] * (v1.n.x * v1InvDepth) + weights[2] * (v2.n.x * v2InvDepth);
-		pixelShade.n.y = weights[0] * (v0.n.y * v0InvDepth) + weights[1] * (v1.n.y * v1InvDepth) + weights[2] * (v2.n.y * v2InvDepth);
-		pixelShade.n.z = weights[0] * (v0.n.z * v0InvDepth) + weights[1] * (v1.n.z * v1InvDepth) + weights[2] * (v2.n.z * v2InvDepth);
+		pixelShade.n = InterpolateVector(v0.n, v1.n, v2.n, weights, invDepths);
 		pixelShade.n *= wInterpolated;
 
 		//tangent
-		pixelShade.tan.x = weights[0] * (v0.tan.x * v0InvDepth) + weights[1] * (v1.tan.x * v1InvDepth) + weights[2] * (v2.tan.x * v2InvDepth);
-		pixelShade.tan.y = weights[0] * (v0.tan.y * v0InvDepth) + weights[1] * (v1.tan.y * v1InvDepth) + weights[2] * (v2.tan.y * v2InvDepth);
-		pixelShade.tan.z = weights[0] * (v0.tan.z * v0InvDepth) + weights[1] * (v1.tan.z * v1InvDepth) + weights[2] * (v2.tan.z * v2InvDepth);
+		pixelShade.tan = InterpolateVector(v0.tan, v1.tan, v2.tan, weights, invDepths);
 
 		//view direction
-		pixelShade.vd.x = weights[0] * (v0.vd.x * v0InvDepth) + weights[1] * (v1.vd.x * v1InvDepth) + weights[2] * (v2.vd.x * v2InvDepth);
-		pixelShade.vd.y = weights[0] * (v0.vd.y * v0InvDepth) + weights[1] * (v1.vd.y * v1InvDepth) + weights[2] * (v2.vd.y * v2InvDepth);
-		pixelShade.vd.z = weights[0] * (v0.vd.z * v0InvDepth) + weights[1] * (v1.vd.z * v1InvDepth) + weights[2] * (v2.vd.z * v2InvDepth);
+		pixelShade.vd = InterpolateVector(v0.vd, v1.vd, v2.vd, weights, invDepths);
 		Normalize(pixelShade.vd);
 
-		//colour
-		const RGBColor interpolatedColour{
-			weights[0] * v0.c.r + weights[1] * v1.c.r + weights[2] * v2.c.r,
-			weights[0] * v0.c.g + weights[1] * v1.c.g + weights[2] * v2.c.g,
-			weights[0] * v0.c.b + weights[1] * v1.c.b + weights[2] * v2.c.b };
-		pixelShade.colour = RGBA::GetRGBAFromColour(interpolatedColour).colour32;
+		//colour		
+		const RGBColor interpolatedColour = InterpolateColour(v0.c, v1.c, v2.c, weights, invDepths);
+		pixelShade.colour32 = RGBA::GetRGBAFromColour(interpolatedColour).colour32;
 
 		//store textures
 		pixelShade.textures = textures;
@@ -420,7 +373,7 @@ void RasterizeTriangle(const BoundingBox& bb, const OVertex& v0, const OVertex& 
 
 GPU_CALLABLE GPU_INLINE static
 RGBColor ShadePixel(const CUDATexturesCompact& textures, const FVector2& uv, const FVector3& n, const FVector3& tan, const FVector3& vd,
-	SampleState sampleState, bool isFlipGreenChannel = false)
+	SampleState sampleState, bool isFlipGreenChannel)
 {
 	RGBColor finalColour{};
 

@@ -5,13 +5,12 @@
 //Project CUDA includes
 #include "CUDATextureSampler.cuh"
 #include "CUDAMatrixMath.cuh"
-#include "RasterizerOperations.cu"
+#include "CUDAROPs.cu"
 #include "CUDAStructs.h"
 #include "CUDATextureManager.h"
 
 #pragma region GLOBAL VARIABLES
 
-//CONST DEVICE MEMORY - Does NOT have to be allocated or freed
 constexpr unsigned int ConstMemorySize = 256;
 constexpr unsigned int CamPosIdx = 0;
 constexpr unsigned int CamFwdIdx = 3;
@@ -19,45 +18,28 @@ constexpr unsigned int WorldMatIdx = 6;
 constexpr unsigned int WVPMatIdx = 22;
 constexpr unsigned int RotMatIdx = 38;
 constexpr unsigned int IsFinishedBinningIdx = 39;
+
+//CONST DEVICE MEMORY - Does NOT have to be allocated or freed
 GPU_CONST_MEMORY float dev_ConstMemory[ConstMemorySize];
 //GPU_CONST_MEMORY float dev_CameraPos_const[sizeof(FPoint3) / sizeof(float)];
 //GPU_CONST_MEMORY float dev_WVPMatrix_const[sizeof(FMatrix4) / sizeof(float)];
 //GPU_CONST_MEMORY float dev_WorldMatrix_const[sizeof(FMatrix4) / sizeof(float)];
 //GPU_CONST_MEMORY float dev_RotationMatrix_const[sizeof(FMatrix3) / sizeof(float)];
 
-//DEVICE MEMORY - Does have to be allocated and freed
-static unsigned int* dev_FrameBuffer{};
-static int* dev_DepthBuffer{}; //defined as INTEGER type for atomicCAS to work properly
-static int* dev_DepthMutexBuffer{};
-static PixelShade* dev_PixelShadeBuffer{}; //(== fragmentbuffer)
-static unsigned int* dev_NumVisibleTriangles{};
-static unsigned int* dev_BinQueueSizes{};
-static unsigned int* dev_BinQueues{};
-static int* dev_BinQueueSizesMutexBuffer{}; //TODO: can be 16-bit to save memory?
-/*
-//DEPRECATED
-//Texture references have to be statically declared in global memory and bound to CUDA texture memory
-//They cannot be referenced in functions, nor used in arrays
-typedef texture<unsigned int, cudaTextureType2D, cudaReadModeElementType> CUDA32bTexture2D;
-static CUDA32bTexture2D dev_DiffuseTextureReference{};
-static CUDA32bTexture2D dev_NormalTextureReference{};
-static CUDA32bTexture2D dev_SpecularTextureReference{};
-static CUDA32bTexture2D dev_GlossinessTextureReference{};
-*/
-
 #pragma endregion
 
 //--------------------------
 
 CPU_CALLABLE
-CUDARenderer::CUDARenderer(const WindowHelper& windowHelper, IPoint2 numBins, IPoint2 binDim, unsigned int binQueueMaxSize)
-	: m_WindowHelper{ windowHelper }
-	, m_TotalNumTriangles{}
+CUDARenderer::CUDARenderer(const WindowHelper& windowHelper)
+	: m_TotalNumTriangles{}
 	, m_TotalVisibleNumTriangles{}
-	//, m_h_pFrameBuffer{}
+	, m_WindowHelper{ windowHelper }
+	, m_Dev_NumVisibleTriangles{}
+	, m_BinDim{}
 	, m_BenchMarker{}
-	, m_BinDim{ binDim }
-	, m_BinQueues{ (unsigned int)numBins.x, (unsigned int)numBins.y, binQueueMaxSize }
+	, m_BinQueues{}
+	, m_CUDAWindowHelper{}
 	, m_pCUDAMeshes{}
 {
 	AllocateCUDADeviceBuffers();
@@ -180,9 +162,9 @@ void CUDARenderer::DisplayGPUSpecs(int deviceId)
 
 #ifdef BINNING
 	std::cout << "\n---Triangle Binning enabled---\n";
-	std::cout << "Number of bins: " << m_BinQueues.NumQueuesX << " , " << m_BinQueues.NumQueuesY << '\n';
+	std::cout << "Number of bins: " << m_BinQueues.GetNumQueuesX() << " , " << m_BinQueues.GetNumQueuesY() << '\n';
 	std::cout << "Dimension per bin: " << m_BinDim.x << " , " << m_BinDim.y << '\n';
-	std::cout << "Queue size per bin: " << m_BinQueues.QueueMaxSize << '\n';
+	std::cout << "Queue size per bin: " << m_BinQueues.GetQueueMaxSize() << '\n';
 #else
 	std::cout << "\n---Triangle Binning disabled---\n";
 	std::cout << "Number of bins: 0, 0\n";
@@ -213,6 +195,13 @@ void CUDARenderer::LoadScene(const SceneGraph* pSceneGraph, const CUDATextureMan
 }
 
 CPU_CALLABLE
+void CUDARenderer::SetupBins(const IPoint2& numBins, const IPoint2& binDim, unsigned int binQueueMaxSize)
+{
+	m_BinQueues.Init(numBins.x, numBins.y, binQueueMaxSize);
+	m_BinDim = binDim;
+}
+
+CPU_CALLABLE
 void CUDARenderer::Render(const SceneManager& sm, const CUDATextureManager& tm, const Camera* pCamera)
 {
 	//Render Data
@@ -238,6 +227,9 @@ void CUDARenderer::Render(const SceneManager& sm, const CUDATextureManager& tm, 
 	float RasterizationMs{};
 	float PixelShadingMs{};
 #endif
+
+	cudaStream_t binnerStream;
+	CheckErrorCuda(cudaStreamCreate(&binnerStream));
 
 	m_TotalVisibleNumTriangles = 0;
 	for (CUDAMesh* pCudaMesh : m_pCUDAMeshes)
@@ -270,9 +262,9 @@ void CUDARenderer::Render(const SceneManager& sm, const CUDATextureManager& tm, 
 #endif
 
 		//Reset number of visible triangles
-		CheckErrorCuda(cudaMemset(dev_NumVisibleTriangles, 0, sizeof(unsigned int)));
-		//int binnerStatus = 0;
-		//CheckErrorCuda(cudaMemcpyToSymbol(dev_ConstMemory, &binnerStatus, sizeof(int), IsFinishedBinningIdx * 4));
+		CheckErrorCuda(cudaMemset(m_Dev_NumVisibleTriangles, 0, sizeof(unsigned int)));
+		int binnerStatus = 0;
+		CheckErrorCuda(cudaMemcpyToSymbol(dev_ConstMemory, &binnerStatus, sizeof(int), IsFinishedBinningIdx * 4));
 
 		//---STAGE 2---:  Perform Triangle Assembling
 		TriangleAssembler(pCudaMesh, camFwd, cm);
@@ -280,7 +272,7 @@ void CUDARenderer::Render(const SceneManager& sm, const CUDATextureManager& tm, 
 		//---END STAGE 2---
 
 		unsigned int& visibleNumTriangles = pCudaMesh->GetVisibleNumTriangles();
-		CheckErrorCuda(cudaMemcpy(&visibleNumTriangles, dev_NumVisibleTriangles, 4, cudaMemcpyDeviceToHost));
+		CheckErrorCuda(cudaMemcpy(&visibleNumTriangles, m_Dev_NumVisibleTriangles, 4, cudaMemcpyDeviceToHost));
 		m_TotalVisibleNumTriangles += visibleNumTriangles;
 
 #ifdef BENCHMARK
@@ -289,7 +281,8 @@ void CUDARenderer::Render(const SceneManager& sm, const CUDATextureManager& tm, 
 
 		//TODO: too many kernel launches
 		//persistent kernel approach + global atomic flag value set in host
-		const unsigned int numLoops = (visibleNumTriangles + (m_BinQueues.QueueMaxSize - 1)) / m_BinQueues.QueueMaxSize;
+		const unsigned int queueMaxSize = m_BinQueues.GetQueueMaxSize();
+		const unsigned int numLoops = (visibleNumTriangles + (queueMaxSize - 1)) / queueMaxSize;
 		for (unsigned int i{}; i < numLoops; ++i)
 		{
 
@@ -300,7 +293,7 @@ void CUDARenderer::Render(const SceneManager& sm, const CUDATextureManager& tm, 
 #endif
 
 			//---STAGE 3---:  Perform Output Vertex Assembling
-			TriangleBinner(pCudaMesh, i * m_BinQueues.QueueMaxSize);
+			TriangleBinner(pCudaMesh, i * queueMaxSize);
 			CheckErrorCuda(cudaDeviceSynchronize());
 			//---END STAGE 3---
 
@@ -316,11 +309,7 @@ void CUDARenderer::Render(const SceneManager& sm, const CUDATextureManager& tm, 
 			Rasterizer(pCudaMesh, camFwd, cm);
 			CheckErrorCuda(cudaDeviceSynchronize());
 
-			//reset queue sizes
-			const unsigned int size = m_BinQueues.NumQueuesX * m_BinQueues.NumQueuesY;
-			CheckErrorCuda(cudaMemset(dev_BinQueueSizes, 0, size * 4));
-			//reset queues
-			CheckErrorCuda(cudaMemset(dev_BinQueues, 0, m_BinQueues.NumQueuesX * m_BinQueues.NumQueuesY * m_BinQueues.QueueMaxSize * 4));
+			m_BinQueues.ResetQueueSizes();
 
 			////TODO: measure time from binnerstream with event
 			//WaitForStream(binnerStream);
@@ -389,13 +378,15 @@ int CUDARenderer::EnterValidRenderingState()
 CPU_CALLABLE
 void CUDARenderer::Present()
 {
-	//TODO: have Vertex Shader and Rasterizer run in parallel with cudamemcpy()
 	const size_t size = m_WindowHelper.Resolution.Width * m_WindowHelper.Resolution.Height * sizeof(unsigned int);
-	CheckErrorCuda(cudaMemcpy(m_WindowHelper.pBackBufferPixels, dev_FrameBuffer, size, cudaMemcpyDeviceToHost)); //We can directly read/write from pixelbuffer
-	//memcpy(m_WindowHelper.pBackBufferPixels, m_WindowHelper.h_BackBufferPixels, size);
-	SDL_UnlockSurface(m_WindowHelper.pBackBuffer); //Release a surface after directly accessing the pixels.
-	SDL_BlitSurface(m_WindowHelper.pBackBuffer, 0, m_WindowHelper.pFrontBuffer, 0); //Copy the window surface to the screen.
-	SDL_UpdateWindowSurface(m_WindowHelper.pWindow); //Update Window's surface
+	//We can directly read/write from pixelbuffer
+	CheckErrorCuda(cudaMemcpy(m_WindowHelper.pBackBufferPixels, m_CUDAWindowHelper.GetDev_FrameBuffer(), size, cudaMemcpyDeviceToHost));
+	//Release a surface after directly accessing the pixels.
+	SDL_UnlockSurface(m_WindowHelper.pBackBuffer);
+	//Copy the window surface to the screen.
+	SDL_BlitSurface(m_WindowHelper.pBackBuffer, 0, m_WindowHelper.pFrontBuffer, 0);
+	//Update Window's surface
+	SDL_UpdateWindowSurface(m_WindowHelper.pWindow);
 }
 
 CPU_CALLABLE
@@ -417,7 +408,7 @@ float CUDARenderer::StopTimer()
 CPU_CALLABLE
 void CUDARenderer::AllocateCUDADeviceBuffers()
 {
-	size_t size{};
+	unsigned int size{};
 	const unsigned int width = m_WindowHelper.Resolution.Width;
 	const unsigned int height = m_WindowHelper.Resolution.Height;
 
@@ -455,32 +446,7 @@ void CUDARenderer::AllocateCUDADeviceBuffers()
 	Using this flag with a current context associated with a device that does not have this attribute set will cause cudaHostRegister to error with cudaErrorNotSupported.
 	*/
 
-	//Invalid Argument
-	//SDL_LockSurface(m_WindowHelper.pBackBuffer);
-	//size = sizeof(unsigned int);
-	//CheckErrorCuda(cudaHostRegister(m_WindowHelper.pBackBufferPixels, width * height * size, cudaHostRegisterDefault));
-	//SDL_UnlockSurface(m_WindowHelper.pBackBuffer);;
-
-	size = sizeof(PixelShade);
-	CheckErrorCuda(cudaFree(dev_PixelShadeBuffer));
-	CheckErrorCuda(cudaMalloc((void**)&dev_PixelShadeBuffer, width * height * size));
-	CheckErrorCuda(cudaMemset(dev_PixelShadeBuffer, 0, width * height * size));
-
-	//The framebuffer in device memory
-	size = sizeof(unsigned int);
-	CheckErrorCuda(cudaFree(dev_FrameBuffer));
-	CheckErrorCuda(cudaMalloc((void**)&dev_FrameBuffer, width * height * size));
-	CheckErrorCuda(cudaMemset(dev_FrameBuffer, 0, width * height * size));
-
-	size = sizeof(int);
-	CheckErrorCuda(cudaFree(dev_DepthBuffer));
-	CheckErrorCuda(cudaMalloc((void**)&dev_DepthBuffer, width * height * size));
-	CheckErrorCuda(cudaMemset(dev_DepthBuffer, 0, width * height * size));
-
-	size = sizeof(int);
-	cudaFree(dev_DepthMutexBuffer);
-	cudaMalloc((void**)&dev_DepthMutexBuffer, width * height * size);
-	cudaMemset(dev_DepthMutexBuffer, 0, width * height * size);
+	m_CUDAWindowHelper.Init(width, height);
 
 	//NOTE: can only set data PER BYTE
 	//PROBLEM: setting each byte to UCHAR_MAX (255) is impossible, since floating point numbers work differently (-nan result)
@@ -497,29 +463,10 @@ void CUDARenderer::AllocateCUDADeviceBuffers()
 	//Option 3: interpret depth buffer invertedly, so a depthvalue of 1.f is closest, and 0.f is furthest away from camera
 	//>Option 4<: initialize and reset depthbuffer through additional kernel call, however this would be a lot of global memory accesses
 
-	//BINNING
 	size = sizeof(unsigned int);
-	cudaFree(dev_NumVisibleTriangles);
-	cudaMalloc((void**)&dev_NumVisibleTriangles, size);
-	cudaMemset(dev_NumVisibleTriangles, 0, size);
-
-	//actual arrays of triangle indexes
-	size = sizeof(unsigned int);
-	cudaFree(dev_BinQueues);
-	cudaMalloc((void**)&dev_BinQueues, m_BinQueues.NumQueuesX * m_BinQueues.NumQueuesY * m_BinQueues.QueueMaxSize * size);
-	cudaMemset(dev_BinQueues, 0, m_BinQueues.NumQueuesX * m_BinQueues.NumQueuesY * m_BinQueues.QueueMaxSize * size);
-
-	//actual size of arrays
-	size = sizeof(unsigned int);
-	cudaFree(dev_BinQueueSizes);
-	cudaMalloc((void**)&dev_BinQueueSizes, m_BinQueues.NumQueuesX * m_BinQueues.NumQueuesY * size);
-	cudaMemset(dev_BinQueueSizes, 0, m_BinQueues.NumQueuesX * m_BinQueues.NumQueuesY * size);
-
-	//mutex buffer to alter bin queue sizes
-	size = sizeof(int);
-	cudaFree(dev_BinQueueSizesMutexBuffer);
-	cudaMalloc((void**)&dev_BinQueueSizesMutexBuffer, m_BinQueues.NumQueuesX * m_BinQueues.NumQueuesY * size);
-	cudaMemset(dev_BinQueueSizesMutexBuffer, 0, m_BinQueues.NumQueuesX * m_BinQueues.NumQueuesY * size);
+	cudaFree(m_Dev_NumVisibleTriangles);
+	cudaMalloc((void**)&m_Dev_NumVisibleTriangles, size);
+	cudaMemset(m_Dev_NumVisibleTriangles, 0, size);
 }
 
 CPU_CALLABLE
@@ -554,34 +501,12 @@ void CUDARenderer::FreeCUDAMeshBuffers(CUDAMesh* pCudaMesh)
 CPU_CALLABLE
 void CUDARenderer::FreeCUDADeviceBuffers()
 {
-	//Free buffers
-	CheckErrorCuda(cudaFree(dev_BinQueueSizesMutexBuffer));
-	dev_BinQueueSizesMutexBuffer = nullptr;
+	m_BinQueues.Destroy();
 
-	CheckErrorCuda(cudaFree(dev_BinQueueSizes));
-	dev_BinQueueSizes = nullptr;
+	CheckErrorCuda(cudaFree(m_Dev_NumVisibleTriangles));
+	m_Dev_NumVisibleTriangles = nullptr;
 
-	CheckErrorCuda(cudaFree(dev_BinQueues));
-	dev_BinQueues = nullptr;
-
-	CheckErrorCuda(cudaFree(dev_NumVisibleTriangles));
-	dev_NumVisibleTriangles = nullptr;
-
-	CheckErrorCuda(cudaFree(dev_DepthMutexBuffer));
-	dev_DepthMutexBuffer = nullptr;
-
-	CheckErrorCuda(cudaFree(dev_DepthBuffer));
-	dev_DepthBuffer = nullptr;
-
-	CheckErrorCuda(cudaFree(dev_FrameBuffer));
-	dev_FrameBuffer = nullptr;
-
-	CheckErrorCuda(cudaFree(dev_PixelShadeBuffer));
-	dev_PixelShadeBuffer = nullptr;
-
-	//not allocated, but extra safety
-	//CheckErrorCuda(cudaFreeHost(m_h_pFrameBuffer));
-	//m_h_pFrameBuffer = nullptr;
+	m_CUDAWindowHelper.Destroy();
 
 	FreeAllCUDAMeshBuffers();
 }
@@ -606,8 +531,8 @@ void CUDARenderer::UpdateCUDAMeshTextures(CUDAMesh* pCudaMesh, const CUDATexture
 {
 	const Mesh* pMesh = pCudaMesh->GetMesh();
 	const int* texIds = pMesh->GetTextureIds();
-	CUDATexturesCompact& textures = pCudaMesh->GetTextures();
-	textures = GetCUDAMeshTextures(texIds, tm);
+	const CUDATexturesCompact textures = GetCUDAMeshTextures(texIds, tm);
+	pCudaMesh->SetTextures(textures);
 }
 
 CPU_CALLABLE
@@ -623,14 +548,14 @@ CUDATexturesCompact CUDARenderer::GetCUDAMeshTextures(const int* texIds, const C
 	CUDATexturesCompact textures{};
 	if (pDiff)
 	{
-		textures.Diff = *pDiff;
+		textures.Diff = CUDATextureCompact::CompactCUDATexture(*pDiff);
 		if (pNorm)
 		{
-			textures.Norm = *pNorm;
+			textures.Norm = CUDATextureCompact::CompactCUDATexture(*pNorm);
 			if (pSpec)
-				textures.Spec = *pSpec;
+				textures.Spec = CUDATextureCompact::CompactCUDATexture(*pSpec);
 			if (pGloss)
-				textures.Gloss = *pGloss;
+				textures.Gloss = CUDATextureCompact::CompactCUDATexture(*pGloss);
 		}
 	}
 	return textures;
@@ -691,16 +616,16 @@ void ClearScreenKernel(PixelShade* dev_PixelShadeBuffer, const unsigned int widt
 	if (x < width && y < height)
 	{
 		const unsigned int pixelIdx = x + y * width;
-		dev_PixelShadeBuffer[pixelIdx].colour = colour32;
+		dev_PixelShadeBuffer[pixelIdx].colour32 = colour32;
 	}
 }
 
 GPU_KERNEL
-void ClearPixelShadeBufferKernel(PixelShade* dev_PixelShadeBuffer, const unsigned int sizeInWords)
+void ClearPixelShadeBufferKernel(PixelShade* dev_PixelShadeBuffer, const unsigned int sizeInWORDs)
 {
 	//every thread sets 1 WORD of data
 	const unsigned int idx = threadIdx.x + blockIdx.x * blockDim.x;
-	if (idx < sizeInWords)
+	if (idx < sizeInWORDs)
 	{
 		reinterpret_cast<float*>(dev_PixelShadeBuffer)[idx] = 0.f;
 	}
@@ -719,9 +644,19 @@ void ClearDepthMutexBufferKernel(int* dev_MutexBuffer, const unsigned int width,
 }
 
 GPU_KERNEL
-void Clear()
+void ClearBuffers(unsigned int* dev_FrameBuffer, int* dev_DepthBuffer, int value, int* dev_DepthMutexBuffer, const unsigned int width, const unsigned int height, unsigned int colour32)
 {
-	//TODO: clear depthbuffer, framebuffer and pixelshadebuffer
+	const unsigned int x = threadIdx.x + blockIdx.x * blockDim.x;
+	const unsigned int y = threadIdx.y + blockIdx.y * blockDim.y;
+	if (x < width && y < height)
+	{
+		const unsigned int pixelIdx = x + y * width;
+		dev_FrameBuffer[pixelIdx] = colour32;
+		//__syncthreads(); //for synchronised coalesced global access
+		dev_DepthBuffer[pixelIdx] = value;
+		//__syncthreads(); //for synchronised coalesced global access
+		dev_DepthMutexBuffer[pixelIdx] = 0;
+	}
 }
 
 #pragma endregion
@@ -916,7 +851,7 @@ void PixelShaderKernel(unsigned int* dev_FrameBuffer, const PixelShade* __restri
 			if (textures.Diff.dev_pTex != 0)
 			{
 				RGBColor colour = ShadePixel(pixelShade.textures, pixelShade.uv, pixelShade.n, pixelShade.tan, pixelShade.vd, sampleState);
-				rgba = colour; //== GetRGBAFromColour()
+				rgba = RGBA::GetRGBAFromColour(colour);
 				dev_FrameBuffer[pixelIdx] = rgba.colour32;
 
 				//normal visualisation
@@ -926,7 +861,7 @@ void PixelShaderKernel(unsigned int* dev_FrameBuffer, const PixelShade* __restri
 			}
 			else
 			{
-				dev_FrameBuffer[pixelIdx] = pixelShade.colour;
+				dev_FrameBuffer[pixelIdx] = pixelShade.colour32;
 			}
 		}
 	}
@@ -1029,7 +964,6 @@ void TriangleAssemblerAndBinnerKernel(TriangleIdx* dev_Triangles, const unsigned
 	memcpy(&dev_Triangles[triangleIdx], &triangle, sizeof(TriangleIdx));
 
 	//BINNING
-	//TODO: make separate kernel bc register usage is too high
 
 	//assign to correct bin(s), with globalTriangleIdx corresponding to its bin
 	//each bin is a part of the window (have multiple atomic buffers for each bin)
@@ -1058,28 +992,37 @@ void TriangleAssemblerAndBinnerKernel(TriangleIdx* dev_Triangles, const unsigned
 			//atomically add triangle to bin queue
 			const unsigned int binIdx = x + y * numBins.x;
 
-			bool isDone = false;
-			do
-			{
-				isDone = (atomicCAS(&dev_BinQueueSizesMutexBuffer[binIdx], 0, 1) == 0);
-				if (isDone)
-				{
-					//critical section
-					const unsigned int currQueueSize = dev_BinQueueSizes[binIdx];
-					if (currQueueSize < binQueueMaxSize)
-					{
-						//insert triangle Idx in queue
-						dev_BinQueues[binIdx * binQueueMaxSize + currQueueSize] = triangleIdx;
-						//increase bin's queue size
-						++dev_BinQueueSizes[binIdx];
-					}
-					dev_BinQueueSizesMutexBuffer[binIdx] = 0;
-					//end of critical section
-				}
-			} while (!isDone);
+			//Deliberately not using a helper struct, since it would waste (note: A LOT of) memory and operations
+			CUDAAtomicQueueOP::Insert(&dev_BinQueues[binIdx * binQueueMaxSize], 
+				dev_BinQueueSizes[binIdx], 
+				dev_BinQueueSizesMutexBuffer[binIdx], 
+				binQueueMaxSize, 
+				triangleIdx);
+
+			//bool isDone = false;
+			//do
+			//{
+			//	isDone = (atomicCAS(&dev_BinQueueSizesMutexBuffer[binIdx], 0, 1) == 0);
+			//	if (isDone)
+			//	{
+			//		//critical section
+			//		const unsigned int currQueueSize = dev_BinQueueSizes[binIdx];
+			//		if (currQueueSize < binQueueMaxSize)
+			//		{
+			//			//insert triangle Idx in queue
+			//			dev_BinQueues[binIdx * binQueueMaxSize + currQueueSize] = triangleIdx;
+			//			//increase bin's queue size
+			//			++dev_BinQueueSizes[binIdx];
+			//		}
+			//		dev_BinQueueSizesMutexBuffer[binIdx] = 0;
+			//		//end of critical section
+			//	}
+			//} while (!isDone);
 		}
 	}
 }
+
+//TODO: templated kernel, for bin queues of datatype T (unsigned int TriangleIdx)
 
 GPU_KERNEL
 void TriangleBinnerKernel(TriangleIdx* dev_Triangles, unsigned int numVisibleTriangles, unsigned int triangleIdxOffset,
@@ -1091,6 +1034,11 @@ void TriangleBinnerKernel(TriangleIdx* dev_Triangles, unsigned int numVisibleTri
 	//data size of 9 shows no bank conflicts!
 	//TriangleIdx can stay in local memory (registers)
 	//DEPENDS ON REGISTER USAGE
+
+	//IDEA: (concept taken from Laine et al.)
+	//Shared memory as a list of bits, 48 bytes per triangle(/thread), which covers 384 bins (== bits)
+	//This will maximize occupancy for any amount of threads per block
+	//Less amount of bins is applicable too
 
 	//each thread bins 1 triangle
 	const unsigned int triangleIdx = blockIdx.x * blockDim.x + threadIdx.x + triangleIdxOffset;
@@ -1108,10 +1056,10 @@ void TriangleBinnerKernel(TriangleIdx* dev_Triangles, unsigned int numVisibleTri
 		NDCToScreenSpace(p0, p1, p2, width, height);
 		const BoundingBox triangleBb = GetBoundingBox(p0, p1, p2, width, height);
 
-		int binMinX = (triangleBb.xMin) / binDim.x; //most left bin
-		int binMinY = (triangleBb.yMin) / binDim.y; //most bottom bin
-		int binMaxX = (triangleBb.xMax) / binDim.x; //most right bin
-		int binMaxY = (triangleBb.yMax) / binDim.y; //most top bin
+		int binMinX = triangleBb.xMin / binDim.x; //most left bin
+		int binMinY = triangleBb.yMin / binDim.y; //most bottom bin
+		int binMaxX = triangleBb.xMax / binDim.x; //most right bin
+		int binMaxY = triangleBb.yMax / binDim.y; //most top bin
 		binMinX = ClampFast(binMinX, 0, numBins.x);
 		binMinY = ClampFast(binMinY, 0, numBins.y);
 		binMaxX = ClampFast(binMaxX, 0, numBins.x - 1);
@@ -1174,7 +1122,6 @@ void RasterizerPerBinKernel(const TriangleIdx* __restrict__ const dev_Triangles,
 	const unsigned int queueSize = dev_BinQueueSizes[binIdx];
 	if (threadIdx.x < queueSize)
 	{
-
 		//each thread processes 1 triangle
 		const unsigned int triangleIdx = dev_BinQueues[binIdx * binQueueMaxSize + threadIdx.x];
 
@@ -1209,13 +1156,10 @@ void RasterizerPerBinKernel(const TriangleIdx* __restrict__ const dev_Triangles,
 GPU_KERNEL
 void RasterizerPerTileKernel(const TriangleIdx* __restrict__ const dev_Triangles, const OVertex* __restrict__ const dev_OVertices,
 	PixelShade* dev_PixelShadeBuffer, int* dev_DepthBuffer, int* dev_DepthMutexBuffer, CUDATexturesCompact textures,
-	unsigned int* dev_BinQueues, unsigned int* dev_BinQueueSizes, int* dev_BinQueueSizesMutexBuffer, IPoint2 binDim, unsigned int binQueueMaxSize, 
+	unsigned int* dev_BinQueues, unsigned int* dev_BinQueueSizes, int* dev_BinQueueSizesMutexBuffer, IPoint2 binDim, unsigned int binQueueMaxSize,
 	const unsigned int pixelCoverageX, const unsigned int pixelCoverageY, const unsigned int width, const unsigned int height)
 {
 	//TODO: blocksize.x == binQueueMaxSize
-
-	//extern GPU_SHARED_MEMORY unsigned int triangleQueueBuffer[];
-	//GPU_SHARED_MEMORY float triangleData[(sizeof(OVertex) / 4) * 3];
 
 	//each block processes 1 bin
 	const unsigned int binIdx = blockIdx.x + blockIdx.y * gridDim.x;
@@ -1239,6 +1183,53 @@ void RasterizerPerTileKernel(const TriangleIdx* __restrict__ const dev_Triangles
 	bb.yMin = ClampFast(bb.yMin, (short)minY, (short)maxY);
 	bb.yMax = ClampFast(bb.yMax, (short)minY, (short)maxY);
 
+#ifdef FINERASTER_SHAREDMEM
+	//Occupancy stays higher due to less shared memory usage/block
+	//CONCERN: occupancy is already low due to high register usage
+	//Perhaps use this big amount of shared memory paired with the higher register usage to "mask" them
+
+	extern GPU_SHARED_MEMORY float positionsBuffer[];
+
+	if (threadIdx.x < queueSize)
+	{
+		const unsigned int binQueueIdx = dev_BinQueues[binIdx * binQueueMaxSize + threadIdx.x];
+		const TriangleIdx triangle = dev_Triangles[binQueueIdx];
+
+		const OVertex& v0 = dev_OVertices[triangle.idx0];
+		const OVertex& v1 = dev_OVertices[triangle.idx1];
+		const OVertex& v2 = dev_OVertices[triangle.idx2];
+
+		//each thread stores 3 FPoint4's into shared memory at once
+		//Only then copy OVertex_Data when pixel is in triangle
+		//This will actually maximize the occupancy of shared memory usage for every thread block
+		FPoint4* pPositions = reinterpret_cast<FPoint4*>(positionsBuffer);
+
+		//Disadvantage: 2 global memory accesses
+		//Advantage: fast copy of all Positions into shared memory and faster access
+		OVertex_PosShared test0{};
+		OVertex_PosShared test1{};
+		OVertex_PosShared test2{};
+		test0.pPos = &pPositions[threadIdx.x];
+		test1.pPos = &pPositions[threadIdx.x + 1];
+		test2.pPos = &pPositions[threadIdx.x + 2];
+
+		//copy to shared memory
+		*test0.pPos = v0.p;
+		*test1.pPos = v1.p;
+		*test2.pPos = v2.p;
+
+		//copy to local memory
+		memcpy(&test0.vData, &v0 + sizeof(FPoint4), sizeof(OVertexData));
+		memcpy(&test1.vData, &v1 + sizeof(FPoint4), sizeof(OVertexData));
+		memcpy(&test2.vData, &v2 + sizeof(FPoint4), sizeof(OVertexData));
+
+		//acts as a barrier for shared memory
+		__syncthreads();
+
+		NDCToScreenSpace(test0.pPos->xy, test1.pPos->xy, test2.pPos->xy, width, height);
+		RasterizeTriangle(bb, v0, v1, v2, dev_DepthMutexBuffer, dev_DepthBuffer, dev_PixelShadeBuffer, width, textures);
+	}
+#else
 	for (unsigned int currQueueIdx{}; currQueueIdx < queueSize; ++currQueueIdx)
 	{
 		const unsigned int triangleIdx = dev_BinQueues[binIdx * binQueueMaxSize + currQueueIdx];
@@ -1250,10 +1241,8 @@ void RasterizerPerTileKernel(const TriangleIdx* __restrict__ const dev_Triangles
 		NDCToScreenSpace(v0.p.xy, v1.p.xy, v2.p.xy, width, height);
 		//Rasterize Screenspace triangle
 		RasterizeTriangle(bb, v0, v1, v2, dev_DepthMutexBuffer, dev_DepthBuffer, dev_PixelShadeBuffer, width, textures);
-
-		////acts as a block barrier for shared memory usage
-		//__syncthreads();
 	}
+#endif
 }
 
 #pragma endregion
@@ -1393,7 +1382,6 @@ void TriangleAssemblerKernelOld(TriangleIdx* dev_Triangles, const unsigned int* 
 			if (isOdd)
 			{
 				//swap without temp
-				//TODO: what about indexes at UINT_MAX? => would just overflow and back
 				triangle.idx1 = triangle.idx1 + triangle.idx2;
 				triangle.idx2 = triangle.idx1 - triangle.idx2;
 				triangle.idx1 = triangle.idx1 - triangle.idx2;
@@ -1432,7 +1420,7 @@ void RasterizerPerPixelKernel(const TriangleIdx* __restrict__ dev_Triangles, con
 		OVertex v1 = dev_OVertices[triangleIdx.idx1];
 		OVertex v2 = dev_OVertices[triangleIdx.idx2];
 
-		if (!IsTriangleVisible(v0.p, v1.p, v2.p))
+		if (!IsTriangleVisible(v0.p.xyz, v1.p.xyz, v2.p.xyz))
 		{
 			return;
 		}
@@ -1522,7 +1510,7 @@ void RasterizerPerTriangleKernelOld(const TriangleIdx* __restrict__ const dev_Tr
 	//{
 	//}
 
-	if (!IsTriangleVisible(v0.p, v1.p, v2.p))
+	if (!IsTriangleVisible(v0.p.xyz, v1.p.xyz, v2.p.xyz))
 	{
 		return;
 	}
@@ -1604,6 +1592,12 @@ void CUDARenderer::Clear(const RGBColor& colour)
 	const unsigned int width = m_WindowHelper.Resolution.Width;
 	const unsigned int height = m_WindowHelper.Resolution.Height;
 
+	//WINDOW BUFFER DATA
+	unsigned int* dev_FrameBuffer = m_CUDAWindowHelper.GetDev_FrameBuffer();
+	int* dev_DepthBuffer = m_CUDAWindowHelper.GetDev_DepthBuffer();
+	int* dev_DepthMutexBuffer = m_CUDAWindowHelper.GetDev_DepthMutexBuffer();
+	PixelShade* dev_PixelShadeBuffer = m_CUDAWindowHelper.GetDev_FragmentBuffer();
+
 	//TODO: async in stream
 	{
 		constexpr int depthBufferResetValue = INT_MAX;
@@ -1622,7 +1616,7 @@ void CUDARenderer::Clear(const RGBColor& colour)
 	}
 
 	{
-		////UNNECESSARY STEP: pixelshade stage will overwrite this anyway + more kernel launch overhead
+		//UNNECESSARY STEP: pixelshade stage will overwrite this anyway + more kernel launch overhead
 		const RGBA rgba{ colour };
 		const dim3 numThreadsPerBlock{ 32, 32 };
 		const dim3 numBlocks{ width / numThreadsPerBlock.x, height / numThreadsPerBlock.y };
@@ -1685,19 +1679,21 @@ void CUDARenderer::TriangleAssembler(const CUDAMesh* pCudaMesh, const FVector3& 
 	const unsigned int width = m_WindowHelper.Resolution.Width;
 	const unsigned int height = m_WindowHelper.Resolution.Height;
 
-	const unsigned int numTriangles = pCudaMesh->GetTotalNumTriangles();
+	//MESH DATA
 	const Mesh* pMesh = pCudaMesh->GetMesh();
-	const unsigned int numIndices = pMesh->GetNumIndices();
 	const PrimitiveTopology topology = pMesh->GetTopology();
+	const unsigned int numIndices = pMesh->GetNumIndices();
+	const unsigned int numTriangles = pCudaMesh->GetTotalNumTriangles();
 
 	const unsigned int* dev_IndexBuffer = pCudaMesh->GetDevIndexBuffer();
 	const OVertex* dev_OVertexBuffer = pCudaMesh->GetDevOVertexBuffer();
 	TriangleIdx* dev_TriangleBuffer = pCudaMesh->GetDevTriangleBuffer();
 
+	//KERNEL LAUNCH PARAMS
 	const unsigned int numThreadsPerBlock = 256;
 	const unsigned int numBlocks = (numTriangles + (numThreadsPerBlock - 1)) / numThreadsPerBlock;
 	TriangleAssemblerKernel<<<numBlocks, numThreadsPerBlock, 0, stream>>>(
-		dev_TriangleBuffer, dev_IndexBuffer, numIndices, dev_NumVisibleTriangles,
+		dev_TriangleBuffer, dev_IndexBuffer, numIndices, m_Dev_NumVisibleTriangles,
 		dev_OVertexBuffer, topology, cm, camFwd,
 		width, height);
 
@@ -1711,19 +1707,27 @@ void CUDARenderer::TriangleBinner(const CUDAMesh* pCudaMesh, const unsigned int 
 {
 	const unsigned int width = m_WindowHelper.Resolution.Width;
 	const unsigned int height = m_WindowHelper.Resolution.Height;
-	const unsigned int numVisibleTriangles = pCudaMesh->GetVisibleNumTrianglesConst();
-	const IPoint2 numBins = { (int)m_BinQueues.NumQueuesX, (int)m_BinQueues.NumQueuesY };
 
+	//MESH DATA
+	const unsigned int numVisibleTriangles = pCudaMesh->GetVisibleNumTrianglesConst();
 	const OVertex* dev_OVertexBuffer = pCudaMesh->GetDevOVertexBuffer();
 	TriangleIdx* dev_TriangleBuffer = pCudaMesh->GetDevTriangleBuffer();
 
-	const unsigned int numThreadsPerBlock = m_BinQueues.QueueMaxSize;
+	//BINNING DATA
+	unsigned int binQueuesMaxSize = m_BinQueues.GetQueueMaxSize();
+	const IPoint2 numBins = { (int)m_BinQueues.GetNumQueuesX(), (int)m_BinQueues.GetNumQueuesY() };
+	unsigned int* dev_BinQueueSizes = m_BinQueues.GetDev_QueueSizes();
+	unsigned int* dev_BinQueues = m_BinQueues.GetDev_Queues();
+	int* dev_BinQueueSizesMutexBuffer = m_BinQueues.GetDev_QueueSizesMutexBuffer();
+
+	//KERNEL LAUNCH PARAMS
+	const unsigned int numThreadsPerBlock = m_BinQueues.GetQueueMaxSize();
 	const unsigned int numBlocks = 1;
 	TriangleBinnerKernel<<<numBlocks, numThreadsPerBlock, 0, stream>>>(
 		dev_TriangleBuffer, numVisibleTriangles, triangleIdxOffset,
 		dev_BinQueueSizes, dev_BinQueues, dev_BinQueueSizesMutexBuffer,
 		dev_OVertexBuffer,
-		numBins, m_BinDim, m_BinQueues.QueueMaxSize, width, height);
+		numBins, m_BinDim, binQueuesMaxSize, width, height);
 }
 
 CPU_CALLABLE
@@ -1731,23 +1735,37 @@ void CUDARenderer::TriangleAssemblerAndBinner(const CUDAMesh* pCudaMesh, const F
 {
 	const unsigned int width = m_WindowHelper.Resolution.Width;
 	const unsigned int height = m_WindowHelper.Resolution.Height;
+
+	//WINDOW BUFFER DATA
+	unsigned int* dev_FrameBuffer = m_CUDAWindowHelper.GetDev_FrameBuffer();
+	PixelShade* dev_PixelShadeBuffer = m_CUDAWindowHelper.GetDev_FragmentBuffer();
+	int* dev_DepthBuffer = m_CUDAWindowHelper.GetDev_DepthBuffer();
+	int* dev_DepthMutexBuffer = m_CUDAWindowHelper.GetDev_DepthMutexBuffer();
+
+	//MESH DATA
 	const Mesh* pMesh = pCudaMesh->GetMesh();
 	const unsigned int numIndices = pMesh->GetNumIndices();
 	const PrimitiveTopology topology = pMesh->GetTopology();
 	const unsigned int numTriangles = pCudaMesh->GetTotalNumTriangles();
-	const IPoint2 numBins = { (int)m_BinQueues.NumQueuesX, (int)m_BinQueues.NumQueuesY };
 
 	const unsigned int* dev_IndexBuffer = pCudaMesh->GetDevIndexBuffer();
 	const OVertex* dev_OVertexBuffer = pCudaMesh->GetDevOVertexBuffer();
 	TriangleIdx* dev_TriangleBuffer = pCudaMesh->GetDevTriangleBuffer();
 
+	//BINNING DATA
+	unsigned int binQueueMaxSize = m_BinQueues.GetQueueMaxSize();
+	const IPoint2 numBins = { (int)m_BinQueues.GetNumQueuesX(), (int)m_BinQueues.GetNumQueuesY() };
+	unsigned int* dev_BinQueueSizes = m_BinQueues.GetDev_QueueSizes();
+	unsigned int* dev_BinQueues = m_BinQueues.GetDev_Queues();
+	int* dev_BinQueueSizesMutexBuffer = m_BinQueues.GetDev_QueueSizesMutexBuffer();
+
 	const unsigned int numThreadsPerBlock = 256;
 	const unsigned int numBlocks = (numTriangles + (numThreadsPerBlock - 1)) / numThreadsPerBlock;
 	TriangleAssemblerAndBinnerKernel<<<numBlocks, numThreadsPerBlock, 0, stream>>>(
-		dev_TriangleBuffer, dev_IndexBuffer, numIndices, dev_NumVisibleTriangles,
+		dev_TriangleBuffer, dev_IndexBuffer, numIndices, m_Dev_NumVisibleTriangles,
 		dev_BinQueueSizes, dev_BinQueues, dev_BinQueueSizesMutexBuffer,
 		dev_OVertexBuffer, topology, cm, camFwd,
-		numBins, m_BinDim, m_BinQueues.QueueMaxSize, width, height);
+		numBins, m_BinDim, binQueueMaxSize, width, height);
 }
 
 CPU_CALLABLE
@@ -1755,14 +1773,29 @@ void CUDARenderer::Rasterizer(const CUDAMesh* pCudaMesh, const FVector3& camFwd,
 {
 	const unsigned int width = m_WindowHelper.Resolution.Width;
 	const unsigned int height = m_WindowHelper.Resolution.Height;
+
+	//WINDOW BUFFER DATA
+	unsigned int* dev_FrameBuffer = m_CUDAWindowHelper.GetDev_FrameBuffer();
+	PixelShade* dev_PixelShadeBuffer = m_CUDAWindowHelper.GetDev_FragmentBuffer();
+	int* dev_DepthBuffer = m_CUDAWindowHelper.GetDev_DepthBuffer();
+	int* dev_DepthMutexBuffer = m_CUDAWindowHelper.GetDev_DepthMutexBuffer();
+
+	//MESH DATA
+	const CUDATexturesCompact& textures = pCudaMesh->GetTextures();
 	const OVertex* dev_OVertexBuffer = pCudaMesh->GetDevOVertexBuffer();
-	const CUDATexturesCompact& textures = pCudaMesh->GetTexturesConst();
 	TriangleIdx* dev_TriangleBuffer = pCudaMesh->GetDevTriangleBuffer();
+
+	//BINNING DATA
+	unsigned int binQueuesMaxSize = m_BinQueues.GetQueueMaxSize();
+	const IPoint2 numBins = { (int)m_BinQueues.GetNumQueuesX(), (int)m_BinQueues.GetNumQueuesY() };
+	unsigned int* dev_BinQueueSizes = m_BinQueues.GetDev_QueueSizes();
+	unsigned int* dev_BinQueues = m_BinQueues.GetDev_Queues();
+	int* dev_BinQueueSizesMutexBuffer = m_BinQueues.GetDev_QueueSizesMutexBuffer();
 
 #ifdef BINNING
 #ifdef FINERASTER
 	const dim3 numThreadsPerBlock = { 16, 16 };
-	const dim3 numBlocks = { m_BinQueues.NumQueuesX, m_BinQueues.NumQueuesY };
+	const dim3 numBlocks = { m_BinQueues.GetNumQueuesX(), m_BinQueues.GetNumQueuesY() };
 	//const unsigned int numSharedMemory = m_BinQueues.QueueMaxSize * 4 + 4; //queue array + 1 queue size
 
 	//pixel coverage per thread
@@ -1772,8 +1805,9 @@ void CUDARenderer::Rasterizer(const CUDAMesh* pCudaMesh, const FVector3& camFwd,
 		dev_TriangleBuffer, dev_OVertexBuffer,
 		dev_PixelShadeBuffer, dev_DepthBuffer, dev_DepthMutexBuffer, textures,
 		dev_BinQueues, dev_BinQueueSizes, dev_BinQueueSizesMutexBuffer, m_BinDim,
-		m_BinQueues.QueueMaxSize, pixelCoverageX, pixelCoverageY, width, height);
-	//TODO: each block iterates through entire queue array, how about each block only does 1 triangle of 1 queue *smirk*
+		binQueuesMaxSize, pixelCoverageX, pixelCoverageY, width, height);
+	//TODO: each block iterates through entire queue array, 
+	//each block should do 1 triangle of 1 queue
 #else
 	constexpr unsigned int numThreadsPerBlock = 256;
 	const dim3 numBlocks = { m_BinQueues.NumQueuesX, m_BinQueues.NumQueuesY };
@@ -1830,6 +1864,9 @@ void CUDARenderer::PixelShader(SampleState sampleState, bool isDepthColour)
 	const unsigned int width = m_WindowHelper.Resolution.Width;
 	const unsigned int height = m_WindowHelper.Resolution.Height;
 
+	unsigned int* dev_FrameBuffer = m_CUDAWindowHelper.GetDev_FrameBuffer();
+	PixelShade* dev_PixelShadeBuffer = m_CUDAWindowHelper.GetDev_FragmentBuffer();
+
 	const dim3 numThreadsPerBlock{ 16, 16 };
 	const dim3 numBlocks{ width / numThreadsPerBlock.x, height / numThreadsPerBlock.y };
 	PixelShaderKernel<<<numBlocks, numThreadsPerBlock>>>(
@@ -1844,6 +1881,9 @@ void CUDARenderer::DrawTexture(char* tP)
 	texture.Create(tP);
 
 	EnterValidRenderingState();
+
+	//WINDOW BUFFER DATA
+	unsigned int* dev_FrameBuffer = m_CUDAWindowHelper.GetDev_FrameBuffer();
 
 	const CUDATextureCompact texCompact{ texture };
 
@@ -1863,6 +1903,9 @@ void CUDARenderer::DrawTextureGlobal(char* tp, bool isStretchedToWindow, SampleS
 	texture.Create(tp);
 
 	EnterValidRenderingState();
+
+	//WINDOW BUFFER DATA
+	unsigned int* dev_FrameBuffer = m_CUDAWindowHelper.GetDev_FrameBuffer();
 
 	const CUDATextureCompact texCompact{ texture };
 

@@ -124,11 +124,12 @@ xcopy "$(SolutionDir)3rdParty\lib\vld\x64\Microsoft.DTfW.DHL.manifest" "$(OutDir
     </CudaLink>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <CudaCompile Include="CUDAROPs.cu" />
     <CudaCompile Include="main.cpp" />
     <CudaCompile Include="CUDARenderer.cu">
       <FileType>Document</FileType>
     </CudaCompile>
-    <CudaCompile Include="RasterizerOperations.cu" />
+    <CudaCompile Include="CUDAROPs.cuh" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="Camera.cpp" />
@@ -164,6 +165,7 @@ xcopy "$(SolutionDir)3rdParty\lib\vld\x64\Microsoft.DTfW.DHL.manifest" "$(OutDir
     <ClInclude Include="CUDAMesh.h" />
     <ClInclude Include="CUDAStructs.h" />
     <ClInclude Include="CUDATexture.h" />
+    <ClInclude Include="CUDAWindowHelper.h" />
     <ClInclude Include="CullingMode.h" />
     <ClInclude Include="DEFINES.h" />
     <ClInclude Include="DirectionalLight.h" />

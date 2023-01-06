@@ -3,7 +3,6 @@
 
 CUDAMesh::CUDAMesh(const unsigned int idx, const Mesh* pMesh)
 	: m_Idx{ idx }
-	, m_TotalNumTriangles{}
 	, m_VisibleNumTriangles{}
 	, m_pMesh{ pMesh }
 	, m_Dev_IVertexBuffer{}
@@ -18,6 +17,23 @@ CUDAMesh::CUDAMesh(const unsigned int idx, const Mesh* pMesh)
 CUDAMesh::~CUDAMesh()
 {
 	Free();
+}
+
+unsigned int CUDAMesh::GetTotalNumTriangles() const
+{
+	const PrimitiveTopology topology = m_pMesh->GetTopology();
+	const unsigned int numIndices = m_pMesh->GetNumIndices();
+	unsigned int numTriangles{};
+	switch (topology)
+	{
+	case PrimitiveTopology::TriangleList:
+		numTriangles += numIndices / 3;
+		break;
+	case PrimitiveTopology::TriangleStrip:
+		numTriangles += numIndices - 2;
+		break;
+	}
+	return numTriangles;
 }
 
 void CUDAMesh::Allocate()
@@ -38,7 +54,6 @@ void CUDAMesh::Allocate()
 		numTriangles += numIndices - 2;
 		break;
 	}
-	m_TotalNumTriangles = numTriangles;
 
 	//Allocate Input Vertex Buffer
 	CheckErrorCuda(cudaMalloc((void**)&m_Dev_IVertexBuffer, numVertices * sizeof(IVertex)));

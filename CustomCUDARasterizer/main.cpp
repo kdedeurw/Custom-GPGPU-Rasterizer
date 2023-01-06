@@ -20,6 +20,22 @@
 #include <curand_kernel.h>
 #include <curand.h>
 
+int AddTexture(CUDATextureManager& tm, const std::string& texPath)
+{
+	if (texPath.empty())
+		return -1;
+
+	CUDATexture* pCUDATexture = new CUDATexture{};
+	pCUDATexture->Create(texPath.c_str());
+	if (!pCUDATexture->IsAllocated())
+	{
+		std::cout << "!Error: AddTexture > Texture is invalid and not allocated! (Wrong path?)\n";
+		std::cout << "Path: \"" << texPath << "\"\n";
+		return -1;
+	}
+	return tm.AddCUDATexture(pCUDATexture);
+}
+
 void CreateScenes(SceneManager& sm, CUDATextureManager& tm)
 {
 	std::vector<SceneGraph*> pSceneGraphs{};
@@ -39,7 +55,7 @@ void CreateScenes(SceneManager& sm, CUDATextureManager& tm)
 	//			{ FPoint3{ -1.f, 0.f, 0.f }, RGBColor{1.f, 1.f, 1.f} },
 	//			{ FPoint3{ 1.f, 0.f, 0.f }, RGBColor{1.f, 1.f, 1.f} } };
 	//		std::vector<unsigned int> indices = { 0, 1, 2 };
-	//		Mesh* pTriangle = new Mesh{ vertices, indices, PrimitiveTopology::TriangleList };
+	//		Mesh* pTriangle = new Mesh{ vertices, vertexStride, vertexType, indices, PrimitiveTopology::TriangleList };
 	//		pSceneGraph->AddMesh(pTriangle);
 	//	}
 	//	{
@@ -49,7 +65,7 @@ void CreateScenes(SceneManager& sm, CUDATextureManager& tm)
 	//			{ FPoint3{ -3.f, -2.f, -2.f }, RGBColor{0.f, 1.f, 0.f} },
 	//			{ FPoint3{ 3.f, -2.f, -2.f }, RGBColor{0.f, 0.f, 1.f} } };
 	//		std::vector<unsigned int> indices = { 0, 1, 2 };
-	//		Mesh* pTriangle = new Mesh{ vertices, indices, PrimitiveTopology::TriangleList };
+	//		Mesh* pTriangle = new Mesh{ vertices, vertexStride, vertexType, indices, PrimitiveTopology::TriangleList };
 	//		pSceneGraph->AddMesh(pTriangle);
 	//	}
 	//	//pSceneGraph->AddLight(new DirectionalLight{ RGBColor{1.f, 1.f, 1.f}, 2.f, FVector3{ 0.577f, -0.577f, -0.577f } });
@@ -118,10 +134,10 @@ void CreateScenes(SceneManager& sm, CUDATextureManager& tm)
 	//		short vertexType{};
 	//		parser.OpenFile("Resources/tuktuk.obj");
 	//		parser.SetInvertYAxis(true);
-	//		parser.ReadFromObjFile(vertexBuffer, indexBuffer, vertexType);
-	//		Mesh* pTukTukMesh = new Mesh{ vertexBuffer, indexBuffer, PrimitiveTopology::TriangleList };
-	//		const std::string texPaths[4]{ "Resources/tuktuk.png", "", "", "" };
-	//		pTukTukMesh->LoadTextures(texPaths);
+	//		parser.ReadFromObjFile(pVertexBuffer, numVertices, pIndexBuffer, numIndices, vertexType);
+	//		Mesh* pTukTukMesh = new Mesh{ pVertexBuffer, numVertices, vertexStride, vertexType, pIndexBuffer, numIndices, PrimitiveTopology::TriangleList };
+	//		const int diffTexId = AddTexture(tm, "Resources/tuktuk.png");
+	//		pTukTukMesh->SetTextureId(diffTexId, Mesh::TextureID::Diffuse);
 	//		pSceneGraph->AddMesh(pTukTukMesh);
 	//	}
 	//	pSceneGraph->AddLight(new DirectionalLight{ RGBColor{1.f, 1.f, 1.f}, 2.f, FVector3{ 0.577f, -0.577f, -0.577f } });
@@ -151,10 +167,12 @@ void CreateScenes(SceneManager& sm, CUDATextureManager& tm)
 	//		short vertexType{};
 	//		parser.OpenFile("Resources/vehicle.obj");
 	//		parser.SetInvertYAxis(true);
-	//		parser.ReadFromObjFile(vertexBuffer, indexBuffer, vertexType);
-	//		const std::string texPaths[4]{ "Resources/vehicle_diffuse.png", "Resources/vehicle_normal.png", "Resources/vehicle_specular.png", "Resources/vehicle_gloss.png" };
-	//		Mesh* pVehicleMesh = new Mesh{ vertexBuffer, indexBuffer, PrimitiveTopology::TriangleList };
-	//		pVehicleMesh->LoadTextures(texPaths);
+	//		parser.ReadFromObjFile(pVertexBuffer, numVertices, pIndexBuffer, numIndices, vertexType);
+	//		Mesh* pVehicleMesh = new Mesh{ pVertexBuffer, numVertices, vertexStride, vertexType, pIndexBuffer, numIndices, PrimitiveTopology::TriangleList };
+	//		pVehicleMesh->SetTextureId(AddTexture(tm, "Resources/vehicle_diffuse.png"), Mesh::TextureID::Diffuse);
+	//		pVehicleMesh->SetTextureId(AddTexture(tm, "Resources/vehicle_normal.png"), Mesh::TextureID::Normal);
+	//		pVehicleMesh->SetTextureId(AddTexture(tm, "Resources/vehicle_specular.png"), Mesh::TextureID::Specular);
+	//		pVehicleMesh->SetTextureId(AddTexture(tm, "Resources/vehicle_gloss.png"), Mesh::TextureID::Glossiness);
 	//		pSceneGraph->AddMesh(pVehicleMesh);
 	//	}
 	//	pSceneGraph->AddLight(new DirectionalLight{ RGBColor{1.f, 1.f, 1.f}, 2.f, FVector3{ 0.577f, -0.577f, -0.577f } });
@@ -351,8 +369,24 @@ void DisplayResolutionDetails(const Resolution& res)
 	std::cout << "------------------------------\n";
 }
 
-//TODO: CUDA runtime error: invalid argument
-//Due to Texturing!
+bool CheckBinMACROS(const Resolution& res, int& binMultiplier, IPoint2& numBins, IPoint2& binDim, int& binQueueMaxSize)
+{
+	binMultiplier = Clamp(binMultiplier, 1, 32); //results in a multiple of 2
+	numBins = { (int)res.AspectRatio.w * binMultiplier, (int)res.AspectRatio.h * binMultiplier };
+	binDim = { (int)res.Width / numBins.x, (int)res.Height / numBins.y };
+	binQueueMaxSize = Clamp(binQueueMaxSize, 32, 1024);
+	binQueueMaxSize -= binQueueMaxSize % 32; //always a multiple of 32
+	const IPoint2 numThreads = { 16, 16 }; //implementation only supports 16 by 16 thread arrays
+	const IPoint2 pixelCoveragePerThread = { binDim.x / numThreads.x, binDim.y / numThreads.y };
+	if (pixelCoveragePerThread.x == 0 || pixelCoveragePerThread.y == 0)
+	{
+		binMultiplier = 1;
+		numBins = { (int)res.AspectRatio.w, (int)res.AspectRatio.h };
+		binDim = { (int)res.Width / numBins.x, (int)res.Height / numBins.y };
+		return false;
+	}
+	return true;
+}
 
 int main(int argc, char* args[])
 {
@@ -384,11 +418,12 @@ int main(int argc, char* args[])
 	CUDATextureManager tm{};
 
 	//Camera Setup
-	//const FPoint3 camPos = { 0.f, 5.f, 65.f };
-	const FPoint3 camPos = { 0.f, 1.f, 5.f };
+	const FPoint3 camPos = { 0.f, 5.f, 65.f };
+	//const FPoint3 camPos = { 0.f, 1.f, 5.f };
 	const float fov = 45.f;
 	Camera camera{ camPos, fov };
 	camera.SetAspectRatio(float(res.Width), float(res.Height));
+
 	Elite::Timer* pTimer = new Elite::Timer();
 
 	WindowHelper windowHelper{};
@@ -402,24 +437,29 @@ int main(int argc, char* args[])
 
 	DisplayResolutionDetails(res);
 
-#ifdef BINNING
-	const int binMultiplier = 10;
-	const IPoint2 numBins = { (int)res.AspectRatio.w * binMultiplier, (int)res.AspectRatio.h * binMultiplier };
-	//const IPoint2 numBins = { 40, 30 };
-	const IPoint2 binDim = { (int)res.Width / numBins.x, (int)res.Height / numBins.y };
-	const IPoint2 numThreads = { 16, 16 };
-	const IPoint2 pixelCoveragePerThread = { binDim.y / numThreads.y, binDim.y / numThreads.y };
-	const int binQueueMaxSize = 256;
-	CUDARenderer* pCudaRenderer = new CUDARenderer{ windowHelper, numBins, binDim, binQueueMaxSize };
-#else
 	CUDARenderer* pCudaRenderer = new CUDARenderer{ windowHelper };
+
+#ifdef BINNING
+	//TODO: only works for ResolutionStandards of 4:3
+	//TODO: instead of having uniform bins (5x5pixels), try having bins with dimensions that correspond with resolutionstandard (4x3/16x9pixels)
+	//(Having the opposite setup atm)
+	IPoint2 numBins{};
+	IPoint2 binDim{};
+	int binMultiplier = BINMULTIPLIER;
+	int binQueueMaxSize = BINQUEUEMAXSIZE;
+	if (!CheckBinMACROS(res, binMultiplier, numBins, binDim, binQueueMaxSize))
+	{
+		std::cout << "\n!Warning: invalid BINMULTIPLIER for current resolution!\nReverting to default value of 1\n";
+	}
+	pCudaRenderer->SetupBins(numBins, binDim, binQueueMaxSize);
 #endif
+
 	SceneGraph* pSceneGraph = sm.GetSceneGraph();
 	pCudaRenderer->LoadScene(pSceneGraph, tm);
 	pCudaRenderer->DisplayGPUSpecs();
 
 	std::cout << "------------------------------\n";
-	std::cout << "Custom CUDA Rasterizer v2.0\n";
+	std::cout << "Custom CUDA Rasterizer v2.1\n";
 	std::cout << "WASD to move camera\n";
 	std::cout << "RMB + drag to rotate camera\n";
 	std::cout << "LMB + drag to move camera along its forward vector\n";
@@ -479,7 +519,7 @@ int main(int argc, char* args[])
 #endif
 
 		//--------- Update Scenes ---------
-		sm.Update(elapsedSec);
+		sm.Update(0.f);
 	}
 	pTimer->Stop();
 

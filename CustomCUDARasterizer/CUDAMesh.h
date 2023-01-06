@@ -25,12 +25,12 @@ public:
 	virtual ~CUDAMesh();
 
 	unsigned int GetIdx() const { return m_Idx; }
-	unsigned int GetTotalNumTriangles() const { return m_TotalNumTriangles; }
+	unsigned int GetTotalNumTriangles() const;
 	unsigned int& GetVisibleNumTriangles() { return m_VisibleNumTriangles; }
-	const unsigned int GetVisibleNumTrianglesConst() const { return m_VisibleNumTriangles; }
+	unsigned int GetVisibleNumTrianglesConst() const { return m_VisibleNumTriangles; }
 	const Mesh* GetMesh() const { return m_pMesh; }
-	CUDATexturesCompact& GetTextures() { return m_Textures; }
-	const CUDATexturesCompact& GetTexturesConst() const { return m_Textures; }
+	void SetTextures(const CUDATexturesCompact& textures) { m_Textures = textures; }
+	const CUDATexturesCompact& GetTextures() const { return m_Textures; }
 
 	IVertex* GetDevIVertexBuffer() const { return m_Dev_IVertexBuffer; }
 	unsigned int* GetDevIndexBuffer() const { return m_Dev_IndexBuffer; }
@@ -39,7 +39,6 @@ public:
 
 protected:
 	unsigned int m_Idx;
-	unsigned int m_TotalNumTriangles;
 	unsigned int m_VisibleNumTriangles;
 	const Mesh* m_pMesh;
 	IVertex* m_Dev_IVertexBuffer;

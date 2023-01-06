@@ -1,6 +1,17 @@
 #include "PCH.h"
 #include "Mesh.h"
 
+Mesh::Mesh(const std::vector<IVertex>& vertexBuffer, short stride, short type, 
+	const std::vector<unsigned int>& indexBuffer, PrimitiveTopology topology, const FPoint3& pos)
+	: Mesh{ nullptr, (unsigned int)vertexBuffer.size(), stride, type, nullptr, (unsigned int)indexBuffer.size(), topology, pos }
+{
+	m_pVertexBuffer = new IVertex[m_NumVertices];
+	memcpy(m_pVertexBuffer, vertexBuffer.data(), sizeof(IVertex) * m_NumVertices);
+	m_pIndexBuffer = new unsigned int[m_NumIndices];
+	memcpy(m_pIndexBuffer, indexBuffer.data(), sizeof(unsigned int) * m_NumIndices);
+	m_Position += reinterpret_cast<const FVector3&>(pos);
+}
+
 Mesh::Mesh(IVertex* pVertexBuffer, unsigned int numVertices, short stride, short type, unsigned int* pIndexBuffer, unsigned int numIndices,
 	PrimitiveTopology topology, const FPoint3& pos)
 	: m_VertexType{ type }

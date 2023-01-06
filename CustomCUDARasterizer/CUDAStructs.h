@@ -2,9 +2,15 @@
 #include "Math.h"
 #include "RGBColor.h"
 #include "CUDATexture.h"
+#include "Vertex.h"
 
 struct CUDATextureCompact
 {
+	static CUDATextureCompact CompactCUDATexture(const CUDATexture& tex)
+	{
+		return CUDATextureCompact{ tex };
+	}
+
 	CUDATextureCompact() = default;
 	CUDATextureCompact(const CUDATextureCompact& other) = default;
 	CUDATextureCompact(CUDATextureCompact&& other) = default;
@@ -40,7 +46,7 @@ struct CUDATexturesCompact
 
 struct PixelShade
 {
-	unsigned int colour;
+	unsigned int colour32;
 	float zInterpolated;
 	float wInterpolated;
 	FVector2 uv;
@@ -48,4 +54,25 @@ struct PixelShade
 	FVector3 tan;
 	FVector3 vd;
 	CUDATexturesCompact textures;
+};
+
+struct OVertex_PosShared
+{
+	BOTH_CALLABLE
+	OVertex_PosShared() {};
+	BOTH_CALLABLE
+	virtual ~OVertex_PosShared() {};
+	FPoint4* pPos;
+	union
+	{
+		struct
+		{
+			FVector2 uv;
+			FVector3 n;
+			FVector3 tan;
+			FVector3 vd;
+			RGBColor c;
+		};
+		OVertexData vData;
+	};
 };

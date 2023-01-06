@@ -31,10 +31,13 @@
   </ItemGroup>
   <ItemGroup>
     <CudaCompile Include="main.cpp" />
-    <CudaCompile Include="RasterizerOperations.cu">
+    <CudaCompile Include="CUDAROPs.cuh">
       <Filter>Helpers\CUDA</Filter>
     </CudaCompile>
     <CudaCompile Include="CUDARenderer.cu">
+      <Filter>Helpers\CUDA</Filter>
+    </CudaCompile>
+    <CudaCompile Include="CUDAROPs.cu">
       <Filter>Helpers\CUDA</Filter>
     </CudaCompile>
   </ItemGroup>
@@ -240,6 +243,9 @@
       <Filter>Helpers\CUDA</Filter>
     </ClInclude>
     <ClInclude Include="CUDAMesh.h">
+      <Filter>Helpers\CUDA</Filter>
+    </ClInclude>
+    <ClInclude Include="CUDAWindowHelper.h">
       <Filter>Helpers\CUDA</Filter>
     </ClInclude>
   </ItemGroup>
