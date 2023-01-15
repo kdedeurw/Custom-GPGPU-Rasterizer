@@ -1,4 +1,5 @@
 #pragma once
+#include "CUDAStructs.h"
 
 struct IVertex;
 struct OVertex;
@@ -12,6 +13,8 @@ struct CUDAMeshBuffers
 };
 
 class Mesh;
+struct CUDATexturesCompact;
+enum class PrimitiveTopology : unsigned char;
 class CUDAMesh
 {
 public:
@@ -21,14 +24,21 @@ public:
 	CUDAMesh& operator=(const CUDAMesh& other) = delete;
 	CUDAMesh& operator=(CUDAMesh&& other) = delete;
 
-	explicit CUDAMesh(const unsigned int idx, const Mesh* pMesh);
+	explicit CUDAMesh(const Mesh* pMesh);
 	virtual ~CUDAMesh();
 
-	unsigned int GetIdx() const { return m_Idx; }
+	FPoint3& GetPosition() { return m_Position; }
+	FMatrix4& GetWorld() { return m_WorldSpace; }
+	const FPoint3& GetPositionConst() const { return m_Position; }
+	const FMatrix4& GetWorldConst() const { return m_WorldSpace; }
+	FMatrix3 GetRotationMatrix() const { return (FMatrix3)m_WorldSpace; }
+
+	short GetVertexType() const { return m_VertexType; }
+	short GetVertexStride() const { return m_VertexStride; }
+	PrimitiveTopology GetTopology() const { return m_Topology; }
+	unsigned int GetNumVertices() const { return m_NumVertices; }
+	unsigned int GetNumIndices() const { return m_NumIndices; }
 	unsigned int GetTotalNumTriangles() const;
-	unsigned int& GetVisibleNumTriangles() { return m_VisibleNumTriangles; }
-	unsigned int GetVisibleNumTrianglesConst() const { return m_VisibleNumTriangles; }
-	const Mesh* GetMesh() const { return m_pMesh; }
 	void SetTextures(const CUDATexturesCompact& textures) { m_Textures = textures; }
 	const CUDATexturesCompact& GetTextures() const { return m_Textures; }
 
@@ -38,15 +48,19 @@ public:
 	TriangleIdx* GetDevTriangleBuffer() const { return m_Dev_TriangleBuffer; }
 
 protected:
-	unsigned int m_Idx;
-	unsigned int m_VisibleNumTriangles;
-	const Mesh* m_pMesh;
+	short m_VertexType;
+	short m_VertexStride;
+	PrimitiveTopology m_Topology;
+	unsigned int m_NumVertices;
+	unsigned int m_NumIndices;
 	IVertex* m_Dev_IVertexBuffer;
 	unsigned int* m_Dev_IndexBuffer;
 	OVertex* m_Dev_OVertexBuffer;
 	TriangleIdx* m_Dev_TriangleBuffer;
+	FPoint3& m_Position;
 	CUDATexturesCompact m_Textures;
+	FMatrix4 m_WorldSpace;
 
-	virtual void Allocate();
+	virtual void Allocate(IVertex* pVertexBuffer, unsigned int* pIndexBuffer);
 	virtual void Free();
 };

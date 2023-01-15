@@ -405,7 +405,7 @@ int main(int argc, char* args[])
 	const Resolution res = Resolution::GetResolution(Resolution::ResolutionStandard::SD);
 
 	SDL_Window* pWindow = SDL_CreateWindow(
-		"Custom GPGPU CUDA Rasterizer - GW Kristof Dedeurwaerder",
+		"Custom GPGPU CUDA Rasterizer - GW Kristof Dedeurwaerder 2022",
 		SDL_WINDOWPOS_UNDEFINED,
 		SDL_WINDOWPOS_UNDEFINED,
 		res.Width, res.Height, 0);
@@ -418,8 +418,8 @@ int main(int argc, char* args[])
 	CUDATextureManager tm{};
 
 	//Camera Setup
-	const FPoint3 camPos = { 0.f, 5.f, 65.f };
-	//const FPoint3 camPos = { 0.f, 1.f, 5.f };
+	//const FPoint3 camPos = { 0.f, 5.f, 65.f };
+	const FPoint3 camPos = { 0.f, 1.f, 5.f };
 	const float fov = 45.f;
 	Camera camera{ camPos, fov };
 	camera.SetAspectRatio(float(res.Width), float(res.Height));
@@ -511,7 +511,7 @@ int main(int argc, char* args[])
 		{
 			printTimer = 0.f;
 #ifndef BENCHMARK
-			std::cout << "FPS: " << pTimer->GetFPS() << std::endl;
+			//std::cout << "FPS: " << pTimer->GetFPS() << std::endl;
 #else
 			std::cout << std::endl;
 #endif

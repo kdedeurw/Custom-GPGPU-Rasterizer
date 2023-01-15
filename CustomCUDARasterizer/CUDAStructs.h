@@ -56,23 +56,23 @@ struct PixelShade
 	CUDATexturesCompact textures;
 };
 
-struct OVertex_PosShared
-{
-	BOTH_CALLABLE
-	OVertex_PosShared() {};
-	BOTH_CALLABLE
-	virtual ~OVertex_PosShared() {};
-	FPoint4* pPos;
-	union
-	{
-		struct
-		{
-			FVector2 uv;
-			FVector3 n;
-			FVector3 tan;
-			FVector3 vd;
-			RGBColor c;
-		};
-		OVertexData vData;
-	};
-};
+//struct OVertex_PosShared
+//{
+//	BOTH_CALLABLE
+//	OVertex_PosShared() {};
+//	BOTH_CALLABLE
+//	virtual ~OVertex_PosShared() {};
+//	FPoint4* pPos;
+//	union
+//	{
+//		struct
+//		{
+//			FVector2 uv;
+//			FVector3 n;
+//			FVector3 tan;
+//			FVector3 vd;
+//			RGBColor c;
+//		};
+//		OVertexData vData;
+//	};
+//};

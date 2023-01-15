@@ -34,8 +34,10 @@
 #include "Light.h"
 #include "CUDATextureManager.h"
 #include "CUDATexture.h"
-#include "CullingMode.h"
 #include "CUDAMesh.h"
+#include "CullingMode.h"
+#include "SampleState.h"
+#include "VisualisationState.h"
 
 constexpr int NumTextures = 4;
 

@@ -40,7 +40,7 @@ CUDARenderer::CUDARenderer(const WindowHelper& windowHelper)
 	, m_BenchMarker{}
 	, m_BinQueues{}
 	, m_CUDAWindowHelper{}
-	, m_pCUDAMeshes{}
+	, m_CUDAMeshes{}
 {
 	AllocateCUDADeviceBuffers();
 }
@@ -187,10 +187,12 @@ void CUDARenderer::LoadScene(const SceneGraph* pSceneGraph, const CUDATextureMan
 	const std::vector<Mesh*>& pMeshes = pSceneGraph->GetMeshes();
 	for (const Mesh* pMesh : pMeshes)
 	{
-		CUDAMesh* pCudaMesh = AllocateCUDAMeshBuffers(pMesh);
-		UpdateCUDAMeshTextures(pCudaMesh, tm);
-		m_pCUDAMeshes.push_back(pCudaMesh);
+		SortedCUDAMesh sortedCudaMesh = AllocateCUDAMeshBuffers(pMesh);
+		CUDAMesh* pCudaMesh = sortedCudaMesh.pCUDAMesh;
+		const int* pTexIds = pMesh->GetTextureIds();
+		UpdateCUDAMeshTextures(pCudaMesh, pTexIds, tm);
 		m_TotalNumTriangles += pCudaMesh->GetTotalNumTriangles();
+		m_CUDAMeshes.push_back(sortedCudaMesh);
 	}
 }
 
@@ -205,7 +207,7 @@ CPU_CALLABLE
 void CUDARenderer::Render(const SceneManager& sm, const CUDATextureManager& tm, const Camera* pCamera)
 {
 	//Render Data
-	const bool isDepthColour = sm.IsDepthColour();
+	const VisualisationState visualisationState = sm.GetVisualisationState();
 	const SampleState sampleState = sm.GetSampleState();
 	const CullingMode cm = sm.GetCullingMode();
 
@@ -232,13 +234,13 @@ void CUDARenderer::Render(const SceneManager& sm, const CUDATextureManager& tm, 
 	CheckErrorCuda(cudaStreamCreate(&binnerStream));
 
 	m_TotalVisibleNumTriangles = 0;
-	for (CUDAMesh* pCudaMesh : m_pCUDAMeshes)
+	for (SortedCUDAMesh sortedCudaMesh : m_CUDAMeshes)
 	{
 		//Mesh Data
-		const Mesh* pMesh = pCudaMesh->GetMesh();
-		const FMatrix4& worldMat = pMesh->GetWorldConst();
+		const CUDAMesh* pCudaMesh = sortedCudaMesh.pCUDAMesh;
+		const FMatrix4& worldMat = pCudaMesh->GetWorldConst();
 		const FMatrix4 worldViewProjectionMatrix = viewProjectionMatrix * worldMat;
-		const FMatrix3& rotationMatrix = pMesh->GetRotationMatrix();
+		const FMatrix3& rotationMatrix = pCudaMesh->GetRotationMatrix();
 
 		//Update const data
 		UpdateWorldMatrixDataAsync(worldMat, worldViewProjectionMatrix, rotationMatrix);
@@ -271,9 +273,9 @@ void CUDARenderer::Render(const SceneManager& sm, const CUDATextureManager& tm, 
 		CheckErrorCuda(cudaDeviceSynchronize());
 		//---END STAGE 2---
 
-		unsigned int& visibleNumTriangles = pCudaMesh->GetVisibleNumTriangles();
-		CheckErrorCuda(cudaMemcpy(&visibleNumTriangles, m_Dev_NumVisibleTriangles, 4, cudaMemcpyDeviceToHost));
-		m_TotalVisibleNumTriangles += visibleNumTriangles;
+		unsigned int& numVisibleTriangles = sortedCudaMesh.NumVisibleTriangles;
+		CheckErrorCuda(cudaMemcpy(&numVisibleTriangles, m_Dev_NumVisibleTriangles, 4, cudaMemcpyDeviceToHost));
+		m_TotalVisibleNumTriangles += sortedCudaMesh.NumVisibleTriangles;
 
 #ifdef BENCHMARK
 		TriangleAssemblingMs += StopTimer();
@@ -281,8 +283,9 @@ void CUDARenderer::Render(const SceneManager& sm, const CUDATextureManager& tm, 
 
 		//TODO: too many kernel launches
 		//persistent kernel approach + global atomic flag value set in host
+		//TODO: can enable UNSAFE execution of GPU Atomic Queues due to the TB and RA kernels only processing BinQueueMaxSize amount of triangles per launch
 		const unsigned int queueMaxSize = m_BinQueues.GetQueueMaxSize();
-		const unsigned int numLoops = (visibleNumTriangles + (queueMaxSize - 1)) / queueMaxSize;
+		const unsigned int numLoops = (sortedCudaMesh.NumVisibleTriangles + (queueMaxSize - 1)) / queueMaxSize;
 		for (unsigned int i{}; i < numLoops; ++i)
 		{
 
@@ -293,7 +296,7 @@ void CUDARenderer::Render(const SceneManager& sm, const CUDATextureManager& tm, 
 #endif
 
 			//---STAGE 3---:  Perform Output Vertex Assembling
-			TriangleBinner(pCudaMesh, i * queueMaxSize);
+			TriangleBinner(pCudaMesh, sortedCudaMesh.NumVisibleTriangles, i * queueMaxSize);
 			CheckErrorCuda(cudaDeviceSynchronize());
 			//---END STAGE 3---
 
@@ -332,8 +335,10 @@ void CUDARenderer::Render(const SceneManager& sm, const CUDATextureManager& tm, 
 #endif
 
 	//---STAGE 5---: Peform Pixel Shading
-	PixelShader(sampleState, isDepthColour);
+	PixelShader(sampleState, visualisationState);
 	CheckErrorCuda(cudaDeviceSynchronize());
+
+	CheckErrorCuda(cudaStreamDestroy(binnerStream));
 
 	//---END STAGE 5---
 #ifdef BENCHMARK
@@ -470,32 +475,40 @@ void CUDARenderer::AllocateCUDADeviceBuffers()
 }
 
 CPU_CALLABLE
-CUDAMesh* CUDARenderer::AllocateCUDAMeshBuffers(const Mesh* pMesh)
+CUDARenderer::SortedCUDAMesh CUDARenderer::AllocateCUDAMeshBuffers(const Mesh* pMesh)
 {
-	const unsigned int meshIdx = (unsigned int)m_pCUDAMeshes.size();
-	CUDAMesh* pCudaMesh = new CUDAMesh{ meshIdx, pMesh };
-	return pCudaMesh;
+	const unsigned int meshIdx = (unsigned int)m_CUDAMeshes.size();
+	CUDAMesh* pCudaMesh = new CUDAMesh{ pMesh };
+	SortedCUDAMesh sortedCudaMesh{};
+	sortedCudaMesh.Idx = meshIdx;
+	sortedCudaMesh.pCUDAMesh = pCudaMesh;
+	return sortedCudaMesh;
 }
 
 CPU_CALLABLE
 void CUDARenderer::FreeAllCUDAMeshBuffers()
 {
-	for (CUDAMesh* pCudaMesh : m_pCUDAMeshes)
+	for (const SortedCUDAMesh& sortedCudaMesh : m_CUDAMeshes)
 	{
-		FreeCUDAMeshBuffers(pCudaMesh);
+		FreeCUDAMeshBuffers(sortedCudaMesh.Idx);
 	}
-	m_pCUDAMeshes.clear();
+	m_CUDAMeshes.clear();
 }
 
 CPU_CALLABLE
-void CUDARenderer::FreeCUDAMeshBuffers(CUDAMesh* pCudaMesh)
+void CUDARenderer::FreeCUDAMeshBuffers(unsigned int meshIdx)
 {
-	const auto it = std::find(m_pCUDAMeshes.cbegin(), m_pCUDAMeshes.cend(), pCudaMesh);
-	if (it == m_pCUDAMeshes.cend())
-		return;
-
-	m_pCUDAMeshes.erase(it);
-	delete pCudaMesh;
+	unsigned int i{};
+	for (const SortedCUDAMesh& sortedCudaMesh : m_CUDAMeshes)
+	{
+		if (sortedCudaMesh.Idx == meshIdx)
+		{
+			delete sortedCudaMesh.pCUDAMesh;
+			m_CUDAMeshes[i] = m_CUDAMeshes.back();
+			m_CUDAMeshes.pop_back();
+		}
+		++i;
+	}
 }
 
 CPU_CALLABLE
@@ -527,10 +540,8 @@ void CUDARenderer::UpdateWorldMatrixDataAsync(const FMatrix4& worldMatrix, const
 }
 
 CPU_CALLABLE
-void CUDARenderer::UpdateCUDAMeshTextures(CUDAMesh* pCudaMesh, const CUDATextureManager& tm)
+void CUDARenderer::UpdateCUDAMeshTextures(CUDAMesh* pCudaMesh, const int texIds[4], const CUDATextureManager& tm)
 {
-	const Mesh* pMesh = pCudaMesh->GetMesh();
-	const int* texIds = pMesh->GetTextureIds();
 	const CUDATexturesCompact textures = GetCUDAMeshTextures(texIds, tm);
 	pCudaMesh->SetTextures(textures);
 }
@@ -562,9 +573,9 @@ CUDATexturesCompact CUDARenderer::GetCUDAMeshTextures(const int* texIds, const C
 }
 
 CPU_CALLABLE
-void CUDARenderer::WaitForStream(cudaStream_t stream)
+cudaError_t CUDARenderer::WaitForStream(cudaStream_t stream)
 {
-	cudaStreamSynchronize(stream);
+	return cudaStreamSynchronize(stream);
 }
 
 CPU_CALLABLE
@@ -585,7 +596,7 @@ bool CUDARenderer::IsStreamFinished(cudaStream_t stream)
 #pragma region Clearing
 
 GPU_KERNEL
-void ClearDepthBufferKernel(int* dev_DepthBuffer, int value, const unsigned int width, const unsigned int height)
+void CLEAR_DepthBufferKernel(int* dev_DepthBuffer, int value, const unsigned int width, const unsigned int height)
 {
 	const unsigned int x = threadIdx.x + blockIdx.x * blockDim.x;
 	const unsigned int y = threadIdx.y + blockIdx.y * blockDim.y;
@@ -597,7 +608,7 @@ void ClearDepthBufferKernel(int* dev_DepthBuffer, int value, const unsigned int 
 }
 
 GPU_KERNEL
-void ClearFrameBufferKernel(unsigned int* dev_FrameBuffer, const unsigned int width, const unsigned int height, unsigned int colour32)
+void CLEAR_FrameBufferKernel(unsigned int* dev_FrameBuffer, const unsigned int width, const unsigned int height, unsigned int colour32)
 {
 	const unsigned int x = threadIdx.x + blockIdx.x * blockDim.x;
 	const unsigned int y = threadIdx.y + blockIdx.y * blockDim.y;
@@ -609,7 +620,7 @@ void ClearFrameBufferKernel(unsigned int* dev_FrameBuffer, const unsigned int wi
 }
 
 GPU_KERNEL
-void ClearScreenKernel(PixelShade* dev_PixelShadeBuffer, const unsigned int width, const unsigned int height, unsigned int colour32)
+void CLEAR_SetPixelShadeBufferKernel(PixelShade* dev_PixelShadeBuffer, const unsigned int width, const unsigned int height, unsigned int colour32)
 {
 	const unsigned int x = threadIdx.x + blockIdx.x * blockDim.x;
 	const unsigned int y = threadIdx.y + blockIdx.y * blockDim.y;
@@ -621,7 +632,7 @@ void ClearScreenKernel(PixelShade* dev_PixelShadeBuffer, const unsigned int widt
 }
 
 GPU_KERNEL
-void ClearPixelShadeBufferKernel(PixelShade* dev_PixelShadeBuffer, const unsigned int sizeInWORDs)
+void CLEAR_PixelShadeBufferKernel(PixelShade* dev_PixelShadeBuffer, const unsigned int sizeInWORDs)
 {
 	//every thread sets 1 WORD of data
 	const unsigned int idx = threadIdx.x + blockIdx.x * blockDim.x;
@@ -632,7 +643,7 @@ void ClearPixelShadeBufferKernel(PixelShade* dev_PixelShadeBuffer, const unsigne
 }
 
 GPU_KERNEL
-void ClearDepthMutexBufferKernel(int* dev_MutexBuffer, const unsigned int width, const unsigned int height)
+void CLEAR_DepthMutexBufferKernel(int* dev_MutexBuffer, const unsigned int width, const unsigned int height)
 {
 	const unsigned int x = threadIdx.x + blockIdx.x * blockDim.x;
 	const unsigned int y = threadIdx.y + blockIdx.y * blockDim.y;
@@ -644,7 +655,7 @@ void ClearDepthMutexBufferKernel(int* dev_MutexBuffer, const unsigned int width,
 }
 
 GPU_KERNEL
-void ClearBuffers(unsigned int* dev_FrameBuffer, int* dev_DepthBuffer, int value, int* dev_DepthMutexBuffer, const unsigned int width, const unsigned int height, unsigned int colour32)
+void CLEAR_BuffersKernel(unsigned int* dev_FrameBuffer, int* dev_DepthBuffer, int value, const unsigned int width, const unsigned int height, unsigned int colour32)
 {
 	const unsigned int x = threadIdx.x + blockIdx.x * blockDim.x;
 	const unsigned int y = threadIdx.y + blockIdx.y * blockDim.y;
@@ -654,15 +665,13 @@ void ClearBuffers(unsigned int* dev_FrameBuffer, int* dev_DepthBuffer, int value
 		dev_FrameBuffer[pixelIdx] = colour32;
 		//__syncthreads(); //for synchronised coalesced global access
 		dev_DepthBuffer[pixelIdx] = value;
-		//__syncthreads(); //for synchronised coalesced global access
-		dev_DepthMutexBuffer[pixelIdx] = 0;
 	}
 }
 
 #pragma endregion
 
 GPU_KERNEL
-void VertexShaderKernelNaive(const IVertex* __restrict__ dev_IVertices, OVertex* dev_OVertices, unsigned int numVertices)
+void VS_Kernel(const IVertex* __restrict__ dev_IVertices, OVertex* dev_OVertices, unsigned int numVertices)
 {
 	//TODO: store matrix in top of shared memory for faster access
 	//and offset shared memory access for threads
@@ -691,7 +700,7 @@ void VertexShaderKernelNaive(const IVertex* __restrict__ dev_IVertices, OVertex*
 }
 
 GPU_KERNEL
-void TriangleAssemblerKernel(TriangleIdx* dev_Triangles, const unsigned int* __restrict__ const dev_IndexBuffer, unsigned int numIndices,
+void TA_Kernel(TriangleIdx* dev_Triangles, const unsigned int* __restrict__ const dev_IndexBuffer, unsigned int numIndices,
 	unsigned int* dev_NumVisibleTriangles,
 	const OVertex* dev_OVertices, const PrimitiveTopology pt, const CullingMode cm, const FVector3 camFwd, 
 	unsigned int width, unsigned int height)
@@ -787,7 +796,7 @@ void TriangleAssemblerKernel(TriangleIdx* dev_Triangles, const unsigned int* __r
 }
 
 GPU_KERNEL
-void RasterizerPerTriangleKernel(const TriangleIdx* __restrict__ const dev_Triangles, const OVertex* __restrict__ const dev_OVertices, 
+void RA_PerTriangleKernel(const TriangleIdx* __restrict__ const dev_Triangles, const OVertex* __restrict__ const dev_OVertices, 
 	unsigned int numTriangles, PixelShade* dev_PixelShadeBuffer, int* dev_DepthBuffer, int* dev_DepthMutexBuffer, 
 	CUDATexturesCompact textures, const unsigned int width, const unsigned int height)
 {
@@ -822,8 +831,8 @@ void RasterizerPerTriangleKernel(const TriangleIdx* __restrict__ const dev_Trian
 }
 
 GPU_KERNEL
-void PixelShaderKernel(unsigned int* dev_FrameBuffer, const PixelShade* __restrict__ const dev_PixelShadeBuffer,
-	SampleState sampleState, bool isDepthColour, const unsigned int width, const unsigned int height)
+void PS_Kernel(unsigned int* dev_FrameBuffer, const PixelShade* __restrict__ const dev_PixelShadeBuffer,
+	SampleState sampleState, const unsigned int width, const unsigned int height)
 {
 	//Notes: PixelShade has size of 32, but bank conflicts
 	//TODO: store PixelShade data column-based to avoid bank conflicts, but faster access?
@@ -831,46 +840,572 @@ void PixelShaderKernel(unsigned int* dev_FrameBuffer, const PixelShade* __restri
 
 	const unsigned int x = (blockIdx.x * blockDim.x) + threadIdx.x;
 	const unsigned int y = (blockIdx.y * blockDim.y) + threadIdx.y;
-	//TODO: if-statement is not necessary
+	//TODO: if-statement is not necessary for standard resolutions
 	if (x < width && y < height)
 	{
 		const unsigned int pixelIdx = x + y * width;
-		RGBA rgba;
-		if (isDepthColour)
+		const PixelShade pixelShade = dev_PixelShadeBuffer[pixelIdx];
+		const CUDATexturesCompact& textures = pixelShade.textures;
+		if (textures.Diff.dev_pTex != 0)
 		{
-			rgba.r8 = 0; //For SDL: R and B values are swapped
-			rgba.g8 = 0;
-			rgba.b8 = (unsigned char)(Remap(dev_PixelShadeBuffer[pixelIdx].zInterpolated, 0.985f, 1.f) * 255);
-			rgba.a8 = 0;
+			RGBColor colour = ShadePixelSafe(textures, pixelShade.uv, pixelShade.n, pixelShade.tan, pixelShade.vd, sampleState);
+			RGBA rgba = RGBA::GetRGBAFromColour(colour);
 			dev_FrameBuffer[pixelIdx] = rgba.colour32;
 		}
 		else
 		{
-			const PixelShade& pixelShade = dev_PixelShadeBuffer[pixelIdx];
-			const CUDATexturesCompact& textures = pixelShade.textures;
-			if (textures.Diff.dev_pTex != 0)
-			{
-				RGBColor colour = ShadePixel(pixelShade.textures, pixelShade.uv, pixelShade.n, pixelShade.tan, pixelShade.vd, sampleState);
-				rgba = RGBA::GetRGBAFromColour(colour);
-				dev_FrameBuffer[pixelIdx] = rgba.colour32;
-
-				//normal visualisation
-				//colour.r = pixelShade.n.x;
-				//colour.g = pixelShade.n.y;
-				//colour.b = pixelShade.n.z;
-			}
-			else
-			{
-				dev_FrameBuffer[pixelIdx] = pixelShade.colour32;
-			}
+			dev_FrameBuffer[pixelIdx] = pixelShade.colour32;
 		}
+	}
+}
+
+GPU_KERNEL
+void PS_VisualiseDepthColourKernel(unsigned int* dev_FrameBuffer, const PixelShade* __restrict__ const dev_PixelShadeBuffer,
+	const unsigned int width, const unsigned int height)
+{
+	const unsigned int x = (blockIdx.x * blockDim.x) + threadIdx.x;
+	const unsigned int y = (blockIdx.y * blockDim.y) + threadIdx.y;
+	//TODO: if-statement is not necessary
+	if (x < width && y < height)
+	{
+		const unsigned int pixelIdx = x + y * width;
+		const float zInterpolated = dev_PixelShadeBuffer[pixelIdx].zInterpolated;
+		RGBA rgba;
+		rgba.r8 = 0; //For SDL: R and B values are swapped
+		rgba.g8 = 0;
+		rgba.b8 = (unsigned char)(Remap(zInterpolated, 0.985f, 1.f) * 255);
+		rgba.a8 = 0;
+		dev_FrameBuffer[pixelIdx] = rgba.colour32;
+	}
+}
+
+GPU_KERNEL
+void PS_VisualiseNormalKernel(unsigned int* dev_FrameBuffer, const PixelShade* __restrict__ const dev_PixelShadeBuffer,
+	const unsigned int width, const unsigned int height)
+{
+	const unsigned int x = (blockIdx.x * blockDim.x) + threadIdx.x;
+	const unsigned int y = (blockIdx.y * blockDim.y) + threadIdx.y;
+	//TODO: if-statement is not necessary
+	if (x < width && y < height)
+	{
+		const unsigned int pixelIdx = x + y * width;
+		const FVector3 normal = dev_PixelShadeBuffer[pixelIdx].n;
+		const RGBColor& colour = reinterpret_cast<const RGBColor&>(normal); //able to do this, since they're both POD structs
+		RGBA rgba = RGBA::GetRGBAFromColour(colour);
+		dev_FrameBuffer[pixelIdx] = rgba.colour32;
 	}
 }
 
 #pragma region Binning
 
+//TODO: templated kernel, for bin queues of datatype T (unsigned int TriangleIdx)
+
 GPU_KERNEL
-void TriangleAssemblerAndBinnerKernel(TriangleIdx* dev_Triangles, const unsigned int* __restrict__ const dev_IndexBuffer, unsigned int numIndices,
+void TB_Kernel(TriangleIdx* dev_Triangles, unsigned int numVisibleTriangles, unsigned int triangleIdxOffset,
+	unsigned int* dev_BinQueueSizes, unsigned int* dev_BinQueues, int* dev_BinQueueSizesMutexBuffer,
+	const OVertex* dev_OVertices, 
+	IPoint2 numBins, IPoint2 binDim, unsigned int binQueueMaxSize, unsigned int width, unsigned int height)
+{
+	//TODO: use shared memory to copy faster
+	//data size of 9 shows no bank conflicts!
+	//TriangleIdx can stay in local memory (registers)
+	//DEPENDS ON REGISTER USAGE
+
+	//IDEA: (concept taken from Laine et al.)
+	//Shared memory as a list of bits, 48 bytes per triangle(/thread), which covers 384 bins (== bits)
+	//This will maximize occupancy for any amount of threads per block
+	//Less amount of bins is applicable too
+
+	//each thread bins 1 triangle
+	const unsigned int triangleIdx = blockIdx.x * blockDim.x + threadIdx.x + triangleIdxOffset;
+	if (triangleIdx < numVisibleTriangles)
+	{
+		const TriangleIdx triangle = dev_Triangles[triangleIdx];
+
+		FPoint2 p0 = dev_OVertices[triangle.idx0].p.xy;
+		FPoint2 p1 = dev_OVertices[triangle.idx1].p.xy;
+		FPoint2 p2 = dev_OVertices[triangle.idx2].p.xy;
+
+		//assign to correct bin(s), with globalTriangleIdx corresponding to its bin
+		//each bin is a part of the window (have multiple atomic buffers for each bin)
+
+		NDCToScreenSpace(p0, p1, p2, width, height);
+		const BoundingBox triangleBb = GetBoundingBox(p0, p1, p2, width, height);
+
+		int binMinX = triangleBb.xMin / binDim.x; //most left bin
+		int binMinY = triangleBb.yMin / binDim.y; //most bottom bin
+		int binMaxX = triangleBb.xMax / binDim.x; //most right bin
+		int binMaxY = triangleBb.yMax / binDim.y; //most top bin
+		binMinX = ClampFast(binMinX, 0, numBins.x);
+		binMinY = ClampFast(binMinY, 0, numBins.y);
+		binMaxX = ClampFast(binMaxX, 0, numBins.x - 1);
+		binMaxY = ClampFast(binMaxY, 0, numBins.y - 1);
+		//This creates a grid of bins that overlap with triangle boundingbox
+
+		//TODO: get all middle bin points in triangle polygon
+		//TODO: get all intersecting rectangles of bins from all 3 triangle edges
+		//https://stackoverflow.com/questions/16203760/how-to-check-if-line-segment-intersects-a-rectangle
+
+		for (int x{ binMinX }; x <= binMaxX; ++x)
+		{
+			for (int y{ binMinY }; y <= binMaxY; ++y)
+			{
+				//atomically add triangle to bin queue
+				const unsigned int binIdx = x + y * numBins.x;
+
+				//Deliberately not using a helper struct, since it would waste (note: A LOT of) memory and operations
+				CUDAAtomicQueueOP::Insert(&dev_BinQueues[binIdx * binQueueMaxSize],
+					dev_BinQueueSizes[binIdx],
+					dev_BinQueueSizesMutexBuffer[binIdx],
+					binQueueMaxSize,
+					triangleIdx);
+
+				//bool isDone = false;
+				//do
+				//{
+				//	isDone = (atomicCAS(&dev_BinQueueSizesMutexBuffer[binIdx], 0, 1) == 0);
+				//	if (isDone)
+				//	{
+				//		//critical section
+				//		const unsigned int currQueueSize = dev_BinQueueSizes[binIdx];
+				//
+				//		if (currQueueSize < binQueueMaxSize)
+				//		{
+				//			//insert triangle Idx in queue
+				//			dev_BinQueues[binIdx * binQueueMaxSize + currQueueSize] = triangleIdx;
+				//			//increase bin's queue size
+				//			++dev_BinQueueSizes[binIdx];
+				//
+				//			//dev_BinQueueSizesMutexBuffer[binIdx] = 0; //release lock
+				//		}
+				//		dev_BinQueueSizesMutexBuffer[binIdx] = 0; //release lock
+				//		//end of critical section
+				//	}
+				//} while (!isDone);
+			}
+		}
+	}
+}
+
+GPU_KERNEL
+void RA_PerBinKernel(const TriangleIdx* __restrict__ const dev_Triangles, const OVertex* __restrict__ const dev_OVertices,
+	PixelShade* dev_PixelShadeBuffer, int* dev_DepthBuffer, int* dev_DepthMutexBuffer, CUDATexturesCompact textures,
+	unsigned int* dev_BinQueues, unsigned int* dev_BinQueueSizes, int* dev_BinQueueSizesMutexBuffer,
+	IPoint2 binDim, unsigned int binQueueMaxSize, const unsigned int width, const unsigned int height)
+{
+	//TODO: threads cooperatively store in shared memory
+	//extern GPU_SHARED_MEMORY float sharedMemoryBuffer[];
+
+	//PROGNOSIS: this will be slower and more threads will be "wasted" on the same potential triangle
+	//BUT the main advantage is that big triangles will be eliminated and split up into smaller binned ones
+
+	//each block processes 1 bin
+	const unsigned int binIdx = blockIdx.x + blockIdx.y * gridDim.x;
+
+	const unsigned int queueSize = dev_BinQueueSizes[binIdx];
+	if (threadIdx.x < queueSize)
+	{
+		//each thread processes 1 triangle
+		const unsigned int triangleIdx = dev_BinQueues[binIdx * binQueueMaxSize + threadIdx.x];
+
+		const TriangleIdx triangle = dev_Triangles[triangleIdx];
+		OVertex v0 = dev_OVertices[triangle.idx0];
+		OVertex v1 = dev_OVertices[triangle.idx1];
+		OVertex v2 = dev_OVertices[triangle.idx2];
+
+		//3: rasterize triangle with binned bounding box (COARSE)
+
+		NDCToScreenSpace(v0.p.xy, v1.p.xy, v2.p.xy, width, height);
+		const unsigned int minX = blockIdx.x * binDim.x;
+		const unsigned int minY = blockIdx.y * binDim.y;
+		const unsigned int maxX = minX + binDim.x;
+		const unsigned int maxY = minY + binDim.y;
+		const BoundingBox bb = GetBoundingBoxTiled(v0.p.xy, v1.p.xy, v2.p.xy, minX, minY, maxX, maxY);
+		RasterizeTriangle(bb, v0, v1, v2, dev_DepthMutexBuffer, dev_DepthBuffer, dev_PixelShadeBuffer, width, textures);
+
+		//BoundingBox bb;
+		//bb.xMin = blockIdx.x * binDim.x;
+		//bb.yMin = blockIdx.y * binDim.y;
+		//bb.xMax = bb.xMin + binDim.x;
+		//bb.yMax = bb.yMin + binDim.y;
+		//RasterizeTriangle(bb, v0, v1, v2, dev_DepthMutexBuffer, dev_DepthBuffer, dev_PixelShadeBuffer, width, textures);
+
+		//TODO: every thread in CTA processes a NxN tile of triangle in bin (fine rasterizer)
+		//4: each thread in block does a 8x8 pixel area of triangle
+		//each thread block does 1 triangle instead of each block does sizeofbinqueue triangles
+	}
+}
+
+GPU_KERNEL
+void RA_PerTileKernel(const TriangleIdx* __restrict__ const dev_Triangles, const OVertex* __restrict__ const dev_OVertices,
+	PixelShade* dev_PixelShadeBuffer, int* dev_DepthBuffer, int* dev_DepthMutexBuffer, CUDATexturesCompact textures,
+	unsigned int* dev_BinQueues, unsigned int* dev_BinQueueSizes, int* dev_BinQueueSizesMutexBuffer, IPoint2 binDim, unsigned int binQueueMaxSize,
+	const unsigned int pixelCoverageX, const unsigned int pixelCoverageY, const unsigned int width, const unsigned int height)
+{
+	//TODO: blocksize.x == binQueueMaxSize
+
+	//each block processes 1 bin
+	const unsigned int binIdx = blockIdx.x + blockIdx.y * gridDim.x;
+	const unsigned int queueSize = dev_BinQueueSizes[binIdx];
+	//const unsigned int queueSize = binQueueMaxSize;
+
+	//every thread covers a NxN pixel area
+	const unsigned int minX = blockIdx.x * binDim.x;
+	const unsigned int minY = blockIdx.y * binDim.y;
+	const unsigned int maxX = minX + binDim.x;
+	const unsigned int maxY = minY + binDim.y;
+
+	BoundingBox bb;
+	bb.xMin = minX + threadIdx.x * pixelCoverageX;
+	bb.yMin = minY + threadIdx.y * pixelCoverageY;
+	bb.xMax = bb.xMin + pixelCoverageX;
+	bb.yMax = bb.yMin + pixelCoverageY;
+
+	bb.xMin = ClampFast(bb.xMin, (short)minX, (short)maxX);
+	bb.xMax = ClampFast(bb.xMax, (short)minX, (short)maxX);
+	bb.yMin = ClampFast(bb.yMin, (short)minY, (short)maxY);
+	bb.yMax = ClampFast(bb.yMax, (short)minY, (short)maxY);
+
+#ifdef FINERASTER_SHAREDMEM
+	//Occupancy stays higher due to less shared memory usage/block
+	//CONCERN: occupancy is already low due to high register usage
+	//Perhaps use this big amount of shared memory paired with the higher register usage to "mask" them
+
+	extern GPU_SHARED_MEMORY float positionsBuffer[];
+
+	if (threadIdx.x < queueSize)
+	{
+		const unsigned int binQueueIdx = dev_BinQueues[binIdx * binQueueMaxSize + threadIdx.x];
+		const TriangleIdx triangle = dev_Triangles[binQueueIdx];
+
+		const OVertex& v0 = dev_OVertices[triangle.idx0];
+		const OVertex& v1 = dev_OVertices[triangle.idx1];
+		const OVertex& v2 = dev_OVertices[triangle.idx2];
+
+		//each thread stores 3 FPoint4's into shared memory at once
+		//Only then copy OVertex_Data when pixel is in triangle
+		//This will actually maximize the occupancy of shared memory usage for every thread block
+		FPoint4* pPositions = reinterpret_cast<FPoint4*>(positionsBuffer);
+
+		//Disadvantage: 2 global memory accesses
+		//Advantage: fast copy of all Positions into shared memory and faster access
+		OVertex_PosShared test0{};
+		OVertex_PosShared test1{};
+		OVertex_PosShared test2{};
+		test0.pPos = &pPositions[threadIdx.x];
+		test1.pPos = &pPositions[threadIdx.x + 1];
+		test2.pPos = &pPositions[threadIdx.x + 2];
+
+		//copy to shared memory
+		*test0.pPos = v0.p;
+		*test1.pPos = v1.p;
+		*test2.pPos = v2.p;
+
+		//copy to local memory
+		memcpy(&test0.vData, &v0 + sizeof(FPoint4), sizeof(OVertexData));
+		memcpy(&test1.vData, &v1 + sizeof(FPoint4), sizeof(OVertexData));
+		memcpy(&test2.vData, &v2 + sizeof(FPoint4), sizeof(OVertexData));
+
+		//acts as a barrier for shared memory
+		__syncthreads();
+
+		NDCToScreenSpace(test0.pPos->xy, test1.pPos->xy, test2.pPos->xy, width, height);
+		RasterizeTriangle(bb, v0, v1, v2, dev_DepthMutexBuffer, dev_DepthBuffer, dev_PixelShadeBuffer, width, textures);
+	}
+#else
+	for (unsigned int currQueueIdx{}; currQueueIdx < queueSize; ++currQueueIdx)
+	{
+		const unsigned int triangleIdx = dev_BinQueues[binIdx * binQueueMaxSize + currQueueIdx];
+		const TriangleIdx triangle = dev_Triangles[triangleIdx];
+		OVertex v0 = dev_OVertices[triangle.idx0];
+		OVertex v1 = dev_OVertices[triangle.idx1];
+		OVertex v2 = dev_OVertices[triangle.idx2];
+
+		NDCToScreenSpace(v0.p.xy, v1.p.xy, v2.p.xy, width, height);
+		//Rasterize Screenspace triangle
+		RasterizeTriangle(bb, v0, v1, v2, dev_DepthMutexBuffer, dev_DepthBuffer, dev_PixelShadeBuffer, width, textures);
+	}
+#endif
+}
+
+#pragma endregion
+
+#pragma region DEPRECATED
+
+GPU_KERNEL
+void VS_PrototypeKernel_DEP(const IVertex* __restrict__ dev_IVertices, OVertex* dev_OVertices, unsigned int numVertices)
+{
+	//TODO: store matrix in top of shared memory for faster access
+	//and offset shared memory access for threads
+	//Potential problem: first warp might encounter bank conflicts?
+
+	//OVERVIEW: each thread manages 1 attribute, this being a Vector3
+	//The Output Position is being stored as a Vector3, with the W-elements stored in a separate shared memory row
+	//32 x 3 = 96 => 32 vertex attributes per warp in a shared memory buffer of size 96
+	//32 x 4 = 128 => 32 vertex OPositions per warp in a shared memory buffer of size 128
+
+	//IVERTEX LAYOUT: POS3 - UV2 - NORM3 - TAN3 - COL3 (size: 14)
+	//OVERTEX LAYOUT: POS4 - UV2 - NORM3 - TAN3 - VD3 - COL3 (size: 18)
+
+	extern GPU_SHARED_MEMORY float sharedMemoryBuffer[];
+
+	constexpr float* camPos = &dev_ConstMemory[0];
+	constexpr float* worldMatrix = &dev_ConstMemory[6];
+	constexpr float* WVPMatrix = &dev_ConstMemory[22];
+	constexpr float* rotationMatrix = &dev_ConstMemory[38];
+
+	//TODO: each thread should store 1 bank element at once for more coalesced access
+	//instead of 1 thread storing 1 attribute from multiple banks to global memory
+
+	//threadIdx.x: [0, 31]
+	//threadIdx.y: [0, 7]
+	const unsigned int vertexIdx = (blockIdx.x * (blockDim.x * blockDim.y)) + threadIdx.x + (threadIdx.y * blockDim.x);
+	if (vertexIdx < numVertices)
+	{
+		const IVertex& iVertex = dev_IVertices[vertexIdx];
+		OVertex* pOVertex = &dev_OVertices[vertexIdx];
+
+		//TODO: store W component in local memory???
+		//TODO: register usage is above 32, mainly due to matrixmath functions
+		//also some used for shared memory and pointers
+
+		// --- STEP 1 ---: Calculate Input Position to Ouput Position
+		//for every 32 threads of vec3 (96 elements), a row of W elements is created (32 elements)
+
+		//strided load into shared memory
+		const unsigned int warpSharedMemIdx = threadIdx.y * 128;
+		unsigned int sharedMemVecIdx = threadIdx.x * 3 + warpSharedMemIdx;
+		float* pVecXYZ = &sharedMemoryBuffer[sharedMemVecIdx];
+		const unsigned int sharedMemWIdx = threadIdx.x + 96 + warpSharedMemIdx;
+		float* pVecW = &sharedMemoryBuffer[sharedMemWIdx];
+
+		//memory is now coalesced
+		memcpy(pVecXYZ, &iVertex.p, 12);
+		//calculate NDC (WVP * v.p.xyzw / w)
+		CalculateOutputPosXYZW(WVPMatrix, pVecXYZ, pVecW); //calculate NDC (WVPMat)
+		//divide xyz by w
+		pVecXYZ[0] /= *pVecW;
+		pVecXYZ[1] /= *pVecW;
+		pVecXYZ[2] /= *pVecW;
+
+		//store into global memory
+		memcpy(&pOVertex->p, pVecXYZ, 12); //copy vec3 elements
+		pOVertex->p.w = *pVecW; //copy w element
+
+		// --- STEP 2 ---: Calculate ViewDirection
+
+		memcpy(pVecXYZ, &iVertex.p, 12);
+		CalculateOutputPosXYZ(worldMatrix, pVecXYZ); //calculate worldposition (worldMat)
+
+		pVecXYZ[0] -= camPos[0];
+		pVecXYZ[1] -= camPos[1];
+		pVecXYZ[2] -= camPos[2];
+		Normalize(reinterpret_cast<FVector3&>(*pVecXYZ));
+
+		memcpy(&pOVertex->vd, pVecXYZ, 12);
+		__syncthreads(); //sync bc we don't use W value nomore
+
+		//shared memory is now used 
+		sharedMemVecIdx = threadIdx.x * 3 + threadIdx.y * 96;
+		pVecXYZ = &sharedMemoryBuffer[sharedMemVecIdx];
+
+		// --- STEP 3 ---: Calculate Input Normal to Output Normal
+
+		memcpy(pVecXYZ, &iVertex.n, 12);
+		MultiplyMatVec(rotationMatrix, pVecXYZ, 3, 3); //calculate normal
+		memcpy(&pOVertex->n, pVecXYZ, 12);
+
+		// --- STEP 4 ---: Calculate Input Tangent to Output Tangent
+
+		memcpy(pVecXYZ, &iVertex.tan, 12);
+		MultiplyMatVec(rotationMatrix, pVecXYZ, 3, 3); //calculate tangent
+		memcpy(&pOVertex->tan, pVecXYZ, 12);
+
+		// --- STEP 5 ---: Copy UV and Colour
+
+		//COLOUR
+		memcpy(pVecXYZ, &iVertex.c, 12);
+		memcpy(&pOVertex->c, pVecXYZ, 12);
+
+		//UV
+		//pVecXYZ is "padded" UV to avoid bank conflicts
+		memcpy(pVecXYZ, &iVertex.uv, 8);
+		memcpy(&pOVertex->uv, pVecXYZ, 8);
+	}
+}
+
+GPU_KERNEL
+void TA_Kernel_DEP(TriangleIdx* dev_Triangles, const unsigned int* __restrict__ const dev_IndexBuffer,
+	unsigned int numIndices, const PrimitiveTopology pt)
+{
+	//TODO: perform culling/clipping etc.
+	//advantage of TriangleAssembly: each thread stores 1 triangle
+	//many threads == many triangles processed at once
+
+	//TODO: global to shared to global?
+	//TODO: local copy to global vs global to global?
+
+	//'talk about naming gore, eh?
+	const unsigned int indexIdx = (blockIdx.x * blockDim.x) + threadIdx.x;
+	if (pt == PrimitiveTopology::TriangleList)
+	{
+		const unsigned int correctedIdx = (indexIdx * 3);
+		if (correctedIdx < numIndices)
+		{
+			memcpy(&dev_Triangles[indexIdx], &dev_IndexBuffer[correctedIdx], sizeof(TriangleIdx));
+		}
+	}
+	else //if (pt == PrimitiveTopology::TriangleStrip)
+	{
+		if (indexIdx < numIndices - 2)
+		{
+			TriangleIdx triangle;
+			memcpy(&triangle, &dev_IndexBuffer[indexIdx], sizeof(TriangleIdx));
+			const bool isOdd = (indexIdx % 2);
+			if (isOdd)
+			{
+				//swap without temp
+				triangle.idx1 = triangle.idx1 + triangle.idx2;
+				triangle.idx2 = triangle.idx1 - triangle.idx2;
+				triangle.idx1 = triangle.idx1 - triangle.idx2;
+			}
+			memcpy(&dev_Triangles[indexIdx], &triangle, sizeof(TriangleIdx));
+		}
+	}
+}
+
+GPU_KERNEL
+void RA_PerPixelKernel_DEP(const TriangleIdx* __restrict__ dev_Triangles, const OVertex* __restrict__ const dev_OVertices, unsigned int numTriangles,
+	PixelShade* dev_PixelShadeBuffer, int* dev_DepthBuffer, CUDATexturesCompact textures,
+	const unsigned int width, const unsigned int height)
+{
+	//TODO: each thread represents a pixel
+	//each thread loops through all triangles
+	//triangles are stored in shared memory (broadcast)
+	//advantage: thread only does 1 check per triangle w/o looping for all pixels 
+	//=> O(n) n = numTriangles vs O(n^m) n = numTriangles m = numPixels
+	//advantage: nomore atomic operations needed bc only 1 thread can write to 1 unique pixelIdx
+
+	constexpr float* pCamFwd = &dev_ConstMemory[3];
+
+	//extern GPU_SHARED_MEMORY float sharedMemoryBuffer[];
+
+	const unsigned int x = threadIdx.x + blockIdx.x * blockDim.x;
+	const unsigned int y = threadIdx.y + blockIdx.y * blockDim.y;
+	const FPoint2 pixel{ float(x), float(y) };
+
+	for (unsigned int i{}; i < numTriangles; ++i)
+	{
+		const TriangleIdx triangleIdx = dev_Triangles[i];
+
+		//TODO: store in shared memory
+		OVertex v0 = dev_OVertices[triangleIdx.idx0];
+		OVertex v1 = dev_OVertices[triangleIdx.idx1];
+		OVertex v2 = dev_OVertices[triangleIdx.idx2];
+
+		if (!IsTriangleVisible(v0.p.xyz, v1.p.xyz, v2.p.xyz))
+		{
+			return;
+		}
+
+		NDCToScreenSpace(v0.p.xy, v1.p.xy, v2.p.xy, width, height);
+		const BoundingBox bb = GetBoundingBox(v0.p.xy, v1.p.xy, v2.p.xy, width, height);
+
+		if (!IsPixelInBoundingBox(pixel, bb))
+		{
+			return;
+		}
+
+		//Rasterize pixel
+		RasterizePixel(pixel, v0, v1, v2, dev_DepthBuffer, dev_PixelShadeBuffer, width, textures);
+	}
+}
+
+GPU_KERNEL
+void RA_PerTriangleKernel_DEP(const TriangleIdx* __restrict__ const dev_Triangles, const OVertex* __restrict__ const dev_OVertices, unsigned int numTriangles,
+	PixelShade* dev_PixelShadeBuffer, int* dev_DepthBuffer, int* dev_MutexBuffer, CUDATexturesCompact textures,
+	const FVector3 camFwd, const CullingMode cm, const unsigned int width, const unsigned int height)
+{
+	//constexpr unsigned int triangleSize = sizeof(OVertex) * 3 / 4;
+	extern GPU_SHARED_MEMORY float sharedMemoryBuffer[];
+
+	//Every thread processes 1 single triangle for now
+	const unsigned int globalTriangleIndex = threadIdx.x + blockIdx.x * blockDim.x;
+	if (!(globalTriangleIndex < numTriangles))
+		return;
+
+	const TriangleIdx triangleIdx = dev_Triangles[globalTriangleIndex];
+
+	//Shared memory is laid out in a big row-list
+	//const unsigned int triangleMemoryIdx = threadIdx.x * triangleSize;
+	//OVertex& v0 = reinterpret_cast<OVertex&>(sharedMemoryBuffer[triangleMemoryIdx]);
+	//OVertex& v1 = reinterpret_cast<OVertex&>(sharedMemoryBuffer[triangleMemoryIdx + (sizeof(OVertex) / 4)]);
+	//OVertex& v2 = reinterpret_cast<OVertex&>(sharedMemoryBuffer[triangleMemoryIdx + (sizeof(OVertex) / 4) * 2]);
+
+	//memcpy(&v0, &dev_OVertices[triangleIdx.idx0], sizeof(OVertex));
+	//memcpy(&v1, &dev_OVertices[triangleIdx.idx1], sizeof(OVertex));
+	//memcpy(&v2, &dev_OVertices[triangleIdx.idx2], sizeof(OVertex));
+
+	OVertex v0 = dev_OVertices[triangleIdx.idx0];
+	OVertex v1 = dev_OVertices[triangleIdx.idx1];
+	OVertex v2 = dev_OVertices[triangleIdx.idx2];
+
+	//bool isDoubleSidedRendering = false;
+
+	//is triangle visible according to cullingmode?
+	if (cm == CullingMode::BackFace)
+	{
+		const FVector3 faceNormal = GetNormalized(Cross(FVector3{ v1.p - v0.p }, FVector3{ v2.p - v0.p }));
+		const float cullingValue = Dot(camFwd, faceNormal);
+		if (cullingValue <= 0.f)
+		{
+			//if (isDoubleSidedRendering)
+			//{
+			//	OVertex origV1 = v1;
+			//	v1 = v2;
+			//	v2 = origV1;
+			//}
+			//else
+			//{
+			return; //cull triangle
+		//}
+		}
+	}
+	else if (cm == CullingMode::FrontFace)
+	{
+		const FVector3 faceNormal = GetNormalized(Cross(FVector3{ v1.p - v0.p }, FVector3{ v2.p - v0.p }));
+		const float cullingValue = Dot(camFwd, faceNormal);
+		if (cullingValue >= 0.f)
+		{
+			//if (isDoubleSidedRendering)
+			//{
+			//	OVertex origV1 = v1;
+			//	v1 = v2;
+			//	v2 = origV1;
+			//}
+			//else
+			//{
+			return; //cull triangle
+		//}
+		}
+	}
+	//else if (cm == CullingMode::NoCulling)
+	//{
+	//}
+
+	if (!IsTriangleVisible(v0.p.xyz, v1.p.xyz, v2.p.xyz))
+	{
+		return;
+	}
+
+	NDCToScreenSpace(v0.p.xy, v1.p.xy, v2.p.xy, width, height);
+	const BoundingBox bb = GetBoundingBox(v0.p.xy, v1.p.xy, v2.p.xy, width, height);
+	//Rasterize Screenspace triangle
+	RasterizeTriangle(bb, v0, v1, v2, dev_MutexBuffer, dev_DepthBuffer, dev_PixelShadeBuffer, width, textures);
+}
+
+GPU_KERNEL
+void TA_TB_Kernel_DEP(TriangleIdx* dev_Triangles, const unsigned int* __restrict__ const dev_IndexBuffer, unsigned int numIndices,
 	unsigned int* dev_NumVisibleTriangles, unsigned int* dev_BinQueueSizes, unsigned int* dev_BinQueues, int* dev_BinQueueSizesMutexBuffer,
 	const OVertex* dev_OVertices, const PrimitiveTopology pt, const CullingMode cm, const FVector3 camFwd,
 	IPoint2 numBins, IPoint2 binDim, unsigned int binQueueMaxSize, unsigned int width, unsigned int height)
@@ -993,10 +1528,10 @@ void TriangleAssemblerAndBinnerKernel(TriangleIdx* dev_Triangles, const unsigned
 			const unsigned int binIdx = x + y * numBins.x;
 
 			//Deliberately not using a helper struct, since it would waste (note: A LOT of) memory and operations
-			CUDAAtomicQueueOP::Insert(&dev_BinQueues[binIdx * binQueueMaxSize], 
-				dev_BinQueueSizes[binIdx], 
-				dev_BinQueueSizesMutexBuffer[binIdx], 
-				binQueueMaxSize, 
+			CUDAAtomicQueueOP::Insert(&dev_BinQueues[binIdx * binQueueMaxSize],
+				dev_BinQueueSizes[binIdx],
+				dev_BinQueueSizesMutexBuffer[binIdx],
+				binQueueMaxSize,
 				triangleIdx);
 
 			//bool isDone = false;
@@ -1020,505 +1555,6 @@ void TriangleAssemblerAndBinnerKernel(TriangleIdx* dev_Triangles, const unsigned
 			//} while (!isDone);
 		}
 	}
-}
-
-//TODO: templated kernel, for bin queues of datatype T (unsigned int TriangleIdx)
-
-GPU_KERNEL
-void TriangleBinnerKernel(TriangleIdx* dev_Triangles, unsigned int numVisibleTriangles, unsigned int triangleIdxOffset,
-	unsigned int* dev_BinQueueSizes, unsigned int* dev_BinQueues, int* dev_BinQueueSizesMutexBuffer,
-	const OVertex* dev_OVertices, 
-	IPoint2 numBins, IPoint2 binDim, unsigned int binQueueMaxSize, unsigned int width, unsigned int height)
-{
-	//TODO: use shared memory to copy faster
-	//data size of 9 shows no bank conflicts!
-	//TriangleIdx can stay in local memory (registers)
-	//DEPENDS ON REGISTER USAGE
-
-	//IDEA: (concept taken from Laine et al.)
-	//Shared memory as a list of bits, 48 bytes per triangle(/thread), which covers 384 bins (== bits)
-	//This will maximize occupancy for any amount of threads per block
-	//Less amount of bins is applicable too
-
-	//each thread bins 1 triangle
-	const unsigned int triangleIdx = blockIdx.x * blockDim.x + threadIdx.x + triangleIdxOffset;
-	if (triangleIdx < numVisibleTriangles)
-	{
-		const TriangleIdx triangle = dev_Triangles[triangleIdx];
-
-		FPoint2 p0 = dev_OVertices[triangle.idx0].p.xy;
-		FPoint2 p1 = dev_OVertices[triangle.idx1].p.xy;
-		FPoint2 p2 = dev_OVertices[triangle.idx2].p.xy;
-
-		//assign to correct bin(s), with globalTriangleIdx corresponding to its bin
-		//each bin is a part of the window (have multiple atomic buffers for each bin)
-
-		NDCToScreenSpace(p0, p1, p2, width, height);
-		const BoundingBox triangleBb = GetBoundingBox(p0, p1, p2, width, height);
-
-		int binMinX = triangleBb.xMin / binDim.x; //most left bin
-		int binMinY = triangleBb.yMin / binDim.y; //most bottom bin
-		int binMaxX = triangleBb.xMax / binDim.x; //most right bin
-		int binMaxY = triangleBb.yMax / binDim.y; //most top bin
-		binMinX = ClampFast(binMinX, 0, numBins.x);
-		binMinY = ClampFast(binMinY, 0, numBins.y);
-		binMaxX = ClampFast(binMaxX, 0, numBins.x - 1);
-		binMaxY = ClampFast(binMaxY, 0, numBins.y - 1);
-		//This creates a grid of bins that overlap with triangle boundingbox
-
-		//TODO: get all middle bin points in triangle polygon
-		//TODO: get all intersecting rectangles of bins from all 3 triangle edges
-		//https://stackoverflow.com/questions/16203760/how-to-check-if-line-segment-intersects-a-rectangle
-
-		for (int x{ binMinX }; x <= binMaxX; ++x)
-		{
-			for (int y{ binMinY }; y <= binMaxY; ++y)
-			{
-				//atomically add triangle to bin queue
-				const unsigned int binIdx = x + y * numBins.x;
-
-				bool isDone = false;
-				do
-				{
-					isDone = (atomicCAS(&dev_BinQueueSizesMutexBuffer[binIdx], 0, 1) == 0);
-					if (isDone)
-					{
-						//critical section
-						const unsigned int currQueueSize = dev_BinQueueSizes[binIdx];
-
-						if (currQueueSize < binQueueMaxSize)
-						{
-							//insert triangle Idx in queue
-							dev_BinQueues[binIdx * binQueueMaxSize + currQueueSize] = triangleIdx;
-							//increase bin's queue size
-							++dev_BinQueueSizes[binIdx];
-
-							//dev_BinQueueSizesMutexBuffer[binIdx] = 0; //release lock
-						}
-						dev_BinQueueSizesMutexBuffer[binIdx] = 0; //release lock
-						//end of critical section
-					}
-				} while (!isDone);
-			}
-		}
-	}
-}
-
-GPU_KERNEL
-void RasterizerPerBinKernel(const TriangleIdx* __restrict__ const dev_Triangles, const OVertex* __restrict__ const dev_OVertices,
-	PixelShade* dev_PixelShadeBuffer, int* dev_DepthBuffer, int* dev_DepthMutexBuffer, CUDATexturesCompact textures,
-	unsigned int* dev_BinQueues, unsigned int* dev_BinQueueSizes, int* dev_BinQueueSizesMutexBuffer,
-	IPoint2 binDim, unsigned int binQueueMaxSize, const unsigned int width, const unsigned int height)
-{
-	//TODO: threads cooperatively store in shared memory
-	//extern GPU_SHARED_MEMORY float sharedMemoryBuffer[];
-
-	//PROGNOSIS: this will be slower and more threads will be "wasted" on the same potential triangle
-	//BUT the main advantage is that big triangles will be eliminated and split up into smaller binned ones
-
-	//each block processes 1 bin
-	const unsigned int binIdx = blockIdx.x + blockIdx.y * gridDim.x;
-
-	const unsigned int queueSize = dev_BinQueueSizes[binIdx];
-	if (threadIdx.x < queueSize)
-	{
-		//each thread processes 1 triangle
-		const unsigned int triangleIdx = dev_BinQueues[binIdx * binQueueMaxSize + threadIdx.x];
-
-		const TriangleIdx triangle = dev_Triangles[triangleIdx];
-		OVertex v0 = dev_OVertices[triangle.idx0];
-		OVertex v1 = dev_OVertices[triangle.idx1];
-		OVertex v2 = dev_OVertices[triangle.idx2];
-
-		//3: rasterize triangle with binned bounding box (COARSE)
-
-		NDCToScreenSpace(v0.p.xy, v1.p.xy, v2.p.xy, width, height);
-		const unsigned int minX = blockIdx.x * binDim.x;
-		const unsigned int minY = blockIdx.y * binDim.y;
-		const unsigned int maxX = minX + binDim.x;
-		const unsigned int maxY = minY + binDim.y;
-		const BoundingBox bb = GetBoundingBoxTiled(v0.p.xy, v1.p.xy, v2.p.xy, minX, minY, maxX, maxY);
-		RasterizeTriangle(bb, v0, v1, v2, dev_DepthMutexBuffer, dev_DepthBuffer, dev_PixelShadeBuffer, width, textures);
-
-		//BoundingBox bb;
-		//bb.xMin = blockIdx.x * binDim.x;
-		//bb.yMin = blockIdx.y * binDim.y;
-		//bb.xMax = bb.xMin + binDim.x;
-		//bb.yMax = bb.yMin + binDim.y;
-		//RasterizeTriangle(bb, v0, v1, v2, dev_DepthMutexBuffer, dev_DepthBuffer, dev_PixelShadeBuffer, width, textures);
-
-		//TODO: every thread in CTA processes a NxN tile of triangle in bin (fine rasterizer)
-		//4: each thread in block does a 8x8 pixel area of triangle
-		//each thread block does 1 triangle instead of each block does sizeofbinqueue triangles
-	}
-}
-
-GPU_KERNEL
-void RasterizerPerTileKernel(const TriangleIdx* __restrict__ const dev_Triangles, const OVertex* __restrict__ const dev_OVertices,
-	PixelShade* dev_PixelShadeBuffer, int* dev_DepthBuffer, int* dev_DepthMutexBuffer, CUDATexturesCompact textures,
-	unsigned int* dev_BinQueues, unsigned int* dev_BinQueueSizes, int* dev_BinQueueSizesMutexBuffer, IPoint2 binDim, unsigned int binQueueMaxSize,
-	const unsigned int pixelCoverageX, const unsigned int pixelCoverageY, const unsigned int width, const unsigned int height)
-{
-	//TODO: blocksize.x == binQueueMaxSize
-
-	//each block processes 1 bin
-	const unsigned int binIdx = blockIdx.x + blockIdx.y * gridDim.x;
-	const unsigned int queueSize = dev_BinQueueSizes[binIdx];
-	//const unsigned int queueSize = binQueueMaxSize;
-
-	//every thread covers a NxN pixel area
-	const unsigned int minX = blockIdx.x * binDim.x;
-	const unsigned int minY = blockIdx.y * binDim.y;
-	const unsigned int maxX = minX + binDim.x;
-	const unsigned int maxY = minY + binDim.y;
-
-	BoundingBox bb;
-	bb.xMin = minX + threadIdx.x * pixelCoverageX;
-	bb.yMin = minY + threadIdx.y * pixelCoverageY;
-	bb.xMax = bb.xMin + pixelCoverageX;
-	bb.yMax = bb.yMin + pixelCoverageY;
-
-	bb.xMin = ClampFast(bb.xMin, (short)minX, (short)maxX);
-	bb.xMax = ClampFast(bb.xMax, (short)minX, (short)maxX);
-	bb.yMin = ClampFast(bb.yMin, (short)minY, (short)maxY);
-	bb.yMax = ClampFast(bb.yMax, (short)minY, (short)maxY);
-
-#ifdef FINERASTER_SHAREDMEM
-	//Occupancy stays higher due to less shared memory usage/block
-	//CONCERN: occupancy is already low due to high register usage
-	//Perhaps use this big amount of shared memory paired with the higher register usage to "mask" them
-
-	extern GPU_SHARED_MEMORY float positionsBuffer[];
-
-	if (threadIdx.x < queueSize)
-	{
-		const unsigned int binQueueIdx = dev_BinQueues[binIdx * binQueueMaxSize + threadIdx.x];
-		const TriangleIdx triangle = dev_Triangles[binQueueIdx];
-
-		const OVertex& v0 = dev_OVertices[triangle.idx0];
-		const OVertex& v1 = dev_OVertices[triangle.idx1];
-		const OVertex& v2 = dev_OVertices[triangle.idx2];
-
-		//each thread stores 3 FPoint4's into shared memory at once
-		//Only then copy OVertex_Data when pixel is in triangle
-		//This will actually maximize the occupancy of shared memory usage for every thread block
-		FPoint4* pPositions = reinterpret_cast<FPoint4*>(positionsBuffer);
-
-		//Disadvantage: 2 global memory accesses
-		//Advantage: fast copy of all Positions into shared memory and faster access
-		OVertex_PosShared test0{};
-		OVertex_PosShared test1{};
-		OVertex_PosShared test2{};
-		test0.pPos = &pPositions[threadIdx.x];
-		test1.pPos = &pPositions[threadIdx.x + 1];
-		test2.pPos = &pPositions[threadIdx.x + 2];
-
-		//copy to shared memory
-		*test0.pPos = v0.p;
-		*test1.pPos = v1.p;
-		*test2.pPos = v2.p;
-
-		//copy to local memory
-		memcpy(&test0.vData, &v0 + sizeof(FPoint4), sizeof(OVertexData));
-		memcpy(&test1.vData, &v1 + sizeof(FPoint4), sizeof(OVertexData));
-		memcpy(&test2.vData, &v2 + sizeof(FPoint4), sizeof(OVertexData));
-
-		//acts as a barrier for shared memory
-		__syncthreads();
-
-		NDCToScreenSpace(test0.pPos->xy, test1.pPos->xy, test2.pPos->xy, width, height);
-		RasterizeTriangle(bb, v0, v1, v2, dev_DepthMutexBuffer, dev_DepthBuffer, dev_PixelShadeBuffer, width, textures);
-	}
-#else
-	for (unsigned int currQueueIdx{}; currQueueIdx < queueSize; ++currQueueIdx)
-	{
-		const unsigned int triangleIdx = dev_BinQueues[binIdx * binQueueMaxSize + currQueueIdx];
-		const TriangleIdx triangle = dev_Triangles[triangleIdx];
-		OVertex v0 = dev_OVertices[triangle.idx0];
-		OVertex v1 = dev_OVertices[triangle.idx1];
-		OVertex v2 = dev_OVertices[triangle.idx2];
-
-		NDCToScreenSpace(v0.p.xy, v1.p.xy, v2.p.xy, width, height);
-		//Rasterize Screenspace triangle
-		RasterizeTriangle(bb, v0, v1, v2, dev_DepthMutexBuffer, dev_DepthBuffer, dev_PixelShadeBuffer, width, textures);
-	}
-#endif
-}
-
-#pragma endregion
-
-#pragma region DEPRECATED
-
-GPU_KERNEL
-void VertexShaderKernelPrototype(const IVertex* __restrict__ dev_IVertices, OVertex* dev_OVertices, unsigned int numVertices)
-{
-	//TODO: store matrix in top of shared memory for faster access
-	//and offset shared memory access for threads
-	//Potential problem: first warp might encounter bank conflicts?
-
-	//OVERVIEW: each thread manages 1 attribute, this being a Vector3
-	//The Output Position is being stored as a Vector3, with the W-elements stored in a separate shared memory row
-	//32 x 3 = 96 => 32 vertex attributes per warp in a shared memory buffer of size 96
-	//32 x 4 = 128 => 32 vertex OPositions per warp in a shared memory buffer of size 128
-
-	//IVERTEX LAYOUT: POS3 - UV2 - NORM3 - TAN3 - COL3 (size: 14)
-	//OVERTEX LAYOUT: POS4 - UV2 - NORM3 - TAN3 - VD3 - COL3 (size: 18)
-
-	extern GPU_SHARED_MEMORY float sharedMemoryBuffer[];
-
-	constexpr float* camPos = &dev_ConstMemory[0];
-	constexpr float* worldMatrix = &dev_ConstMemory[6];
-	constexpr float* WVPMatrix = &dev_ConstMemory[22];
-	constexpr float* rotationMatrix = &dev_ConstMemory[38];
-
-	//TODO: each thread should store 1 bank element at once for more coalesced access
-	//instead of 1 thread storing 1 attribute from multiple banks to global memory
-
-	//threadIdx.x: [0, 31]
-	//threadIdx.y: [0, 7]
-	const unsigned int vertexIdx = (blockIdx.x * (blockDim.x * blockDim.y)) + threadIdx.x + (threadIdx.y * blockDim.x);
-	if (vertexIdx < numVertices)
-	{
-		const IVertex& iVertex = dev_IVertices[vertexIdx];
-		OVertex* pOVertex = &dev_OVertices[vertexIdx];
-
-		//TODO: store W component in local memory???
-		//TODO: register usage is above 32, mainly due to matrixmath functions
-		//also some used for shared memory and pointers
-
-		// --- STEP 1 ---: Calculate Input Position to Ouput Position
-		//for every 32 threads of vec3 (96 elements), a row of W elements is created (32 elements)
-
-		//strided load into shared memory
-		const unsigned int warpSharedMemIdx = threadIdx.y * 128;
-		unsigned int sharedMemVecIdx = threadIdx.x * 3 + warpSharedMemIdx;
-		float* pVecXYZ = &sharedMemoryBuffer[sharedMemVecIdx];
-		const unsigned int sharedMemWIdx = threadIdx.x + 96 + warpSharedMemIdx;
-		float* pVecW = &sharedMemoryBuffer[sharedMemWIdx];
-
-		//memory is now coalesced
-		memcpy(pVecXYZ, &iVertex.p, 12);
-		//calculate NDC (WVP * v.p.xyzw / w)
-		CalculateOutputPosXYZW(WVPMatrix, pVecXYZ, pVecW); //calculate NDC (WVPMat)
-		//divide xyz by w
-		pVecXYZ[0] /= *pVecW;
-		pVecXYZ[1] /= *pVecW;
-		pVecXYZ[2] /= *pVecW;
-
-		//store into global memory
-		memcpy(&pOVertex->p, pVecXYZ, 12); //copy vec3 elements
-		pOVertex->p.w = *pVecW; //copy w element
-
-		// --- STEP 2 ---: Calculate ViewDirection
-
-		memcpy(pVecXYZ, &iVertex.p, 12);
-		CalculateOutputPosXYZ(worldMatrix, pVecXYZ); //calculate worldposition (worldMat)
-
-		pVecXYZ[0] -= camPos[0];
-		pVecXYZ[1] -= camPos[1];
-		pVecXYZ[2] -= camPos[2];
-		Normalize(reinterpret_cast<FVector3&>(*pVecXYZ));
-
-		memcpy(&pOVertex->vd, pVecXYZ, 12);
-		__syncthreads(); //sync bc we don't use W value nomore
-
-		//shared memory is now used 
-		sharedMemVecIdx = threadIdx.x * 3 + threadIdx.y * 96;
-		pVecXYZ = &sharedMemoryBuffer[sharedMemVecIdx];
-
-		// --- STEP 3 ---: Calculate Input Normal to Output Normal
-
-		memcpy(pVecXYZ, &iVertex.n, 12);
-		MultiplyMatVec(rotationMatrix, pVecXYZ, 3, 3); //calculate normal
-		memcpy(&pOVertex->n, pVecXYZ, 12);
-
-		// --- STEP 4 ---: Calculate Input Tangent to Output Tangent
-
-		memcpy(pVecXYZ, &iVertex.tan, 12);
-		MultiplyMatVec(rotationMatrix, pVecXYZ, 3, 3); //calculate tangent
-		memcpy(&pOVertex->tan, pVecXYZ, 12);
-
-		// --- STEP 5 ---: Copy UV and Colour
-
-		//COLOUR
-		memcpy(pVecXYZ, &iVertex.c, 12);
-		memcpy(&pOVertex->c, pVecXYZ, 12);
-
-		//UV
-		//pVecXYZ is "padded" UV to avoid bank conflicts
-		memcpy(pVecXYZ, &iVertex.uv, 8);
-		memcpy(&pOVertex->uv, pVecXYZ, 8);
-	}
-}
-
-GPU_KERNEL
-void TriangleAssemblerKernelOld(TriangleIdx* dev_Triangles, const unsigned int* __restrict__ const dev_IndexBuffer,
-	unsigned int numIndices, const PrimitiveTopology pt)
-{
-	//TODO: perform culling/clipping etc.
-	//advantage of TriangleAssembly: each thread stores 1 triangle
-	//many threads == many triangles processed at once
-
-	//TODO: global to shared to global?
-	//TODO: local copy to global vs global to global?
-
-	//'talk about naming gore, eh?
-	const unsigned int indexIdx = (blockIdx.x * blockDim.x) + threadIdx.x;
-	if (pt == PrimitiveTopology::TriangleList)
-	{
-		const unsigned int correctedIdx = (indexIdx * 3);
-		if (correctedIdx < numIndices)
-		{
-			memcpy(&dev_Triangles[indexIdx], &dev_IndexBuffer[correctedIdx], sizeof(TriangleIdx));
-		}
-	}
-	else //if (pt == PrimitiveTopology::TriangleStrip)
-	{
-		if (indexIdx < numIndices - 2)
-		{
-			TriangleIdx triangle;
-			memcpy(&triangle, &dev_IndexBuffer[indexIdx], sizeof(TriangleIdx));
-			const bool isOdd = (indexIdx % 2);
-			if (isOdd)
-			{
-				//swap without temp
-				triangle.idx1 = triangle.idx1 + triangle.idx2;
-				triangle.idx2 = triangle.idx1 - triangle.idx2;
-				triangle.idx1 = triangle.idx1 - triangle.idx2;
-			}
-			memcpy(&dev_Triangles[indexIdx], &triangle, sizeof(TriangleIdx));
-		}
-	}
-}
-
-GPU_KERNEL
-void RasterizerPerPixelKernel(const TriangleIdx* __restrict__ dev_Triangles, const OVertex* __restrict__ const dev_OVertices, unsigned int numTriangles,
-	PixelShade* dev_PixelShadeBuffer, int* dev_DepthBuffer, CUDATexturesCompact textures,
-	const unsigned int width, const unsigned int height)
-{
-	//TODO: each thread represents a pixel
-	//each thread loops through all triangles
-	//triangles are stored in shared memory (broadcast)
-	//advantage: thread only does 1 check per triangle w/o looping for all pixels 
-	//=> O(n) n = numTriangles vs O(n^m) n = numTriangles m = numPixels
-	//advantage: nomore atomic operations needed bc only 1 thread can write to 1 unique pixelIdx
-
-	constexpr float* pCamFwd = &dev_ConstMemory[3];
-
-	//extern GPU_SHARED_MEMORY float sharedMemoryBuffer[];
-
-	const unsigned int x = threadIdx.x + blockIdx.x * blockDim.x;
-	const unsigned int y = threadIdx.y + blockIdx.y * blockDim.y;
-	const FPoint2 pixel{ float(x), float(y) };
-
-	for (unsigned int i{}; i < numTriangles; ++i)
-	{
-		const TriangleIdx triangleIdx = dev_Triangles[i];
-
-		//TODO: store in shared memory
-		OVertex v0 = dev_OVertices[triangleIdx.idx0];
-		OVertex v1 = dev_OVertices[triangleIdx.idx1];
-		OVertex v2 = dev_OVertices[triangleIdx.idx2];
-
-		if (!IsTriangleVisible(v0.p.xyz, v1.p.xyz, v2.p.xyz))
-		{
-			return;
-		}
-
-		NDCToScreenSpace(v0.p.xy, v1.p.xy, v2.p.xy, width, height);
-		const BoundingBox bb = GetBoundingBox(v0.p.xy, v1.p.xy, v2.p.xy, width, height);
-
-		if (!IsPixelInBoundingBox(pixel, bb))
-		{
-			return;
-		}
-
-		//Rasterize pixel
-		RasterizePixel(pixel, v0, v1, v2, dev_DepthBuffer, dev_PixelShadeBuffer, width, textures);
-	}
-}
-
-GPU_KERNEL
-void RasterizerPerTriangleKernelOld(const TriangleIdx* __restrict__ const dev_Triangles, const OVertex* __restrict__ const dev_OVertices, unsigned int numTriangles,
-	PixelShade* dev_PixelShadeBuffer, int* dev_DepthBuffer, int* dev_MutexBuffer, CUDATexturesCompact textures,
-	const FVector3 camFwd, const CullingMode cm, const unsigned int width, const unsigned int height)
-{
-	//constexpr unsigned int triangleSize = sizeof(OVertex) * 3 / 4;
-	extern GPU_SHARED_MEMORY float sharedMemoryBuffer[];
-
-	//Every thread processes 1 single triangle for now
-	const unsigned int globalTriangleIndex = threadIdx.x + blockIdx.x * blockDim.x;
-	if (!(globalTriangleIndex < numTriangles))
-		return;
-
-	const TriangleIdx triangleIdx = dev_Triangles[globalTriangleIndex];
-
-	//Shared memory is laid out in a big row-list
-	//const unsigned int triangleMemoryIdx = threadIdx.x * triangleSize;
-	//OVertex& v0 = reinterpret_cast<OVertex&>(sharedMemoryBuffer[triangleMemoryIdx]);
-	//OVertex& v1 = reinterpret_cast<OVertex&>(sharedMemoryBuffer[triangleMemoryIdx + (sizeof(OVertex) / 4)]);
-	//OVertex& v2 = reinterpret_cast<OVertex&>(sharedMemoryBuffer[triangleMemoryIdx + (sizeof(OVertex) / 4) * 2]);
-
-	//memcpy(&v0, &dev_OVertices[triangleIdx.idx0], sizeof(OVertex));
-	//memcpy(&v1, &dev_OVertices[triangleIdx.idx1], sizeof(OVertex));
-	//memcpy(&v2, &dev_OVertices[triangleIdx.idx2], sizeof(OVertex));
-
-	OVertex v0 = dev_OVertices[triangleIdx.idx0];
-	OVertex v1 = dev_OVertices[triangleIdx.idx1];
-	OVertex v2 = dev_OVertices[triangleIdx.idx2];
-
-	//bool isDoubleSidedRendering = false;
-
-	//is triangle visible according to cullingmode?
-	if (cm == CullingMode::BackFace)
-	{
-		const FVector3 faceNormal = GetNormalized(Cross(FVector3{ v1.p - v0.p }, FVector3{ v2.p - v0.p }));
-		const float cullingValue = Dot(camFwd, faceNormal);
-		if (cullingValue <= 0.f)
-		{
-			//if (isDoubleSidedRendering)
-			//{
-			//	OVertex origV1 = v1;
-			//	v1 = v2;
-			//	v2 = origV1;
-			//}
-			//else
-			//{
-			return; //cull triangle
-		//}
-		}
-	}
-	else if (cm == CullingMode::FrontFace)
-	{
-		const FVector3 faceNormal = GetNormalized(Cross(FVector3{ v1.p - v0.p }, FVector3{ v2.p - v0.p }));
-		const float cullingValue = Dot(camFwd, faceNormal);
-		if (cullingValue >= 0.f)
-		{
-			//if (isDoubleSidedRendering)
-			//{
-			//	OVertex origV1 = v1;
-			//	v1 = v2;
-			//	v2 = origV1;
-			//}
-			//else
-			//{
-			return; //cull triangle
-		//}
-		}
-	}
-	//else if (cm == CullingMode::NoCulling)
-	//{
-	//}
-
-	if (!IsTriangleVisible(v0.p.xyz, v1.p.xyz, v2.p.xyz))
-	{
-		return;
-	}
-
-	NDCToScreenSpace(v0.p.xy, v1.p.xy, v2.p.xy, width, height);
-	const BoundingBox bb = GetBoundingBox(v0.p.xy, v1.p.xy, v2.p.xy, width, height);
-	//Rasterize Screenspace triangle
-	RasterizeTriangle(bb, v0, v1, v2, dev_MutexBuffer, dev_DepthBuffer, dev_PixelShadeBuffer, width, textures);
 }
 
 #pragma endregion
@@ -1598,50 +1634,96 @@ void CUDARenderer::Clear(const RGBColor& colour)
 	int* dev_DepthMutexBuffer = m_CUDAWindowHelper.GetDev_DepthMutexBuffer();
 	PixelShade* dev_PixelShadeBuffer = m_CUDAWindowHelper.GetDev_FragmentBuffer();
 
-	//TODO: async in stream
+	//NO CONCURRENCY
+	
 	{
 		constexpr int depthBufferResetValue = INT_MAX;
 		const dim3 numThreadsPerBlock{ 32, 32 };
 		const dim3 numBlocks{ width / numThreadsPerBlock.x, height / numThreadsPerBlock.y };
-		ClearDepthBufferKernel<<<numBlocks, numThreadsPerBlock>>>
+		CLEAR_DepthBufferKernel << <numBlocks, numThreadsPerBlock>>>
 			(dev_DepthBuffer, depthBufferResetValue, width, height);
 	}
-
 	{
 		const size_t sizeInWords = width * height * (sizeof(PixelShade) / 4);
 		constexpr unsigned int numThreadsPerBlock = 512;
 		const unsigned int numBlocks = (unsigned int)(sizeInWords + numThreadsPerBlock - 1) / numThreadsPerBlock;
-		ClearPixelShadeBufferKernel<<<numBlocks, numThreadsPerBlock>>>
+		CLEAR_PixelShadeBufferKernel << <numBlocks, numThreadsPerBlock>>>
 			(dev_PixelShadeBuffer, sizeInWords);
 	}
-
 	{
-		//UNNECESSARY STEP: pixelshade stage will overwrite this anyway + more kernel launch overhead
 		const RGBA rgba{ colour };
 		const dim3 numThreadsPerBlock{ 32, 32 };
 		const dim3 numBlocks{ width / numThreadsPerBlock.x, height / numThreadsPerBlock.y };
-		//Needs to be called after ClearPixelShadeBufferKernel
-		ClearScreenKernel<<<numBlocks, numThreadsPerBlock>>>
+		CLEAR_SetPixelShadeBufferKernel << <numBlocks, numThreadsPerBlock>>>
 			(dev_PixelShadeBuffer, width, height, rgba.colour32);
-		////Not necessary, since we overwrite the entire buffer every frame anyway
-		//ClearFrameBufferKernel<<<numBlocks, numThreadsPerBlock>>>
-		//	(dev_FrameBuffer, width, height, rgba.colour32);
 	}
+	//{
+	//	////UNNECESSARY STEP: mutexbuffer should always revert to base initialized state, otherwise deadlocks would occur
+	//	//const dim3 numThreadsPerBlock{ 32, 32 };
+	//	//const dim3 numBlocks{ width / numThreadsPerBlock.x, height / numThreadsPerBlock.y };
+	//	//ClearDepthMutexBufferKernel<<<numBlocks, numThreadsPerBlock>>>
+	//	//	(dev_DepthMutexBuffer, width, height);
+	//}
 
-	{
-		////UNNECESSARY STEP: mutexbuffer should always revert to base initialized state, otherwise deadlocks would occur
-		//const dim3 numThreadsPerBlock{ 32, 32 };
-		//const dim3 numBlocks{ width / numThreadsPerBlock.x, height / numThreadsPerBlock.y };
-		//ClearDepthMutexBufferKernel<<<numBlocks, numThreadsPerBlock>>>
-		//	(dev_DepthMutexBuffer, width, height);
-	}
+	//CONCURRENCY TEST
+	
+	//cudaStream_t depthBufferStream{}, pixelShadeBufferStream{};
+	//CheckErrorCuda(cudaStreamCreate(&depthBufferStream));
+	//CheckErrorCuda(cudaStreamCreate(&pixelShadeBufferStream));
+	//{
+	//	constexpr int depthBufferResetValue = INT_MAX;
+	//	const dim3 numThreadsPerBlock{ 32, 32 };
+	//	const dim3 numBlocks{ width / numThreadsPerBlock.x, height / numThreadsPerBlock.y };
+	//	ClearDepthBufferKernel<<<numBlocks, numThreadsPerBlock, 0, depthBufferStream>>>
+	//		(dev_DepthBuffer, depthBufferResetValue, width, height);
+	//}
+	//{
+	//	const size_t sizeInWords = width * height * (sizeof(PixelShade) / 4);
+	//	constexpr unsigned int numThreadsPerBlock = 512;
+	//	const unsigned int numBlocks = (unsigned int)(sizeInWords + numThreadsPerBlock - 1) / numThreadsPerBlock;
+	//	ClearPixelShadeBufferKernel<<<numBlocks, numThreadsPerBlock, 0, pixelShadeBufferStream>>>
+	//		(dev_PixelShadeBuffer, sizeInWords);
+	//}
+	//{
+	//	CheckErrorCuda(WaitForStream(pixelShadeBufferStream)); //wait for other kernel to finish to prevent data races
+	//	//UNNECESSARY STEP: pixelshade stage will overwrite this anyway + more kernel launch overhead
+	//	const RGBA rgba{ colour };
+	//	const dim3 numThreadsPerBlock{ 32, 32 };
+	//	const dim3 numBlocks{ width / numThreadsPerBlock.x, height / numThreadsPerBlock.y };
+	//	//Needs to be called after ClearPixelShadeBufferKernel
+	//	SetPixelShadeBufferKernel<<<numBlocks, numThreadsPerBlock, 0, pixelShadeBufferStream>>>
+	//		(dev_PixelShadeBuffer, width, height, rgba.colour32);
+	//	////Not necessary, since we overwrite the entire buffer every frame anyway
+	//	//ClearFrameBufferKernel<<<numBlocks, numThreadsPerBlock>>>
+	//	//	(dev_FrameBuffer, width, height, rgba.colour32);
+	//}
+	//CheckErrorCuda(WaitForStream(depthBufferStream));
+	//CheckErrorCuda(cudaStreamDestroy(pixelShadeBufferStream));
+	//CheckErrorCuda(cudaStreamDestroy(depthBufferStream));
+
+	//MERGED CLEARING KERNEL TEST
+
+	//{
+	//	const RGBA rgba{ colour };
+	//	constexpr int depthBufferResetValue = INT_MAX;
+	//	const dim3 numThreadsPerBlock{ 32, 32 };
+	//	const dim3 numBlocks{ width / numThreadsPerBlock.x, height / numThreadsPerBlock.y };
+	//	ClearBuffersKernel<<<numBlocks, numThreadsPerBlock>>>
+	//		(dev_FrameBuffer, dev_DepthMutexBuffer, depthBufferResetValue, width, height, rgba.colour32);
+	//}
+	//{
+	//	const size_t sizeInWords = width * height * (sizeof(PixelShade) / 4);
+	//	constexpr unsigned int numThreadsPerBlock = 512;
+	//	const unsigned int numBlocks = (unsigned int)(sizeInWords + numThreadsPerBlock - 1) / numThreadsPerBlock;
+	//	ClearPixelShadeBufferKernel<<<numBlocks, numThreadsPerBlock>>>
+	//		(dev_PixelShadeBuffer, sizeInWords);
+	//}
 }
 
 CPU_CALLABLE
 void CUDARenderer::VertexShader(const CUDAMesh* pCudaMesh)
 {
-	const Mesh* pMesh = pCudaMesh->GetMesh();
-	const unsigned int numVertices = pMesh->GetNumVertices();
+	const unsigned int numVertices = pCudaMesh->GetNumVertices();
 
 	const IVertex* dev_IVertexBuffer = pCudaMesh->GetDevIVertexBuffer();
 	OVertex* dev_OVertexBuffer = pCudaMesh->GetDevOVertexBuffer();
@@ -1652,7 +1734,7 @@ void CUDARenderer::VertexShader(const CUDAMesh* pCudaMesh)
 	constexpr unsigned int numThreadsPerBlock = 256;
 	const unsigned int numBlocks = (numVertices + (numThreadsPerBlock - 1)) / numThreadsPerBlock;
 	//const unsigned int numSharedMemory = numThreadsPerBlock * sharedMemoryNeededPerThread;
-	VertexShaderKernelNaive<<<numBlocks, numThreadsPerBlock>>>(
+	VS_Kernel<<<numBlocks, numThreadsPerBlock>>>(
 		dev_IVertexBuffer, dev_OVertexBuffer, numVertices);
 
 	//NOTE: NOT FOR COMPUTE CAPABILITY 6.1, stats may be higher
@@ -1680,9 +1762,8 @@ void CUDARenderer::TriangleAssembler(const CUDAMesh* pCudaMesh, const FVector3& 
 	const unsigned int height = m_WindowHelper.Resolution.Height;
 
 	//MESH DATA
-	const Mesh* pMesh = pCudaMesh->GetMesh();
-	const PrimitiveTopology topology = pMesh->GetTopology();
-	const unsigned int numIndices = pMesh->GetNumIndices();
+	const PrimitiveTopology topology = pCudaMesh->GetTopology();
+	const unsigned int numIndices = pCudaMesh->GetNumIndices();
 	const unsigned int numTriangles = pCudaMesh->GetTotalNumTriangles();
 
 	const unsigned int* dev_IndexBuffer = pCudaMesh->GetDevIndexBuffer();
@@ -1692,7 +1773,7 @@ void CUDARenderer::TriangleAssembler(const CUDAMesh* pCudaMesh, const FVector3& 
 	//KERNEL LAUNCH PARAMS
 	const unsigned int numThreadsPerBlock = 256;
 	const unsigned int numBlocks = (numTriangles + (numThreadsPerBlock - 1)) / numThreadsPerBlock;
-	TriangleAssemblerKernel<<<numBlocks, numThreadsPerBlock, 0, stream>>>(
+	TA_Kernel<<<numBlocks, numThreadsPerBlock, 0, stream>>>(
 		dev_TriangleBuffer, dev_IndexBuffer, numIndices, m_Dev_NumVisibleTriangles,
 		dev_OVertexBuffer, topology, cm, camFwd,
 		width, height);
@@ -1703,13 +1784,12 @@ void CUDARenderer::TriangleAssembler(const CUDAMesh* pCudaMesh, const FVector3& 
 }
 
 CPU_CALLABLE
-void CUDARenderer::TriangleBinner(const CUDAMesh* pCudaMesh, const unsigned int triangleIdxOffset, cudaStream_t stream)
+void CUDARenderer::TriangleBinner(const CUDAMesh* pCudaMesh, const unsigned int numVisibleTriangles, const unsigned int triangleIdxOffset, cudaStream_t stream)
 {
 	const unsigned int width = m_WindowHelper.Resolution.Width;
 	const unsigned int height = m_WindowHelper.Resolution.Height;
 
 	//MESH DATA
-	const unsigned int numVisibleTriangles = pCudaMesh->GetVisibleNumTrianglesConst();
 	const OVertex* dev_OVertexBuffer = pCudaMesh->GetDevOVertexBuffer();
 	TriangleIdx* dev_TriangleBuffer = pCudaMesh->GetDevTriangleBuffer();
 
@@ -1723,7 +1803,7 @@ void CUDARenderer::TriangleBinner(const CUDAMesh* pCudaMesh, const unsigned int 
 	//KERNEL LAUNCH PARAMS
 	const unsigned int numThreadsPerBlock = m_BinQueues.GetQueueMaxSize();
 	const unsigned int numBlocks = 1;
-	TriangleBinnerKernel<<<numBlocks, numThreadsPerBlock, 0, stream>>>(
+	TB_Kernel<<<numBlocks, numThreadsPerBlock, 0, stream>>>(
 		dev_TriangleBuffer, numVisibleTriangles, triangleIdxOffset,
 		dev_BinQueueSizes, dev_BinQueues, dev_BinQueueSizesMutexBuffer,
 		dev_OVertexBuffer,
@@ -1743,9 +1823,8 @@ void CUDARenderer::TriangleAssemblerAndBinner(const CUDAMesh* pCudaMesh, const F
 	int* dev_DepthMutexBuffer = m_CUDAWindowHelper.GetDev_DepthMutexBuffer();
 
 	//MESH DATA
-	const Mesh* pMesh = pCudaMesh->GetMesh();
-	const unsigned int numIndices = pMesh->GetNumIndices();
-	const PrimitiveTopology topology = pMesh->GetTopology();
+	const unsigned int numIndices = pCudaMesh->GetNumIndices();
+	const PrimitiveTopology topology = pCudaMesh->GetTopology();
 	const unsigned int numTriangles = pCudaMesh->GetTotalNumTriangles();
 
 	const unsigned int* dev_IndexBuffer = pCudaMesh->GetDevIndexBuffer();
@@ -1761,7 +1840,7 @@ void CUDARenderer::TriangleAssemblerAndBinner(const CUDAMesh* pCudaMesh, const F
 
 	const unsigned int numThreadsPerBlock = 256;
 	const unsigned int numBlocks = (numTriangles + (numThreadsPerBlock - 1)) / numThreadsPerBlock;
-	TriangleAssemblerAndBinnerKernel<<<numBlocks, numThreadsPerBlock, 0, stream>>>(
+	TA_TB_Kernel_DEP<<<numBlocks, numThreadsPerBlock, 0, stream>>>(
 		dev_TriangleBuffer, dev_IndexBuffer, numIndices, m_Dev_NumVisibleTriangles,
 		dev_BinQueueSizes, dev_BinQueues, dev_BinQueueSizesMutexBuffer,
 		dev_OVertexBuffer, topology, cm, camFwd,
@@ -1801,7 +1880,7 @@ void CUDARenderer::Rasterizer(const CUDAMesh* pCudaMesh, const FVector3& camFwd,
 	//pixel coverage per thread
 	const unsigned int pixelCoverageX = m_BinDim.x / numThreadsPerBlock.x;
 	const unsigned int pixelCoverageY = m_BinDim.y / numThreadsPerBlock.y;
-	RasterizerPerTileKernel<<<numBlocks, numThreadsPerBlock, 0, stream>>>(
+	RA_PerTileKernel<<<numBlocks, numThreadsPerBlock, 0, stream>>>(
 		dev_TriangleBuffer, dev_OVertexBuffer,
 		dev_PixelShadeBuffer, dev_DepthBuffer, dev_DepthMutexBuffer, textures,
 		dev_BinQueues, dev_BinQueueSizes, dev_BinQueueSizesMutexBuffer, m_BinDim,
@@ -1859,7 +1938,7 @@ void CUDARenderer::Rasterizer(const CUDAMesh* pCudaMesh, const FVector3& camFwd,
 }
 
 CPU_CALLABLE
-void CUDARenderer::PixelShader(SampleState sampleState, bool isDepthColour)
+void CUDARenderer::PixelShader(SampleState sampleState, VisualisationState visualisationState)
 {
 	const unsigned int width = m_WindowHelper.Resolution.Width;
 	const unsigned int height = m_WindowHelper.Resolution.Height;
@@ -1869,9 +1948,21 @@ void CUDARenderer::PixelShader(SampleState sampleState, bool isDepthColour)
 
 	const dim3 numThreadsPerBlock{ 16, 16 };
 	const dim3 numBlocks{ width / numThreadsPerBlock.x, height / numThreadsPerBlock.y };
-	PixelShaderKernel<<<numBlocks, numThreadsPerBlock>>>(
-		dev_FrameBuffer, dev_PixelShadeBuffer, sampleState, isDepthColour,
-		width, height);
+
+	switch (visualisationState)
+	{
+	case VisualisationState::PBR:
+		PS_Kernel<<<numBlocks, numThreadsPerBlock>>>(dev_FrameBuffer, dev_PixelShadeBuffer, sampleState, width, height);
+		break;
+	case VisualisationState::Depth:
+		PS_VisualiseDepthColourKernel<<<numBlocks, numThreadsPerBlock>>>(dev_FrameBuffer, dev_PixelShadeBuffer, width, height);
+		break;
+	case VisualisationState::Normal:
+		PS_VisualiseNormalKernel<<<numBlocks, numThreadsPerBlock>>>(dev_FrameBuffer, dev_PixelShadeBuffer, width, height);
+		break;
+	default:
+		break;
+	}
 }
 
 CPU_CALLABLE
@@ -1921,16 +2012,16 @@ void CUDARenderer::DrawTextureGlobal(char* tp, bool isStretchedToWindow, SampleS
 }
 
 CPU_CALLABLE
-void CUDARenderer::WarmUp()
+void CUDARenderer::KernelWarmUp()
 {
-	ClearDepthBufferKernel<<<0, 0>>>(nullptr, 0, 0, 0);
-	ClearFrameBufferKernel<<<0, 0>>>(nullptr, 0, 0, 0);
-	ClearPixelShadeBufferKernel<<<0, 0>>>(nullptr, 0);
-	ClearDepthMutexBufferKernel <<<0, 0>>>(nullptr, 0, 0);
-	VertexShaderKernelNaive<<<0, 0>>>(nullptr, nullptr, 0);
-	TriangleAssemblerKernelOld<<<0, 0>>>(nullptr, nullptr, 0, (PrimitiveTopology)0);
-	RasterizerPerTriangleKernelOld<<<0, 0>>>(nullptr, nullptr, 0, nullptr, nullptr, nullptr, {}, {}, (CullingMode)0, 0, 0);
-	PixelShaderKernel<<<0, 0>>>(nullptr, nullptr, SampleState(0), false, 0, 0);
+	CLEAR_DepthBufferKernel<<<0, 0>>>(nullptr, 0, 0, 0);
+	CLEAR_FrameBufferKernel<<<0, 0>>>(nullptr, 0, 0, 0);
+	CLEAR_PixelShadeBufferKernel<<<0, 0>>>(nullptr, 0);
+	CLEAR_DepthMutexBufferKernel <<<0, 0>>>(nullptr, 0, 0);
+	VS_Kernel<<<0, 0>>>(nullptr, nullptr, 0);
+	TA_Kernel<<<0, 0>>>(nullptr, nullptr, 0, nullptr, nullptr, (PrimitiveTopology)0, (CullingMode)0, {}, 0, 0);
+	RA_PerTriangleKernel<<<0, 0>>>(nullptr, nullptr, 0, nullptr, nullptr, nullptr, {}, 0, 0);
+	PS_Kernel<<<0, 0>>>(nullptr, nullptr, SampleState(0), 0, 0);
 }
 
 #pragma endregion

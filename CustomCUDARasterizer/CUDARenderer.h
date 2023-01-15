@@ -22,6 +22,7 @@ class CUDATextureManager;
 struct CUDATexturesCompact;
 class CUDAMesh;
 struct PixelShade;
+enum class VisualisationState;
 
 //////////////////////////////
 //-----RAII Wrapper Class-----
@@ -66,13 +67,19 @@ public:
 	void DisplayGPUSpecs(int deviceId = 0);
 
 	//function that launches all kernels to eliminate overhead time (used for measuring)
-	void WarmUp();
+	void KernelWarmUp();
 
 	void StartTimer();
 	float StopTimer();
 	CUDABenchMarker& GetBenchMarker() { return m_BenchMarker; }
 
 private:
+	struct SortedCUDAMesh
+	{
+		unsigned int Idx;
+		unsigned int NumVisibleTriangles;
+		CUDAMesh* pCUDAMesh;
+	};
 	//-----MEMBER VARIABLES-----
 
 	unsigned int m_TotalNumTriangles{};
@@ -83,7 +90,7 @@ private:
 	CUDABenchMarker m_BenchMarker{};
 	CUDAAtomicQueues<unsigned int> m_BinQueues;
 	CUDAWindowHelper<PixelShade> m_CUDAWindowHelper;
-	std::vector<CUDAMesh*> m_pCUDAMeshes{};
+	std::vector<SortedCUDAMesh> m_CUDAMeshes{};
 	/*
 	//DEPRECATED
 	//Texture references have to be statically declared in global memory and bound to CUDA texture memory
@@ -100,11 +107,11 @@ private:
 	//function that allocates device buffers
 	void AllocateCUDADeviceBuffers();
 	//function that allocates and copies host mesh buffers to device
-	CUDAMesh* AllocateCUDAMeshBuffers(const Mesh* pMesh);
+	SortedCUDAMesh AllocateCUDAMeshBuffers(const Mesh* pMesh);
 	//function that frees all device mesh buffers
 	void FreeAllCUDAMeshBuffers();
 	//function that frees a device mesh buffers
-	void FreeCUDAMeshBuffers(CUDAMesh* pCudaMesh);
+	void FreeCUDAMeshBuffers(unsigned int meshIdx);
 	//function that frees device buffers
 	void FreeCUDADeviceBuffers();
 
@@ -113,12 +120,12 @@ private:
 	//function that updates mesh's worldmatrix
 	void UpdateWorldMatrixDataAsync(const FMatrix4& worldMatrix, const FMatrix4& wvpMat, const FMatrix3& rotationMat);
 	//function that pre-stores a mesh's textures
-	void UpdateCUDAMeshTextures(CUDAMesh* pCudaMesh, const CUDATextureManager& tm);
+	void UpdateCUDAMeshTextures(CUDAMesh* pCudaMesh, const int texIds[4], const CUDATextureManager& tm);
 	//function that fetches a mesh's textures
 	CUDATexturesCompact GetCUDAMeshTextures(const int* texIds, const CUDATextureManager& tm);
 
 	//function that blocks host calls until stream has finished
-	void WaitForStream(cudaStream_t stream);
+	cudaError_t WaitForStream(cudaStream_t stream);
 	//function that checks whether stream has finished without blocking host
 	bool IsStreamFinished(cudaStream_t stream);
 
@@ -128,8 +135,8 @@ private:
 	void Clear(const RGBColor& colour = { 0.25f, 0.25f, 0.25f });
 	void VertexShader(const CUDAMesh* pCudaMesh);
 	void TriangleAssembler(const CUDAMesh* pCudaMesh, const FVector3& camFwd, const CullingMode cm = CullingMode::BackFace, cudaStream_t stream = cudaStreamDefault);
-	void TriangleBinner(const CUDAMesh* pCudaMesh, const unsigned int triangleIdxOffset = 0, cudaStream_t stream = cudaStreamDefault);
+	void TriangleBinner(const CUDAMesh* pCudaMesh, const unsigned int numVisibleTriangles, const unsigned int triangleIdxOffset = 0, cudaStream_t stream = cudaStreamDefault);
 	void TriangleAssemblerAndBinner(const CUDAMesh* pCudaMesh, const FVector3& camFwd, const CullingMode cm = CullingMode::BackFace, cudaStream_t stream = cudaStreamDefault);
 	void Rasterizer(const CUDAMesh* pCudaMesh, const FVector3& camFwd, const CullingMode cm = CullingMode::BackFace, cudaStream_t stream = cudaStreamDefault);
-	void PixelShader(SampleState sampleState, bool isDepthColour);
+	void PixelShader(SampleState sampleState, VisualisationState visualisationState);
 };

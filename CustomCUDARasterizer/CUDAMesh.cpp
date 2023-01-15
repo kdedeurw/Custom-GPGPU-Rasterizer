@@ -1,17 +1,22 @@
 #include "PCH.h"
 #include "CUDAMesh.h"
 
-CUDAMesh::CUDAMesh(const unsigned int idx, const Mesh* pMesh)
-	: m_Idx{ idx }
-	, m_VisibleNumTriangles{}
-	, m_pMesh{ pMesh }
+CUDAMesh::CUDAMesh(const Mesh* pMesh)
+	: m_VertexType{ pMesh->GetVertexType() }
+	, m_VertexStride{ pMesh->GetVertexStride() }
+	, m_Topology{ pMesh->GetTopology() }
+	, m_NumVertices{ pMesh->GetNumVertices() }
+	, m_NumIndices{ pMesh->GetNumIndices() }
 	, m_Dev_IVertexBuffer{}
 	, m_Dev_IndexBuffer{}
 	, m_Dev_OVertexBuffer{}
 	, m_Dev_TriangleBuffer{}
+	, m_Position{ reinterpret_cast<FPoint3&>(m_WorldSpace[3][0]) }
 	, m_Textures{}
+	, m_WorldSpace{ pMesh->GetWorldConst() }
 {
-	Allocate();
+	m_Position += reinterpret_cast<const FVector3&>(pMesh->GetPositionConst());
+	Allocate(pMesh->GetVertexBuffer(), pMesh->GetIndexBuffer());
 };
 
 CUDAMesh::~CUDAMesh()
@@ -21,53 +26,36 @@ CUDAMesh::~CUDAMesh()
 
 unsigned int CUDAMesh::GetTotalNumTriangles() const
 {
-	const PrimitiveTopology topology = m_pMesh->GetTopology();
-	const unsigned int numIndices = m_pMesh->GetNumIndices();
 	unsigned int numTriangles{};
-	switch (topology)
+	switch (m_Topology)
 	{
 	case PrimitiveTopology::TriangleList:
-		numTriangles += numIndices / 3;
+		numTriangles += m_NumIndices / 3;
 		break;
 	case PrimitiveTopology::TriangleStrip:
-		numTriangles += numIndices - 2;
+		numTriangles += m_NumIndices - 2;
 		break;
 	}
 	return numTriangles;
 }
 
-void CUDAMesh::Allocate()
+void CUDAMesh::Allocate(IVertex* pVertexBuffer, unsigned int* pIndexBuffer)
 {
-	const PrimitiveTopology topology = m_pMesh->GetTopology();
-	const unsigned int numVertices = m_pMesh->GetNumVertices();
-	const unsigned int numIndices = m_pMesh->GetNumIndices();
-	const IVertex* pVertexBuffer = m_pMesh->GetVertexBuffer();
-	const unsigned int* pIndexBuffer = m_pMesh->GetIndexBuffer();
-
-	unsigned int numTriangles{};
-	switch (topology)
-	{
-	case PrimitiveTopology::TriangleList:
-		numTriangles += numIndices / 3;
-		break;
-	case PrimitiveTopology::TriangleStrip:
-		numTriangles += numIndices - 2;
-		break;
-	}
+	const unsigned int numTriangles = GetTotalNumTriangles();
 
 	//Allocate Input Vertex Buffer
-	CheckErrorCuda(cudaMalloc((void**)&m_Dev_IVertexBuffer, numVertices * sizeof(IVertex)));
+	CheckErrorCuda(cudaMalloc((void**)&m_Dev_IVertexBuffer, m_NumVertices * sizeof(IVertex)));
 	//Allocate Index Buffer
-	CheckErrorCuda(cudaMalloc((void**)&m_Dev_IndexBuffer, numIndices * sizeof(unsigned int)));
+	CheckErrorCuda(cudaMalloc((void**)&m_Dev_IndexBuffer, m_NumIndices * sizeof(unsigned int)));
 	//Allocate Ouput Vertex Buffer
-	CheckErrorCuda(cudaMalloc((void**)&m_Dev_OVertexBuffer, numVertices * sizeof(OVertex)));
+	CheckErrorCuda(cudaMalloc((void**)&m_Dev_OVertexBuffer, m_NumVertices * sizeof(OVertex)));
 	//Allocate device memory for entire range of triangles
 	CheckErrorCuda(cudaMalloc((void**)&m_Dev_TriangleBuffer, numTriangles * sizeof(TriangleIdx)));
 
 	//Copy Input Vertex Buffer
-	CheckErrorCuda(cudaMemcpy(m_Dev_IVertexBuffer, pVertexBuffer, numVertices * sizeof(IVertex), cudaMemcpyHostToDevice));
+	CheckErrorCuda(cudaMemcpy(m_Dev_IVertexBuffer, pVertexBuffer, m_NumVertices * sizeof(IVertex), cudaMemcpyHostToDevice));
 	//Copy Index Buffer
-	CheckErrorCuda(cudaMemcpy(m_Dev_IndexBuffer, pIndexBuffer, numIndices * sizeof(unsigned int), cudaMemcpyHostToDevice));
+	CheckErrorCuda(cudaMemcpy(m_Dev_IndexBuffer, pIndexBuffer, m_NumIndices * sizeof(unsigned int), cudaMemcpyHostToDevice));
 }
 
 void CUDAMesh::Free()

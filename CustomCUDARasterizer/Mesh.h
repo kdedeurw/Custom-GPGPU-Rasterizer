@@ -31,6 +31,7 @@ public:
 	PrimitiveTopology GetTopology() const { return m_Topology; }
 	unsigned int GetNumVertices() const { return m_NumVertices; }
 	unsigned int GetNumIndices() const { return m_NumIndices; }
+	unsigned int GetTotalNumTriangles() const;
 	IVertex* GetVertexBuffer() const { return m_pVertexBuffer; }
 	unsigned int* GetIndexBuffer() const { return m_pIndexBuffer; }
 	const int* GetTextureIds() const { return m_TextureIds; }
@@ -43,9 +44,9 @@ protected:
 	PrimitiveTopology m_Topology;
 	unsigned int m_NumVertices;
 	unsigned int m_NumIndices;
-	FPoint3& m_Position;
 	IVertex* m_pVertexBuffer;
 	unsigned int* m_pIndexBuffer;
+	FPoint3& m_Position;
 	int m_TextureIds[4];
 	FMatrix4 m_WorldSpace;
 };

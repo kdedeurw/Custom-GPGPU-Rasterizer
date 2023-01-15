@@ -5,6 +5,7 @@
 class SceneGraph;
 enum class SampleState;
 enum class CullingMode;
+enum class VisualisationState;
 class SceneManager final
 {
 public:
@@ -15,20 +16,20 @@ public:
 
 	void AddSceneGraph(SceneGraph* pSceneGraph);
 
-	bool IsDepthColour() const { return m_IsDepthColour; };
+	VisualisationState GetVisualisationState() const { return m_Visualisation; };
 	SceneGraph* GetSceneGraph() const;
 	SampleState GetSampleState() const { return m_SampleState; };
 	CullingMode GetCullingMode() const { return m_CullingMode; };
 
 	void ChangeSceneGraph();
 	void ChangeSceneGraph(int idx);
-	void ToggleDepthColour();
+	void ToggleVisualisation();
 	void ToggleSampleState();
 	void ToggleCullingMode();
 
 private:
-	bool m_IsDepthColour;
 	int m_Index;
+	VisualisationState m_Visualisation;
 	std::vector<SceneGraph*> m_pSceneGraphs;
 	SampleState m_SampleState;
 	CullingMode m_CullingMode;

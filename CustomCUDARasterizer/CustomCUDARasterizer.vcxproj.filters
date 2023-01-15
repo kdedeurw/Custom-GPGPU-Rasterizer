@@ -28,16 +28,16 @@
     <Filter Include="Helpers\FrameWork">
       <UniqueIdentifier>{eafcfcd9-00d3-4791-80a1-1b562c612e73}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Helpers\CUDA\Textures">
+      <UniqueIdentifier>{97491f2a-5188-4c58-ba2d-57c569085886}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <CudaCompile Include="main.cpp" />
-    <CudaCompile Include="CUDAROPs.cuh">
+    <CudaCompile Include="CUDAROPs.cu">
       <Filter>Helpers\CUDA</Filter>
     </CudaCompile>
     <CudaCompile Include="CUDARenderer.cu">
-      <Filter>Helpers\CUDA</Filter>
-    </CudaCompile>
-    <CudaCompile Include="CUDAROPs.cu">
       <Filter>Helpers\CUDA</Filter>
     </CudaCompile>
   </ItemGroup>
@@ -85,14 +85,14 @@
     <ClCompile Include="CUDATextureManager.cpp">
       <Filter>Helpers\Managers</Filter>
     </ClCompile>
-    <ClCompile Include="CUDATexture.cpp">
-      <Filter>Helpers\CUDA</Filter>
-    </ClCompile>
     <ClCompile Include="Mesh.cpp">
       <Filter>Renderer\Objects</Filter>
     </ClCompile>
     <ClCompile Include="CUDAMesh.cpp">
       <Filter>Helpers\CUDA</Filter>
+    </ClCompile>
+    <ClCompile Include="CUDATexture.cpp">
+      <Filter>Helpers\CUDA\Textures</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
@@ -181,9 +181,6 @@
     <ClInclude Include="CUDARenderer.h">
       <Filter>Helpers\CUDA</Filter>
     </ClInclude>
-    <ClInclude Include="CUDATextureSampler.cuh">
-      <Filter>Helpers\CUDA</Filter>
-    </ClInclude>
     <ClInclude Include="Textures.h">
       <Filter>Renderer\Shading</Filter>
     </ClInclude>
@@ -212,9 +209,6 @@
     <ClInclude Include="Camera.h">
       <Filter>Helpers\FrameWork</Filter>
     </ClInclude>
-    <ClInclude Include="DEFINES.h">
-      <Filter>Helpers\FrameWork</Filter>
-    </ClInclude>
     <ClInclude Include="ETimer.h">
       <Filter>Helpers\FrameWork</Filter>
     </ClInclude>
@@ -239,14 +233,21 @@
     <ClInclude Include="CUDAStructs.h">
       <Filter>Helpers\CUDA</Filter>
     </ClInclude>
-    <ClInclude Include="CUDATexture.h">
-      <Filter>Helpers\CUDA</Filter>
-    </ClInclude>
     <ClInclude Include="CUDAMesh.h">
       <Filter>Helpers\CUDA</Filter>
     </ClInclude>
     <ClInclude Include="CUDAWindowHelper.h">
       <Filter>Helpers\CUDA</Filter>
+    </ClInclude>
+    <ClInclude Include="CUDATextureSampler.cuh">
+      <Filter>Helpers\CUDA\Textures</Filter>
+    </ClInclude>
+    <ClInclude Include="CUDATexture.h">
+      <Filter>Helpers\CUDA\Textures</Filter>
+    </ClInclude>
+    <ClInclude Include="DEFINES.h" />
+    <ClInclude Include="VisualisationState.h">
+      <Filter>Renderer\Shading</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>

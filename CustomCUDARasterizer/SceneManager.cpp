@@ -6,9 +6,10 @@
 #include "EventManager.h"
 #include "PrimitiveTopology.h"
 #include "CullingMode.h"
+#include "VisualisationState.h"
 
 SceneManager::SceneManager()
-	: m_IsDepthColour{ false }
+	: m_Visualisation{ VisualisationState::PBR }
 	, m_pSceneGraphs{}
 	, m_Index{ 0 }
 	, m_SampleState{ SampleState::Point }
@@ -73,7 +74,7 @@ void SceneManager::Update(float elapsedSec)
 	}
 	if (EventManager::IsKeyPressed(SDLK_r))
 	{
-		ToggleDepthColour();
+		ToggleVisualisation();
 	}
 	if (EventManager::IsKeyPressed(SDLK_f))
 	{
@@ -85,9 +86,24 @@ void SceneManager::Update(float elapsedSec)
 	}
 }
 
-void SceneManager::ToggleDepthColour()
+void SceneManager::ToggleVisualisation()
 {
-	m_IsDepthColour = !m_IsDepthColour;
+	m_Visualisation = VisualisationState((int)m_Visualisation + 1);
+	if ((int)m_Visualisation > 2)
+		m_Visualisation = VisualisationState::PBR;
+
+	switch (m_Visualisation)
+	{
+	case VisualisationState::PBR:
+		std::cout << "\nVisualising PBR Colour\n";
+		break;
+	case VisualisationState::Depth:
+		std::cout << "\nVisualising Depth Colour\n";
+		break;
+	case VisualisationState::Normal:
+		std::cout << "\nVisualising Normal Colour\n";
+		break;
+	}
 }
 
 void SceneManager::ToggleSampleState()

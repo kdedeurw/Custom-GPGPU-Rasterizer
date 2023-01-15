@@ -6,7 +6,8 @@
 #include "CUDATexture.h"
 #include "RGBRaw.h"
 #include "SampleState.h"
-#include "CUDAROPs.cuh"
+//#include "CUDAROPs.cu"
+#include "CUDAStructs.h"
 
 namespace CUDATextureSampler
 {
@@ -86,8 +87,8 @@ GPU_CALLABLE GPU_INLINE
 RGBColor CUDATextureSampler::SamplePoint(const unsigned int* pixels, unsigned int w, unsigned int h, const FVector2& uv)
 {
 	// Transform coordinates
-	const int u{ int(uv.x * w + 0.5f) };
-	const int v{ int(uv.y * h + 0.5f) };
+	const int u = int(uv.x * w + 0.5f);
+	const int v = int(uv.y * h + 0.5f);
 
 	//TODO: FastClamp instead of if statement
 	//int newU = ClampFast(u, 0, int(w - 1));
@@ -95,6 +96,7 @@ RGBColor CUDATextureSampler::SamplePoint(const unsigned int* pixels, unsigned in
 
 	if (u < 0 || v < 0 || u >= w || v >= h)
 		return RGBColor{ 1.f, 0.f, 1.f };
+
 	const int sampleIdx = u + v * w;
 	unsigned int sample = pixels[sampleIdx];
 	RGBColor sampleColour = RGBA::GetRGBColor(sample);
@@ -113,6 +115,7 @@ RGBColor CUDATextureSampler::SampleLinear(const unsigned int* pixels, unsigned i
 	//Step 1: find pixel to sample from
 	const int x = int(uv.x * w + 0.5f);
 	const int y = int(uv.y * h + 0.5f);
+
 	if (x < 0 || y < 0 || x >= w || y >= h)
 		return RGBColor{ 1.f, 0.f, 1.f };
 
