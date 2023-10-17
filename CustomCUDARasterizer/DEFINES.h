@@ -2,7 +2,7 @@
 
 //show fps in realtime
 #ifndef STATS_REALTIME
-//#define STATS_REALTIME //can comment this line
+#define STATS_REALTIME //can comment this line
 #endif
 
 #ifndef STATS_REALTIME

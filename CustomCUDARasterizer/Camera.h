@@ -4,7 +4,7 @@
 class Camera
 {
 public:
-	explicit Camera(const FPoint3& position, float fov = 45.f);
+	Camera(const FPoint3& position = {}, float fov = 45.f);
 	virtual ~Camera() = default;
 
 	void SetPosition(const FPoint3& pos) { m_Position = pos; }

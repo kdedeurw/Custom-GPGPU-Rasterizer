@@ -1,20 +1,20 @@
 #pragma once
 #include <vector>
-#include "Texture.h"
 
 class SceneGraph;
 enum class SampleState;
 enum class CullingMode;
 enum class VisualisationState;
+
 class SceneManager final
 {
 public:
 	SceneManager();
 	~SceneManager();
 
-	void Update(float elapsedSec);
-
 	void AddSceneGraph(SceneGraph* pSceneGraph);
+
+	void Update(float elapsedSec);
 
 	VisualisationState GetVisualisationState() const { return m_Visualisation; };
 	SceneGraph* GetSceneGraph() const;
@@ -30,7 +30,8 @@ public:
 private:
 	int m_Index;
 	VisualisationState m_Visualisation;
-	std::vector<SceneGraph*> m_pSceneGraphs;
 	SampleState m_SampleState;
 	CullingMode m_CullingMode;
+	std::vector<SceneGraph*> m_pSceneGraphs;
+
 };

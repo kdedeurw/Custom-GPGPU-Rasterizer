@@ -1,8 +1,4 @@
 #pragma once
-//CUDA includes
-#include "GPUHelpers.h"
-#include "CUDABenchMarker.h"
-#include "CUDAStructs.h"
 
 //Standard includes
 #include <stdio.h>
@@ -32,12 +28,18 @@
 #include "PrimitiveTopology.h"
 #include "BoundingBox.h"
 #include "Light.h"
-#include "CUDATextureManager.h"
-#include "CUDATexture.h"
-#include "CUDAMesh.h"
 #include "CullingMode.h"
 #include "SampleState.h"
 #include "VisualisationState.h"
+
+//CUDA includes
+#include "GPUHelpers.h"
+#include "CUDABenchMarker.h"
+#include "CUDAStructs.h"
+#include "CUDAMesh.h"
+#include "CUDATexture.h"
+#include "CUDATextureManager.h"
+#include "CUDASceneGraph.h"
 
 constexpr int NumTextures = 4;
 

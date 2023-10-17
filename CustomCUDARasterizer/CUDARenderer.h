@@ -17,12 +17,12 @@ struct OVertex;
 struct BoundingBox;
 enum class SampleState;
 class SceneManager;
-class SceneGraph;
 class CUDATextureManager;
 struct CUDATexturesCompact;
 class CUDAMesh;
 struct PixelShade;
 enum class VisualisationState;
+class CUDASceneGraph;
 
 //////////////////////////////
 //-----RAII Wrapper Class-----
@@ -44,24 +44,19 @@ public:
 	//Testing purposes
 	void DrawTextureGlobal(char* tp, bool isStretchedToWindow = true, SampleState sampleState = (SampleState)0);
 
-	//Preload and store scene in persistent memory
-	//This will eliminate overhead by loading mesh data and accessing global memory
-	void LoadScene(const SceneGraph* pSceneGraph, const CUDATextureManager& tm);
-
 	//Inits the binner object which handles its internal binning buffers on the GPU
 	void SetupBins(const IPoint2& numBins, const IPoint2& binDim, unsigned int binQueueMaxSize);
 
 	//Lock backbuffer surface and call Clear
 	int EnterValidRenderingState();
 	//function that launches the kernels and outputs to buffers
-	void Render(const SceneManager& sm, const CUDATextureManager& tm, const Camera* pCamera);
+	void Render(const CUDASceneGraph& scene, const CUDATextureManager& tm, const Camera& camera);
 	//Update window screen
 	void Present();
 	//function that launches the kernels and directly outputs to window
-	void RenderAuto(const SceneManager& sm, const CUDATextureManager& tm, const Camera* pCamera);
+	void RenderAuto(const CUDASceneGraph& scene, const CUDATextureManager& tm, const Camera& camera);
 
 	unsigned int GetTotalNumVisibleTriangles() const { return m_TotalVisibleNumTriangles; }
-	unsigned int GetTotalNumTriangles() const { return m_TotalNumTriangles; }
 
 	//function that outputs GPU specs
 	void DisplayGPUSpecs(int deviceId = 0);
@@ -74,15 +69,8 @@ public:
 	CUDABenchMarker& GetBenchMarker() { return m_BenchMarker; }
 
 private:
-	struct SortedCUDAMesh
-	{
-		unsigned int Idx;
-		unsigned int NumVisibleTriangles;
-		CUDAMesh* pCUDAMesh;
-	};
 	//-----MEMBER VARIABLES-----
 
-	unsigned int m_TotalNumTriangles{};
 	unsigned int m_TotalVisibleNumTriangles{};
 	const WindowHelper& m_WindowHelper;
 	unsigned int* m_Dev_NumVisibleTriangles{};
@@ -90,7 +78,6 @@ private:
 	CUDABenchMarker m_BenchMarker{};
 	CUDAAtomicQueues<unsigned int> m_BinQueues;
 	CUDAWindowHelper<PixelShade> m_CUDAWindowHelper;
-	std::vector<SortedCUDAMesh> m_CUDAMeshes{};
 	/*
 	//DEPRECATED
 	//Texture references have to be statically declared in global memory and bound to CUDA texture memory
@@ -106,23 +93,13 @@ private:
 	
 	//function that allocates device buffers
 	void AllocateCUDADeviceBuffers();
-	//function that allocates and copies host mesh buffers to device
-	SortedCUDAMesh AllocateCUDAMeshBuffers(const Mesh* pMesh);
-	//function that frees all device mesh buffers
-	void FreeAllCUDAMeshBuffers();
-	//function that frees a device mesh buffers
-	void FreeCUDAMeshBuffers(unsigned int meshIdx);
 	//function that frees device buffers
 	void FreeCUDADeviceBuffers();
 
 	//function that updates camera's matrices
-	void UpdateCameraDataAsync(const FPoint3& camPos, const FVector3& camFwd);
+	void UpdateCameraData(const FPoint3& camPos, const FVector3& camFwd);
 	//function that updates mesh's worldmatrix
-	void UpdateWorldMatrixDataAsync(const FMatrix4& worldMatrix, const FMatrix4& wvpMat, const FMatrix3& rotationMat);
-	//function that pre-stores a mesh's textures
-	void UpdateCUDAMeshTextures(CUDAMesh* pCudaMesh, const int texIds[4], const CUDATextureManager& tm);
-	//function that fetches a mesh's textures
-	CUDATexturesCompact GetCUDAMeshTextures(const int* texIds, const CUDATextureManager& tm);
+	void UpdateWorldMatrixData(const FMatrix4& worldMatrix, const FMatrix4& wvpMat, const FMatrix3& rotationMat);
 
 	//function that blocks host calls until stream has finished
 	cudaError_t WaitForStream(cudaStream_t stream);

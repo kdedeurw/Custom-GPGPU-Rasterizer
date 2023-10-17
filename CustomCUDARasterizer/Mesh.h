@@ -14,10 +14,8 @@ public:
 		Glossiness,
 	};
 	Mesh() = default;
-	Mesh(const std::vector<IVertex>& vertexBuffer, short stride, short type, 
-		const std::vector<unsigned int>& pIndexBuffer, PrimitiveTopology topology, const FPoint3& pos = {});
-	Mesh(IVertex* pVertexBuffer, unsigned int numVertices, short stride, short type, unsigned int* pIndexBuffer, unsigned int numIndices,
-		PrimitiveTopology topology, const FPoint3& pos = {});
+	Mesh(std::vector<IVertex>& vertexBuffer, short stride, short type, 
+		std::vector<unsigned int>& indexBuffer, PrimitiveTopology topology, const FPoint3& pos = {});
 	virtual ~Mesh();
 
 	FPoint3& GetPosition() { return m_Position; }
@@ -29,11 +27,11 @@ public:
 	short GetVertexType() const { return m_VertexType; }
 	short GetVertexStride() const { return m_VertexStride; }
 	PrimitiveTopology GetTopology() const { return m_Topology; }
-	unsigned int GetNumVertices() const { return m_NumVertices; }
-	unsigned int GetNumIndices() const { return m_NumIndices; }
+	unsigned int GetNumVertices() const { return (unsigned int)m_VertexBuffer.size(); }
+	unsigned int GetNumIndices() const { return (unsigned int)m_IndexBuffer.size(); }
 	unsigned int GetTotalNumTriangles() const;
-	IVertex* GetVertexBuffer() const { return m_pVertexBuffer; }
-	unsigned int* GetIndexBuffer() const { return m_pIndexBuffer; }
+	const std::vector<IVertex>& GetVertexBuffer() const { return m_VertexBuffer; }
+	const std::vector<unsigned int>& GetIndexBuffer() const { return m_IndexBuffer; }
 	const int* GetTextureIds() const { return m_TextureIds; }
 	void SetTextureIds(int diff, int norm = -1, int spec = -1, int gloss = -1);
 	void SetTextureId(int id, TextureID texID = TextureID::Diffuse);
@@ -42,11 +40,9 @@ protected:
 	short m_VertexType;
 	short m_VertexStride;
 	PrimitiveTopology m_Topology;
-	unsigned int m_NumVertices;
-	unsigned int m_NumIndices;
-	IVertex* m_pVertexBuffer;
-	unsigned int* m_pIndexBuffer;
 	FPoint3& m_Position;
 	int m_TextureIds[4];
 	FMatrix4 m_WorldSpace;
+	std::vector<IVertex> m_VertexBuffer;
+	std::vector<unsigned int> m_IndexBuffer;
 };
