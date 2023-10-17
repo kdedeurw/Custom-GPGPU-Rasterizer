@@ -61,6 +61,6 @@ protected:
 	CUDATexturesCompact m_Textures;
 	FMatrix4 m_WorldSpace;
 
-	virtual void Allocate(IVertex* pVertexBuffer, unsigned int* pIndexBuffer);
+	virtual void Allocate(const IVertex* pVertexBuffer, const unsigned int* pIndexBuffer);
 	virtual void Free();
 };

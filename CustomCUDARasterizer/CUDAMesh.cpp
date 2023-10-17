@@ -15,8 +15,8 @@ CUDAMesh::CUDAMesh(const Mesh* pMesh)
 	, m_Textures{}
 	, m_WorldSpace{ pMesh->GetWorldConst() }
 {
-	m_Position += reinterpret_cast<const FVector3&>(pMesh->GetPositionConst());
-	Allocate(pMesh->GetVertexBuffer(), pMesh->GetIndexBuffer());
+	//m_Position += reinterpret_cast<const FVector3&>(pMesh->GetPositionConst());
+	Allocate(pMesh->GetVertexBuffer().data(), pMesh->GetIndexBuffer().data());
 };
 
 CUDAMesh::~CUDAMesh()
@@ -39,7 +39,7 @@ unsigned int CUDAMesh::GetTotalNumTriangles() const
 	return numTriangles;
 }
 
-void CUDAMesh::Allocate(IVertex* pVertexBuffer, unsigned int* pIndexBuffer)
+void CUDAMesh::Allocate(const IVertex* pVertexBuffer, const unsigned int* pIndexBuffer)
 {
 	const unsigned int numTriangles = GetTotalNumTriangles();
 

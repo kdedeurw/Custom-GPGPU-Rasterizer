@@ -5,9 +5,9 @@
 
 SceneGraph::~SceneGraph()
 {
-	for (Mesh* pCMesh : m_pMeshes)
+	for (Mesh* pMesh : m_pMeshes)
 	{
-		delete pCMesh;
+		delete pMesh;
 	}
 	m_pMeshes.clear();
 	for (Light* pLight : m_pLights)
@@ -37,4 +37,14 @@ void SceneGraph::Update(float elapsedSec)
 		FMatrix4& world = pMesh->GetWorld();
 		world *= rotationMatrix;
 	}
+}
+
+unsigned int SceneGraph::GetTotalNumTriangles() const
+{
+	unsigned int numTriangles{};
+	for (Mesh* pMesh : m_pMeshes)
+	{
+		numTriangles += pMesh->GetTotalNumTriangles();
+	}
+	return numTriangles;
 }

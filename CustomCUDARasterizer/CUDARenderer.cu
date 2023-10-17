@@ -1,13 +1,12 @@
 #include "PCH.h"
 #include "CUDARenderer.h"
 #include <vector>
+#include <SDL.h>
 
 //Project CUDA includes
 #include "CUDATextureSampler.cuh"
 #include "CUDAMatrixMath.cuh"
 #include "CUDAROPs.cu"
-#include "CUDAStructs.h"
-#include "CUDATextureManager.h"
 
 #pragma region GLOBAL VARIABLES
 
@@ -32,15 +31,13 @@ GPU_CONST_MEMORY float dev_ConstMemory[ConstMemorySize];
 
 CPU_CALLABLE
 CUDARenderer::CUDARenderer(const WindowHelper& windowHelper)
-	: m_TotalNumTriangles{}
-	, m_TotalVisibleNumTriangles{}
+	: m_TotalVisibleNumTriangles{}
 	, m_WindowHelper{ windowHelper }
 	, m_Dev_NumVisibleTriangles{}
 	, m_BinDim{}
 	, m_BenchMarker{}
 	, m_BinQueues{}
 	, m_CUDAWindowHelper{}
-	, m_CUDAMeshes{}
 {
 	AllocateCUDADeviceBuffers();
 }
@@ -175,28 +172,6 @@ void CUDARenderer::DisplayGPUSpecs(int deviceId)
 }
 
 CPU_CALLABLE
-void CUDARenderer::LoadScene(const SceneGraph* pSceneGraph, const CUDATextureManager& tm)
-{
-	if (!pSceneGraph)
-	{
-		std::cout << "!CUDARenderer::LoadScene > Invalid scenegraph!\n";
-		return;
-	}
-	m_TotalNumTriangles = 0;
-	FreeAllCUDAMeshBuffers();
-	const std::vector<Mesh*>& pMeshes = pSceneGraph->GetMeshes();
-	for (const Mesh* pMesh : pMeshes)
-	{
-		SortedCUDAMesh sortedCudaMesh = AllocateCUDAMeshBuffers(pMesh);
-		CUDAMesh* pCudaMesh = sortedCudaMesh.pCUDAMesh;
-		const int* pTexIds = pMesh->GetTextureIds();
-		UpdateCUDAMeshTextures(pCudaMesh, pTexIds, tm);
-		m_TotalNumTriangles += pCudaMesh->GetTotalNumTriangles();
-		m_CUDAMeshes.push_back(sortedCudaMesh);
-	}
-}
-
-CPU_CALLABLE
 void CUDARenderer::SetupBins(const IPoint2& numBins, const IPoint2& binDim, unsigned int binQueueMaxSize)
 {
 	m_BinQueues.Init(numBins.x, numBins.y, binQueueMaxSize);
@@ -204,21 +179,21 @@ void CUDARenderer::SetupBins(const IPoint2& numBins, const IPoint2& binDim, unsi
 }
 
 CPU_CALLABLE
-void CUDARenderer::Render(const SceneManager& sm, const CUDATextureManager& tm, const Camera* pCamera)
+void CUDARenderer::Render(const CUDASceneGraph& scene, const CUDATextureManager& tm, const Camera& camera)
 {
 	//Render Data
-	const VisualisationState visualisationState = sm.GetVisualisationState();
-	const SampleState sampleState = sm.GetSampleState();
-	const CullingMode cm = sm.GetCullingMode();
+	const VisualisationState visualisationState = scene.GetVisualisationState();
+	const SampleState sampleState = scene.GetSampleState();
+	const CullingMode cm = scene.GetCullingMode();
 
 	//Camera Data
-	const FPoint3& camPos = pCamera->GetPosition();
-	const FVector3& camFwd = pCamera->GetForward();
-	const FMatrix4 viewMatrix = pCamera->GetViewMatrix();
-	const FMatrix4& projectionMatrix = pCamera->GetProjectionMatrix();
+	const FPoint3& camPos = camera.GetPosition();
+	const FVector3& camFwd = camera.GetForward();
+	const FMatrix4 viewMatrix = camera.GetViewMatrix();
+	const FMatrix4& projectionMatrix = camera.GetProjectionMatrix();
 	const FMatrix4 viewProjectionMatrix = projectionMatrix * viewMatrix;
 
-	UpdateCameraDataAsync(camPos, camFwd);
+	UpdateCameraData(camPos, camFwd);
 
 #ifdef BENCHMARK
 	float VertexShadingMs{};
@@ -234,16 +209,17 @@ void CUDARenderer::Render(const SceneManager& sm, const CUDATextureManager& tm, 
 	CheckErrorCuda(cudaStreamCreate(&binnerStream));
 
 	m_TotalVisibleNumTriangles = 0;
-	for (SortedCUDAMesh sortedCudaMesh : m_CUDAMeshes)
+
+	const std::vector<CUDAMesh*>& pCudaMeshes = scene.GetCUDAMeshes();
+	for (CUDAMesh* pCudaMesh : pCudaMeshes)
 	{
 		//Mesh Data
-		const CUDAMesh* pCudaMesh = sortedCudaMesh.pCUDAMesh;
 		const FMatrix4& worldMat = pCudaMesh->GetWorldConst();
-		const FMatrix4 worldViewProjectionMatrix = viewProjectionMatrix * worldMat;
 		const FMatrix3& rotationMatrix = pCudaMesh->GetRotationMatrix();
+		const FMatrix4 worldViewProjectionMatrix = viewProjectionMatrix * worldMat;
 
 		//Update const data
-		UpdateWorldMatrixDataAsync(worldMat, worldViewProjectionMatrix, rotationMatrix);
+		UpdateWorldMatrixData(worldMat, worldViewProjectionMatrix, rotationMatrix);
 		CheckErrorCuda(cudaDeviceSynchronize());
 
 		//TODO: can async copy (parts of) mesh buffers H2D
@@ -273,9 +249,9 @@ void CUDARenderer::Render(const SceneManager& sm, const CUDATextureManager& tm, 
 		CheckErrorCuda(cudaDeviceSynchronize());
 		//---END STAGE 2---
 
-		unsigned int& numVisibleTriangles = sortedCudaMesh.NumVisibleTriangles;
+		unsigned int numVisibleTriangles;
 		CheckErrorCuda(cudaMemcpy(&numVisibleTriangles, m_Dev_NumVisibleTriangles, 4, cudaMemcpyDeviceToHost));
-		m_TotalVisibleNumTriangles += sortedCudaMesh.NumVisibleTriangles;
+		m_TotalVisibleNumTriangles += numVisibleTriangles;
 
 #ifdef BENCHMARK
 		TriangleAssemblingMs += StopTimer();
@@ -285,7 +261,7 @@ void CUDARenderer::Render(const SceneManager& sm, const CUDATextureManager& tm, 
 		//persistent kernel approach + global atomic flag value set in host
 		//TODO: can enable UNSAFE execution of GPU Atomic Queues due to the TB and RA kernels only processing BinQueueMaxSize amount of triangles per launch
 		const unsigned int queueMaxSize = m_BinQueues.GetQueueMaxSize();
-		const unsigned int numLoops = (sortedCudaMesh.NumVisibleTriangles + (queueMaxSize - 1)) / queueMaxSize;
+		const unsigned int numLoops = (numVisibleTriangles + (queueMaxSize - 1)) / queueMaxSize;
 		for (unsigned int i{}; i < numLoops; ++i)
 		{
 
@@ -296,7 +272,7 @@ void CUDARenderer::Render(const SceneManager& sm, const CUDATextureManager& tm, 
 #endif
 
 			//---STAGE 3---:  Perform Output Vertex Assembling
-			TriangleBinner(pCudaMesh, sortedCudaMesh.NumVisibleTriangles, i * queueMaxSize);
+			TriangleBinner(pCudaMesh, numVisibleTriangles, i * queueMaxSize);
 			CheckErrorCuda(cudaDeviceSynchronize());
 			//---END STAGE 3---
 
@@ -354,7 +330,7 @@ void CUDARenderer::Render(const SceneManager& sm, const CUDATextureManager& tm, 
 }
 
 CPU_CALLABLE
-void CUDARenderer::RenderAuto(const SceneManager& sm, const CUDATextureManager& tm, const Camera* pCamera)
+void CUDARenderer::RenderAuto(const CUDASceneGraph& scene, const CUDATextureManager& tm, const Camera& camera)
 {
 #ifdef _DEBUG
 	if (EnterValidRenderingState())
@@ -363,7 +339,7 @@ void CUDARenderer::RenderAuto(const SceneManager& sm, const CUDATextureManager& 
 	EnterValidRenderingState();
 #endif
 
-	Render(sm, tm, pCamera);
+	Render(scene, tm, camera);
 
 	//TODO: parallel copies (streams & async)
 	//Swap out buffers and update window
@@ -475,43 +451,6 @@ void CUDARenderer::AllocateCUDADeviceBuffers()
 }
 
 CPU_CALLABLE
-CUDARenderer::SortedCUDAMesh CUDARenderer::AllocateCUDAMeshBuffers(const Mesh* pMesh)
-{
-	const unsigned int meshIdx = (unsigned int)m_CUDAMeshes.size();
-	CUDAMesh* pCudaMesh = new CUDAMesh{ pMesh };
-	SortedCUDAMesh sortedCudaMesh{};
-	sortedCudaMesh.Idx = meshIdx;
-	sortedCudaMesh.pCUDAMesh = pCudaMesh;
-	return sortedCudaMesh;
-}
-
-CPU_CALLABLE
-void CUDARenderer::FreeAllCUDAMeshBuffers()
-{
-	for (const SortedCUDAMesh& sortedCudaMesh : m_CUDAMeshes)
-	{
-		FreeCUDAMeshBuffers(sortedCudaMesh.Idx);
-	}
-	m_CUDAMeshes.clear();
-}
-
-CPU_CALLABLE
-void CUDARenderer::FreeCUDAMeshBuffers(unsigned int meshIdx)
-{
-	unsigned int i{};
-	for (const SortedCUDAMesh& sortedCudaMesh : m_CUDAMeshes)
-	{
-		if (sortedCudaMesh.Idx == meshIdx)
-		{
-			delete sortedCudaMesh.pCUDAMesh;
-			m_CUDAMeshes[i] = m_CUDAMeshes.back();
-			m_CUDAMeshes.pop_back();
-		}
-		++i;
-	}
-}
-
-CPU_CALLABLE
 void CUDARenderer::FreeCUDADeviceBuffers()
 {
 	m_BinQueues.Destroy();
@@ -520,56 +459,21 @@ void CUDARenderer::FreeCUDADeviceBuffers()
 	m_Dev_NumVisibleTriangles = nullptr;
 
 	m_CUDAWindowHelper.Destroy();
-
-	FreeAllCUDAMeshBuffers();
 }
 
 CPU_CALLABLE
-void CUDARenderer::UpdateCameraDataAsync(const FPoint3& camPos, const FVector3& camFwd)
+void CUDARenderer::UpdateCameraData(const FPoint3& camPos, const FVector3& camFwd)
 {
 	CheckErrorCuda(cudaMemcpyToSymbol(dev_ConstMemory, camPos.data, sizeof(camPos), CamPosIdx * 4));
 	CheckErrorCuda(cudaMemcpyToSymbol(dev_ConstMemory, camFwd.data, sizeof(camFwd), CamFwdIdx * 4));
 }
 
 CPU_CALLABLE
-void CUDARenderer::UpdateWorldMatrixDataAsync(const FMatrix4& worldMatrix, const FMatrix4& wvpMat, const FMatrix3& rotationMat)
+void CUDARenderer::UpdateWorldMatrixData(const FMatrix4& worldMatrix, const FMatrix4& wvpMat, const FMatrix3& rotationMat)
 {
 	CheckErrorCuda(cudaMemcpyToSymbol(dev_ConstMemory, worldMatrix.data, sizeof(worldMatrix), WorldMatIdx * 4));
 	CheckErrorCuda(cudaMemcpyToSymbol(dev_ConstMemory, wvpMat.data, sizeof(wvpMat), WVPMatIdx * 4));
 	CheckErrorCuda(cudaMemcpyToSymbol(dev_ConstMemory, rotationMat.data, sizeof(rotationMat), RotMatIdx * 4));
-}
-
-CPU_CALLABLE
-void CUDARenderer::UpdateCUDAMeshTextures(CUDAMesh* pCudaMesh, const int texIds[4], const CUDATextureManager& tm)
-{
-	const CUDATexturesCompact textures = GetCUDAMeshTextures(texIds, tm);
-	pCudaMesh->SetTextures(textures);
-}
-
-CPU_CALLABLE
-CUDATexturesCompact CUDARenderer::GetCUDAMeshTextures(const int* texIds, const CUDATextureManager& tm)
-{
-	//Preload textures and fetch instead of creating a TexturesCompact object every frame in Render()
-	//Instead of textures being fetched, alter them in CUDAMesh object
-	//The actual TexuresCompact object gets copied to the kernel anyway (POD GPU data and ptrs)
-	const CUDATexture* pDiff = tm.GetCUDATexture(texIds[Mesh::TextureID::Diffuse]);
-	const CUDATexture* pNorm = tm.GetCUDATexture(texIds[Mesh::TextureID::Normal]);
-	const CUDATexture* pSpec = tm.GetCUDATexture(texIds[Mesh::TextureID::Specular]);
-	const CUDATexture* pGloss = tm.GetCUDATexture(texIds[Mesh::TextureID::Glossiness]);
-	CUDATexturesCompact textures{};
-	if (pDiff)
-	{
-		textures.Diff = CUDATextureCompact::CompactCUDATexture(*pDiff);
-		if (pNorm)
-		{
-			textures.Norm = CUDATextureCompact::CompactCUDATexture(*pNorm);
-			if (pSpec)
-				textures.Spec = CUDATextureCompact::CompactCUDATexture(*pSpec);
-			if (pGloss)
-				textures.Gloss = CUDATextureCompact::CompactCUDATexture(*pGloss);
-		}
-	}
-	return textures;
 }
 
 CPU_CALLABLE
@@ -685,10 +589,14 @@ void VS_Kernel(const IVertex* __restrict__ dev_IVertices, OVertex* dev_OVertices
 	//constexpr unsigned int paddedSizeOfIVertex = sizeof(IVertex) / 4 + 1;
 	//extern GPU_SHARED_MEMORY float sharedMemoryBuffer[];
 
-	const FPoint3& camPos = reinterpret_cast<const FPoint3&>(dev_ConstMemory[0]);
-	const FMatrix4& worldMatrix = reinterpret_cast<const FMatrix4&>(dev_ConstMemory[6]);
-	const FMatrix4& WVPMatrix = reinterpret_cast<const FMatrix4&>(dev_ConstMemory[22]);
-	const FMatrix3& rotationMatrix = reinterpret_cast<const FMatrix3&>(dev_ConstMemory[38]);
+	//TODO: const device matrices not updating after init???
+	//???????????????????????????????????????????????????????????????????????????????????????
+	//struct memory is unexpected for some reason, it used to work before ;.;
+	//apparently the const memory should be accessed "sequentially"? by each individual thread
+	const FPoint3& camPos = reinterpret_cast<const FPoint3&>(dev_ConstMemory[CamPosIdx]);
+	const FMatrix4& worldMatrix = reinterpret_cast<const FMatrix4&>(dev_ConstMemory[WorldMatIdx]);
+	const FMatrix4& WVPMatrix = reinterpret_cast<const FMatrix4&>(dev_ConstMemory[WVPMatIdx]);
+	const FMatrix3& rotationMatrix = reinterpret_cast<const FMatrix3&>(dev_ConstMemory[RotMatIdx]);
 
 	const unsigned int vertexIdx = blockIdx.x * blockDim.x + threadIdx.x;
 	if (vertexIdx < numVertices)
@@ -1286,7 +1194,7 @@ void RA_PerPixelKernel_DEP(const TriangleIdx* __restrict__ dev_Triangles, const 
 	//=> O(n) n = numTriangles vs O(n^m) n = numTriangles m = numPixels
 	//advantage: nomore atomic operations needed bc only 1 thread can write to 1 unique pixelIdx
 
-	constexpr float* pCamFwd = &dev_ConstMemory[3];
+	constexpr float* pCamFwd = &dev_ConstMemory[CamFwdIdx];
 
 	//extern GPU_SHARED_MEMORY float sharedMemoryBuffer[];
 
@@ -1889,12 +1797,12 @@ void CUDARenderer::Rasterizer(const CUDAMesh* pCudaMesh, const FVector3& camFwd,
 	//each block should do 1 triangle of 1 queue
 #else
 	constexpr unsigned int numThreadsPerBlock = 256;
-	const dim3 numBlocks = { m_BinQueues.NumQueuesX, m_BinQueues.NumQueuesY };
+	const dim3 numBlocks = { m_BinQueues.GetNumQueuesX(), m_BinQueues.GetNumQueuesY() };
 	RasterizerPerBinKernel<<<numBlocks, numThreadsPerBlock, 0, stream>>>(
-		dev_Triangles[mi.Idx], dev_OVertexBuffer[mi.Idx],
+		dev_TriangleBuffer, dev_OVertexBuffer[mi.Idx],
 		dev_PixelShadeBuffer, dev_DepthBuffer, dev_DepthMutexBuffer, textures,
 		dev_BinQueues, dev_BinQueueSizes, dev_BinQueueSizesMutexBuffer, m_BinDim,
-		m_BinQueues.QueueMaxSize, width, height);
+		m_BinQueues.GetQueueMaxSize(), width, height);
 #endif
 #else
 	constexpr unsigned int numThreadsPerBlock = 256;

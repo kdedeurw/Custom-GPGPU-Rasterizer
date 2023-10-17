@@ -1,6 +1,5 @@
 #include "PCH.h"
 #include "CUDATextureManager.h"
-#include "CUDATexture.h"
 
 CUDATextureManager::CUDATextureManager()
 	: m_CurrentTextureId{}

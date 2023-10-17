@@ -9,11 +9,11 @@
 #include "VisualisationState.h"
 
 SceneManager::SceneManager()
-	: m_Visualisation{ VisualisationState::PBR }
-	, m_pSceneGraphs{}
-	, m_Index{ 0 }
+	: m_Index{ 0 }
+	, m_Visualisation{ VisualisationState::PBR }
 	, m_SampleState{ SampleState::Point }
 	, m_CullingMode{ CullingMode::BackFace }
+	, m_pSceneGraphs{}
 {}
 
 SceneManager::~SceneManager()

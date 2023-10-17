@@ -20,10 +20,9 @@ public:
 	bool OpenFile(const std::string& filePath);
 	void CloseFile();
 
-	void ReadFromObjFile(IVertex*& pVertexBuffer, unsigned int& numVertices, unsigned int*& pIndexBuffer, unsigned int& numIndices, short& vertexType);
-	void ReadFromObjFile(std::vector<IVertex>& vertexBuffer, std::vector<unsigned int>& indexBuffer, short& vertexType);
+	void ParseObjFile(std::vector<IVertex>& vertexBuffer, std::vector<unsigned int>& indexBuffer, short& vertexType);
 
-	void SetInvertYAxis(bool value);
+	void SetInvertYAxis(bool value) { m_IsYAxisInverted = value; }
 
 private:
 	bool m_IsYAxisInverted;
@@ -43,7 +42,7 @@ private:
 	void GetFirstSecondThird(std::stringstream& fst, std::string& first, std::string& second, std::string& third);
 
 	unsigned int ParseData();
-	void AssignVertices(unsigned int faceCount, IVertex*& pVertexBuffer, unsigned int& numVertices, unsigned int*& pIndexBuffer, unsigned int& numIndices, short& vertexType);
 	void AssignVertices(unsigned int faceCount, std::vector<IVertex>& vertexBuffer, std::vector<unsigned int>& indexBuffer, short& vertexType);
+	void PrecalculateTangents(std::vector<IVertex>& vertexBuffer, const std::vector<unsigned int> indexBuffer, unsigned int numIndices);
 	void ClearData();
 };
